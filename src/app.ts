@@ -20,6 +20,7 @@ import { GROQ_KEY_VAR } from "./infra/groq.ts";
 import { createSubscriptionRepo, type SubscriptionRepo } from "./infra/db/repositories/subscriptions.ts";
 import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
+import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
 import { createFetcher } from "./infra/http-client.ts";
 import { createLogger, type Logger } from "./infra/logger.ts";
 import { keychainSecrets, type SecretResolver } from "./infra/secrets.ts";
@@ -42,6 +43,7 @@ export interface App {
   actions: ReturnType<typeof createActionRepo>;
   subscriptions: SubscriptionRepo;
   health: HealthRepo;
+  workouts: WorkoutRepo;
   runner: RunnerDeps;
   modules: readonly typeof ALL_MODULES[number][];
   close(): void;
@@ -73,6 +75,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
 
   const synthesizers = buildSynthesisChain(env, logger, secrets);
   const health = createHealthRepo(db);
+  const workouts = createWorkoutRepo(db);
   const actions = createActionRepo(db);
 
   const proposals = createProposalService({
@@ -109,7 +112,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   });
 
   return {
-    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, runner,
+    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, workouts, runner,
     actions,
     subscriptions: createSubscriptionRepo(db),
     modules: ALL_MODULES,
