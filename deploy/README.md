@@ -104,6 +104,19 @@ Ha korábban beállítottad az ébresztést, vond vissza:
 sudo pmset repeat cancel
 ```
 
+**Health-történet import közben az agent nem futhat.** Az agent tartja nyitva
+az adatbázist; egy külön folyamat (az import script) írásai emiatt nem
+maradnak meg — pár másodpercig látszanak, aztán eltűnnek. Az import ezt
+induláskor felismeri, és inkább rögtön visszautasítja magát, mint hogy
+csendben eldobja a beolvasott adatot. Állítsd le az agentet, futtasd le az
+importot, utána indítsd újra:
+
+```bash
+launchctl bootout gui/$(id -u)/local.jarvis.agent
+npm run import-health -- ~/Downloads/export.zip
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.jarvis.agent.plist
+```
+
 ## 5. Elérés a telefonról — Tailscale
 
 ```bash
