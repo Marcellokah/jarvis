@@ -59,7 +59,7 @@ A felhasználó valódi exportjából (2026-08-31), a terv ezekre épül:
 |---|---|
 | `src/infra/health-export/reader.ts` | Út → rekord-folyam. Zip vagy sima XML |
 | `src/infra/health-export/rollup.ts` | Rekord-folyam → napi sorok + edzések. Pure |
-| `src/infra/db/migrations/005_health_history.sql` | Új oszlopok és két új tábla |
+| `src/infra/db/migrations/004_health_history.sql` | Új oszlopok és két új tábla |
 | `src/infra/db/repositories/workouts.ts` | Edzés-tár |
 | `src/infra/db/repositories/subscription-months.ts` | Havi előfizetés-pillanatkép |
 | `scripts/import-health.ts` | A parancs |
@@ -643,7 +643,7 @@ git commit -m "feat: roll Apple Health records into daily values and workouts"
 ## Task 3: Séma és a nem-felülíró írás
 
 **Files:**
-- Create: `src/infra/db/migrations/005_health_history.sql`
+- Create: `src/infra/db/migrations/004_health_history.sql`
 - Modify: `src/infra/db/repositories/health.ts`
 - Test: `test/core/health-fillgaps.test.ts` (új)
 
@@ -752,7 +752,7 @@ Expected: FAIL — `fillGaps` nem létezik, és az új oszlopok sincsenek meg.
 
 - [ ] **Step 3: Write the migration**
 
-Hozd létre a `src/infra/db/migrations/005_health_history.sql` fájlt:
+Hozd létre a `src/infra/db/migrations/004_health_history.sql` fájlt:
 
 ```sql
 -- Seven and a half years of Apple Health history, at daily resolution.
@@ -875,7 +875,7 @@ Expected: minden zöld. Ha egy meglévő teszt a `HealthSnapshot` teljes alakjá
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/infra/db/migrations/005_health_history.sql src/infra/db/repositories/health.ts test/core/health-fillgaps.test.ts
+git add src/infra/db/migrations/004_health_history.sql src/infra/db/repositories/health.ts test/core/health-fillgaps.test.ts
 git commit -m "feat: daily history columns and a write that never overwrites"
 ```
 
@@ -1197,7 +1197,7 @@ git commit -m "feat: import an Apple Health export into the daily history"
 ## Task 6: Havi előfizetés-pillanatkép
 
 **Files:**
-- Create: `src/infra/db/migrations/006_subscription_months.sql`
+- Create: `src/infra/db/migrations/005_subscription_months.sql`
 - Create: `src/infra/db/repositories/subscription-months.ts`
 - Modify: `src/app.ts`, `src/main.ts`, `src/infra/scheduler.ts`
 - Test: `test/core/subscription-months.test.ts` (új)
@@ -1279,7 +1279,7 @@ Expected: FAIL — a modul nem létezik.
 
 - [ ] **Step 3: Write the migration**
 
-Hozd létre a `src/infra/db/migrations/006_subscription_months.sql` fájlt:
+Hozd létre a `src/infra/db/migrations/005_subscription_months.sql` fájlt:
 
 ```sql
 -- What you were paying for, month by month.
@@ -1413,7 +1413,7 @@ export function recordSubscriptionMonth(app: Pick<App, "subscriptions" | "subscr
 Run: `npm test && npm run typecheck`
 
 ```bash
-git add src/infra/db/migrations/006_subscription_months.sql src/infra/db/repositories/subscription-months.ts src/app.ts src/main.ts src/infra/scheduler.ts test/core/subscription-months.test.ts
+git add src/infra/db/migrations/005_subscription_months.sql src/infra/db/repositories/subscription-months.ts src/app.ts src/main.ts src/infra/scheduler.ts test/core/subscription-months.test.ts
 git commit -m "feat: monthly subscription snapshot, so spend can be compared over time"
 ```
 
