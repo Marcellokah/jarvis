@@ -166,3 +166,54 @@ describe("groqSynthesizer", () => {
     expect(out.demoted).toEqual([]);
   });
 });
+
+import { groqChat } from "../../src/core/chat.ts";
+
+describe("groqChat", () => {
+  const answer = {
+    choices: [{ message: { content: "Két előfizetés újul meg a héten." }, finish_reason: "stop" }],
+  };
+
+  function chat(response: unknown, seen?: { url?: string; init?: RequestInit }) {
+    return groqChat({
+      fetcher: stub(response, seen ?? {}),
+      model: "llama-3.3-70b-versatile",
+      systemPromptFile: "./jarvis.md",
+      maxTokens: 800,
+      temperature: 0.4,
+      timeoutMs: 5_000,
+      logger: silentLogger(),
+      apiKey: async () => "gsk-test",
+    });
+  }
+
+  it("answers a follow-up", async () => {
+    const out = await chat(answer).ask("részletezd a pénzügyi részt", "# nap\n\n## 💰\n\nvalami", signal);
+    expect(out).toBe("Két előfizetés újul meg a héten.");
+  });
+
+  it("gives the model today's brief as context", async () => {
+    const seen: { url?: string; init?: RequestInit } = {};
+    await chat(answer, seen).ask("mi ez?", "# nap\n\n## 💰 Pénzügy\n\n5 előfizetés", signal);
+
+    const body = JSON.parse(String(seen.init?.body)) as { messages: { content: string }[] };
+    expect(body.messages[1]!.content).toContain("5 előfizetés");
+    expect(body.messages[1]!.content).toContain("mi ez?");
+  });
+
+  it("does not apply the brief's output contract to a chat answer", async () => {
+    // A chat reply is prose. Requiring it to start with '#' would reject every
+    // useful answer.
+    const prose = { choices: [{ message: { content: "Nem, csak kettő." }, finish_reason: "stop" }] };
+    await expect(chat(prose).ask("három?", "# nap", signal)).resolves.toBe("Nem, csak kettő.");
+  });
+
+  it("is unavailable without a key", async () => {
+    const noKey = groqChat({
+      fetcher: stub(answer), model: "llama-3.3-70b-versatile",
+      systemPromptFile: "./jarvis.md", maxTokens: 800, temperature: 0.4,
+      timeoutMs: 5_000, logger: silentLogger(), apiKey: async () => undefined,
+    });
+    expect(await noKey.available()).toBe(false);
+  });
+});
