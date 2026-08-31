@@ -18,7 +18,6 @@ import { OAUTH_TOKEN_VAR } from "./core/synthesis/claude-cli.ts";
 import { createSubscriptionRepo, type SubscriptionRepo } from "./infra/db/repositories/subscriptions.ts";
 import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
-import { createContactRepo, type ContactRepo } from "./infra/db/repositories/contacts.ts";
 import { createFetcher } from "./infra/http-client.ts";
 import { createLogger, type Logger } from "./infra/logger.ts";
 import { keychainSecrets, type SecretResolver } from "./infra/secrets.ts";
@@ -41,7 +40,6 @@ export interface App {
   actions: ReturnType<typeof createActionRepo>;
   subscriptions: SubscriptionRepo;
   health: HealthRepo;
-  contacts: ContactRepo;
   runner: RunnerDeps;
   modules: readonly typeof ALL_MODULES[number][];
   close(): void;
@@ -73,7 +71,6 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
 
   const synthesizers = buildSynthesisChain(env, logger, secrets);
   const health = createHealthRepo(db);
-  const contacts = createContactRepo(db);
   const actions = createActionRepo(db);
 
   const proposals = createProposalService({
@@ -107,7 +104,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   });
 
   return {
-    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, contacts, runner,
+    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, runner,
     actions,
     subscriptions: createSubscriptionRepo(db),
     modules: ALL_MODULES,

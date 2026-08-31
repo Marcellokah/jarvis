@@ -97,23 +97,6 @@ export const config = {
   },
 
   schedule: {
-    /**
-     * Ten minutes before the 07:30 notification. Synthesis takes 10-40s, which
-     * Apple Shortcuts will not wait for, so the brief must already exist.
-     */
-    preWarmCron: "20 7 * * *",
-    /**
-     * Half an hour after the Shortcut is due. Late enough that a slow phone or
-     * a late wake-up is not reported as a failure, early enough that you learn
-     * about it while you can still act on it.
-     */
-    contactCheckCron: "0 8 * * *",
-    /**
-     * Warn when the phone did not call the API at all on a given day. Turn off
-     * while the Shortcut is still being built, or it will report every morning
-     * that the automation you have not written yet did not run.
-     */
-    contactAlert: true,
     /** After this, a previously reported item may resurface. */
     seenRetentionDays: 21,
   },

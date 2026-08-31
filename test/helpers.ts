@@ -71,7 +71,6 @@ import { createCalendarWriteRepo } from "../src/infra/db/repositories/calendar-w
 import { createProposalService, type ProposalService } from "../src/core/proposals.ts";
 import { createBriefRepo } from "../src/infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "../src/infra/db/repositories/health.ts";
-import { createContactRepo, type ContactRepo } from "../src/infra/db/repositories/contacts.ts";
 import { buildServer } from "../src/delivery/http/server.ts";
 import type { JarvisModule } from "../src/core/module.ts";
 import type { FastifyInstance } from "fastify";
@@ -82,7 +81,6 @@ export interface TestApp {
   proposals: ProposalService;
   health: HealthRepo;
   server: FastifyInstance;
-  contacts: ContactRepo;
   runner: RunnerDeps;
   modules: readonly JarvisModule[];
   setNow(iso: string): void;
@@ -135,15 +133,14 @@ export async function buildTestApp(options: {
   });
 
   const health = createHealthRepo(db);
-  const contacts = createContactRepo(db);
   const server = await buildServer({
-    token: TEST_TOKEN, briefs, proposals, health, contacts, modules: options.modules,
+    token: TEST_TOKEN, briefs, proposals, health, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
   });
 
   let closed = false;
   return {
-    db, briefs, proposals, health, server, contacts, runner,
+    db, briefs, proposals, health, server, runner,
     modules: options.modules,
     setNow: (iso) => { current = new Date(iso); },
     // Idempotent: tests close explicitly and afterEach closes again.
