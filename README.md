@@ -38,7 +38,7 @@ npm run brief                      # brief a stdout-ra
 npm run brief -- --format=md       # markdown
 npm run brief -- --at=2026-09-04T06:20:00+02:00   # adott időpontra
 npm run smoke                      # minden hitelesítés, titkok kiírása nélkül
-npm test                           # 191 teszt, hálózat nélkül
+npm test                           # a teljes csomag, hálózat nélkül
 npm run typecheck
 npm run import-health -- ~/Downloads/export.zip   # Apple Health export beolvasása
 ```
