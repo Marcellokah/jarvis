@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { groqComplete, GROQ_CHAT_URL } from "../../src/infra/groq.ts";
+import { groqSynthesizer } from "../../src/core/synthesis/groq.ts";
+import { templateSynthesizer } from "../../src/core/synthesis/template.ts";
+import { synthesizeWithFallback, type BriefContext } from "../../src/core/synthesis/synthesizer.ts";
+import { silentLogger } from "../../src/infra/logger.ts";
 import type { Fetcher } from "../../src/infra/http-client.ts";
 
 const signal = new AbortController().signal;
@@ -74,5 +78,91 @@ describe("groqComplete", () => {
 
     expect(seen.url).not.toContain("gsk-test");
     expect(String(seen.init?.body)).not.toContain("gsk-test");
+  });
+});
+
+const ctx: BriefContext = {
+  date: "2026-08-31",
+  dateLabel: "2026. augusztus 31., hétfő",
+  time: "06:20",
+  outcomes: [{
+    name: "HealthAndMealPrep", title: "🥦 Egészség & Meal Prep",
+    priority: "critical", status: "ok",
+    result: { data: { proteinTargetG: 115 }, actions: [], priority: "critical" },
+    plain: "Fallback szöveg.",
+    actions: [{ id: "a1", kind: "checkbox", text: "Vedd ki a csirkét" }],
+    durationMs: 3,
+  }],
+};
+
+function synth(answer: unknown, key: string | undefined = "gsk-test") {
+  return groqSynthesizer({
+    fetcher: stub(answer),
+    model: "llama-3.3-70b-versatile",
+    systemPromptFile: "./jarvis.md",
+    maxTokens: 1500,
+    temperature: 0.3,
+    timeoutMs: 5_000,
+    logger: silentLogger(),
+    apiKey: async () => key,
+  });
+}
+
+describe("groqSynthesizer", () => {
+  it("is unavailable without a key, so the chain skips it cheaply", async () => {
+    // Passing `undefined` here would silently re-trigger `synth`'s own default
+    // parameter ("gsk-test"), defeating the point of this test — JavaScript's
+    // default-parameter substitution fires on an explicit `undefined` too, not
+    // just on an omitted argument. An empty string is falsy but not `undefined`,
+    // so it exercises the "no usable key" path the test name describes.
+    expect(await synth(ok, "").available()).toBe(false);
+  });
+
+  it("is available with one", async () => {
+    expect(await synth(ok).available()).toBe(true);
+  });
+
+  it("returns the brief", async () => {
+    const out = await synth(ok).synthesize(ctx, signal);
+    expect(out).toBe("# nap\n\n## A\n\nvalami");
+  });
+
+  it("sends jarvis.md as the system message and the payload as the user message", async () => {
+    const seen: { url?: string; init?: RequestInit } = {};
+    await groqSynthesizer({
+      fetcher: stub(ok, seen), model: "llama-3.3-70b-versatile",
+      systemPromptFile: "./jarvis.md", maxTokens: 1500, temperature: 0.3,
+      timeoutMs: 5_000, logger: silentLogger(), apiKey: async () => "gsk-test",
+    }).synthesize(ctx, signal);
+
+    const body = JSON.parse(String(seen.init?.body)) as { messages: { content: string }[] };
+    expect(body.messages[0]!.content).toContain("OPERATIONAL CONTRACT");
+    expect(body.messages[1]!.content).toContain("🥦 Egészség & Meal Prep");
+  });
+
+  it("falls back to the template when the model breaks the contract", async () => {
+    const prose = { choices: [{ message: { content: "Megkeresem a fájlt." }, finish_reason: "stop" }] };
+    const out = await synthesizeWithFallback(
+      [synth(prose), templateSynthesizer()], ctx, silentLogger(), signal,
+    );
+    expect(out.synthesizer).toBe("template");
+    expect(out.demoted[0]!.reason).toMatch(/did not start with/i);
+  });
+
+  it("falls back to the template on a rate limit", async () => {
+    const out = await synthesizeWithFallback(
+      [synth(new Error("HTTP 429 Too Many Requests")), templateSynthesizer()],
+      ctx, silentLogger(), signal,
+    );
+    expect(out.synthesizer).toBe("template");
+    expect(out.demoted[0]!.reason).toContain("429");
+  });
+
+  it("prefers Groq when it works", async () => {
+    const out = await synthesizeWithFallback(
+      [synth(ok), templateSynthesizer()], ctx, silentLogger(), signal,
+    );
+    expect(out.synthesizer).toBe("groq");
+    expect(out.demoted).toEqual([]);
   });
 });
