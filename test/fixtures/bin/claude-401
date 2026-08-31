@@ -1,0 +1,6 @@
+#!/bin/sh
+# Set token, valid-looking probe — but the API rejects it. This is what a
+# truncated or revoked `claude setup-token` result actually looks like.
+if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth_token"}'; exit 0; fi
+cat > /dev/null
+printf '{"is_error":true,"subtype":"success","result":"Failed to authenticate. API Error: 401 OAuth access token is invalid."}'

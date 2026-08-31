@@ -1,0 +1,12 @@
+# Figyelt játékok. Az ár MINDEN boltban nézve (Steam, GOG, Epic, Humble,
+# Fanatical…) a CheapShark API-n keresztül — nincs wishlist-scraping.
+#
+# target_usd: ha ez alá megy, akkor is szól, ha a kedvezmény kicsi.
+#             Hagyd üresen, ha csak a minDiscountPct érdekel.
+
+- { title: "Cyberpunk 2077", target_usd: 20 }
+- { title: "Elden Ring", target_usd: 25 }
+- { title: "The Witcher 3: Wild Hunt", target_usd: 8 }
+- { title: "Baldur's Gate 3", target_usd: 40 }
+- { title: "Red Dead Redemption 2", target_usd: 20 }
+- { title: "Hollow Knight: Silksong", target_usd: null }

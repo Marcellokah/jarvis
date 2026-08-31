@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
+cat > /dev/null
+sleep 30

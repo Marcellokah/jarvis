@@ -1,0 +1,31 @@
+# DevStandup források.  npm run seed nem kell hozzá — indításkor olvassa.
+
+# Ezeknek a repóknak a STABIL kiadásait figyeli (prerelease/canary kihagyva —
+# a next.js pl. 10-ből 8 canary-t ad vissza, az önmagában zaj lenne).
+repos:
+  - facebook/react
+  - vercel/next.js
+  - nodejs/node
+  - microsoft/TypeScript
+  - anthropics/claude-code
+  - anthropics/anthropic-sdk-typescript
+
+# Hány napra visszamenőleg számít újnak egy release.
+release_window_days: 3
+
+hacker_news:
+  min_points: 200
+  window_hours: 24
+  max_items: 3
+
+# Napi ClaudeCode / LLM tipp. Determinisztikusan forog a dátum alapján, hogy
+# csendes hírnapon is legyen valódi hozadéka a szekciónak.
+prompt_tips:
+  - "Hosszú agentic feladat előtt add meg a TELJES specifikációt egyszerre — a részletekben adagolt kontextus rontja a tervezés minőségét."
+  - "`effort: high` a legtöbb kódolási feladatra jobb ár/érték, mint a `max`. A `max`-ot tartsd arra, amikor a helyesség fontosabb a költségnél."
+  - "Prompt cache: a rendszerpromptban lévő időbélyeg vagy UUID minden kérésnél érvényteleníti a cache-t. Ellenőrizd a `cache_read_input_tokens` mezőt."
+  - "Ha egy subagentnek gépies munkát adsz, futtasd alacsonyabb effort-tal — a bőbeszédű tool-kimenet így nem kerül a fő beszélgetésbe."
+  - "Szigorú kimeneti szerződés (kötött szekciócímek, kötött teendő-prefix) megbízhatóbb, mint a „légy tömör” utasítás."
+  - "Adversarial verify: egy állítást cáfoltass meg 3 független ágenssel, és csak akkor fogadd el, ha egyik sem tudta megdönteni."
+  - "Ha a modell tool hívás helyett szövegbe írja a hívást, valószínűleg ki van kapcsolva a thinking. Kapcsold be, és inkább az effortot vedd lejjebb."
+  - "Írj teszteket a fixture-ökre, ne a hálózatra. Egy rögzített API válasz determinisztikussá teszi a modult."

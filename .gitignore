@@ -1,0 +1,10 @@
+node_modules/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+.env
+*.log
+.DS_Store
+
+# Machine-specific: absolute paths for one Mac. Install it, don't commit it.
+deploy/local.jarvis.agent.plist

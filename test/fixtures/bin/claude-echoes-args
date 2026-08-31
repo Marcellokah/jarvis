@@ -1,0 +1,9 @@
+#!/bin/sh
+# Echoes the arguments back inside a contract-shaped brief, so the synthesizer's
+# own output check does not reject the fixture itself.
+if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
+STDIN=$(cat)
+ARGS="$*"
+printf '{"is_error":false,"result":"# fixture\\n\\nARGS=%s|STDIN_HAS_JSON=%s"}' \
+  "$(echo "$ARGS" | tr -d '\n')" \
+  "$(echo "$STDIN" | grep -c 'HealthAndMealPrep')"

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Echoes argv with each argument bracketed, so an empty-string argument stays
+# visible — "--tools ''" and a missing "--tools" are otherwise indistinguishable.
+# Wrapped in a contract-shaped brief so the output check accepts the fixture.
+if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
+cat >/dev/null
+OUT=""
+for a in "$@"; do OUT="$OUT[$a]"; done
+printf '{"is_error":false,"result":"# fixture\\n\\n%s"}' "$OUT"

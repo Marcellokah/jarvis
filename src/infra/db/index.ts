@@ -1,0 +1,90 @@
+import { DatabaseSync } from "node:sqlite";
+import { readdirSync, readFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Logger } from "../logger.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(HERE, "migrations");
+
+/**
+ * Thin wrapper over node:sqlite. Modules depend on this rather than the raw
+ * handle, which keeps the sqlite API out of module code and makes stubbing easy.
+ */
+export interface Db {
+  get<T>(sql: string, ...params: unknown[]): T | undefined;
+  all<T>(sql: string, ...params: unknown[]): T[];
+  run(sql: string, ...params: unknown[]): void;
+  transaction<T>(fn: () => T): T;
+  close(): void;
+}
+
+export function openDb(path: string, logger: Logger): Db {
+  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+
+  const handle = new DatabaseSync(path);
+  handle.exec("PRAGMA journal_mode = WAL");
+  handle.exec("PRAGMA foreign_keys = ON");
+  handle.exec("PRAGMA busy_timeout = 5000");
+
+  const db: Db = {
+    get<T>(sql: string, ...params: unknown[]): T | undefined {
+      return handle.prepare(sql).get(...(params as never[])) as T | undefined;
+    },
+    all<T>(sql: string, ...params: unknown[]): T[] {
+      return handle.prepare(sql).all(...(params as never[])) as T[];
+    },
+    run(sql: string, ...params: unknown[]): void {
+      handle.prepare(sql).run(...(params as never[]));
+    },
+    transaction<T>(fn: () => T): T {
+      handle.exec("BEGIN");
+      try {
+        const out = fn();
+        handle.exec("COMMIT");
+        return out;
+      } catch (err) {
+        handle.exec("ROLLBACK");
+        throw err;
+      }
+    },
+    close() {
+      handle.close();
+    },
+  };
+
+  migrate(handle, logger);
+  return db;
+}
+
+function migrate(handle: DatabaseSync, logger: Logger): void {
+  handle.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      name       TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    )
+  `);
+
+  const applied = new Set(
+    (handle.prepare("SELECT name FROM _migrations").all() as { name: string }[]).map((r) => r.name),
+  );
+
+  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
+    handle.exec("BEGIN");
+    try {
+      handle.exec(sql);
+      handle
+        .prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)")
+        .run(file, new Date().toISOString());
+      handle.exec("COMMIT");
+      logger.info({ migration: file }, "migration applied");
+    } catch (err) {
+      handle.exec("ROLLBACK");
+      throw new Error(`Migration ${file} failed: ${String(err)}`);
+    }
+  }
+}

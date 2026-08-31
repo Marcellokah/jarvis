@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ "$1" = "auth" ]; then echo '{"loggedIn":false,"authMethod":"none"}'; exit 0; fi
+cat > /dev/null
+printf '{"is_error":true,"subtype":"success","result":"Not logged in · Please run /login"}'

@@ -1,0 +1,7 @@
+#!/bin/sh
+# The shape a tool-less model produces when it wants a tool anyway: prose
+# describing the call, instead of a tool_use block. Non-empty, so the "produced
+# empty output" guard lets it straight through.
+if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
+cat > /dev/null
+printf '{"is_error":false,"result":"Megkeresem a jarvis.md fajlt.\\n\\n**Tool: bash**\\n\\nParameters:\\n{\\"command\\":\\"find .\\"}"}'
