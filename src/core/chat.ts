@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { Logger } from "../infra/logger.ts";
 import type { Fetcher } from "../infra/http-client.ts";
 import { groqComplete } from "../infra/groq.ts";
+import { withTimeout } from "../infra/abort.ts";
 import { runClaude, claudeAvailable, isAuthFailure, markAuthFailed, ISOLATION_ARGS } from "./synthesis/claude-cli.ts";
 
 export interface ChatService {
@@ -121,23 +122,15 @@ export function groqChat(opts: GroqChatOptions): ChatService {
         "attól még válaszolj — de ne találj ki tényeket a fenti adatokon túl.",
       ].join("\n");
 
-      const controller = new AbortController();
-      const onAbort = () => controller.abort();
-      signal.addEventListener("abort", onAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-
-      try {
-        const answer = await groqComplete(opts.fetcher, {
+      const answer = await withTimeout(signal, opts.timeoutMs, (abortSignal) =>
+        groqComplete(opts.fetcher, {
           apiKey, model: opts.model, system, user,
           maxTokens: opts.maxTokens, temperature: opts.temperature,
-          signal: controller.signal,
-        });
-        opts.logger.debug({ chars: answer.length, model: opts.model }, "groq chat complete");
-        return answer;
-      } finally {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-      }
+          signal: abortSignal,
+        }),
+      );
+      opts.logger.debug({ chars: answer.length, model: opts.model }, "groq chat complete");
+      return answer;
     },
   };
 }

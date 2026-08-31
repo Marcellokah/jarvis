@@ -165,6 +165,25 @@ describe("groqSynthesizer", () => {
     expect(out.synthesizer).toBe("groq");
     expect(out.demoted).toEqual([]);
   });
+
+  it("fails fast on an already-aborted signal instead of waiting out the timeout", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const started = Date.now();
+
+    // timeoutMs is short so a regression (the aborted-check missing, falling
+    // back to "wait for the timer") shows up as a slow test instead of an
+    // assertion that merely reads wrong.
+    await expect(
+      groqSynthesizer({
+        fetcher: stub(ok), model: "llama-3.3-70b-versatile",
+        systemPromptFile: "./jarvis.md", maxTokens: 1500, temperature: 0.3,
+        timeoutMs: 20, logger: silentLogger(), apiKey: async () => "gsk-test",
+      }).synthesize(ctx, controller.signal),
+    ).rejects.toThrow();
+
+    expect(Date.now() - started).toBeLessThan(20);
+  });
 });
 
 import { groqChat } from "../../src/core/chat.ts";
@@ -215,5 +234,24 @@ describe("groqChat", () => {
       timeoutMs: 5_000, logger: silentLogger(), apiKey: async () => undefined,
     });
     expect(await noKey.available()).toBe(false);
+  });
+
+  it("fails fast on an already-aborted signal instead of waiting out the timeout", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const started = Date.now();
+
+    // timeoutMs is short so a regression (the aborted-check missing, falling
+    // back to "wait for the timer") shows up as a slow test instead of an
+    // assertion that merely reads wrong.
+    await expect(
+      groqChat({
+        fetcher: stub(answer), model: "llama-3.3-70b-versatile",
+        systemPromptFile: "./jarvis.md", maxTokens: 800, temperature: 0.4,
+        timeoutMs: 20, logger: silentLogger(), apiKey: async () => "gsk-test",
+      }).ask("mi ez?", "# nap", controller.signal),
+    ).rejects.toThrow();
+
+    expect(Date.now() - started).toBeLessThan(20);
   });
 });

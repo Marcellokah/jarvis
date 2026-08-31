@@ -3,6 +3,7 @@ import type { Synthesizer, BriefContext } from "./synthesizer.ts";
 import type { Fetcher } from "../../infra/http-client.ts";
 import type { Logger } from "../../infra/logger.ts";
 import { groqComplete } from "../../infra/groq.ts";
+import { withTimeout } from "../../infra/abort.ts";
 import { buildPrompt, assertContract } from "./prompt.ts";
 
 export interface GroqSynthOptions {
@@ -46,28 +47,20 @@ export function groqSynthesizer(opts: GroqSynthOptions): Synthesizer {
       // take effect on the next brief, not the next restart.
       const system = await readFile(opts.systemPromptFile, "utf8");
 
-      const controller = new AbortController();
-      const onAbort = () => controller.abort();
-      signal.addEventListener("abort", onAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-
-      try {
-        const markdown = await groqComplete(opts.fetcher, {
+      const markdown = await withTimeout(signal, opts.timeoutMs, (abortSignal) =>
+        groqComplete(opts.fetcher, {
           apiKey,
           model: opts.model,
           system,
           user: buildPrompt(ctx),
           maxTokens: opts.maxTokens,
           temperature: opts.temperature,
-          signal: controller.signal,
-        });
+          signal: abortSignal,
+        }),
+      );
 
-        opts.logger.debug({ chars: markdown.length, model: opts.model }, "groq synthesis complete");
-        return assertContract(markdown);
-      } finally {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-      }
+      opts.logger.debug({ chars: markdown.length, model: opts.model }, "groq synthesis complete");
+      return assertContract(markdown);
     },
   };
 }
