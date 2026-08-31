@@ -16,7 +16,22 @@ async function collect(path: string): Promise<ExportEntry[]> {
 describe("readExport", () => {
   it("reads a plain xml file, so tests never need a zip", async () => {
     const all = await collect(FIXTURE);
-    expect(all.length).toBe(13);
+    // 17 records, 2 workouts, and one record it could not read.
+    expect(all.length).toBe(20);
+    expect(all.filter((e) => e.kind === "record")).toHaveLength(17);
+    expect(all.filter((e) => e.kind === "workout")).toHaveLength(2);
+  });
+
+  /**
+   * A <Record> with no type or no startDate cannot be filed under a day, so it
+   * cannot be stored — but it used to vanish without a trace, which looks
+   * exactly like data that was never recorded. It is yielded as a counted
+   * casualty instead, and the import reports it.
+   */
+  it("reports a record it cannot use rather than dropping it silently", async () => {
+    const dropped = (await collect(FIXTURE)).filter((e) => e.kind === "dropped");
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]!.reason).toMatch(/startDate/);
   });
 
   it("strips the Apple identifier prefix from the type", async () => {
@@ -68,6 +83,56 @@ describe("readExport", () => {
 
   it("reports a missing file rather than yielding nothing", async () => {
     await expect(collect("./does-not-exist.xml")).rejects.toThrow(/does-not-exist/);
+  });
+
+  /**
+   * The owner's export writes minutes and kcal today. Nothing converts, because
+   * a duration read as hours instead of minutes, or kJ read as kcal, is a
+   * confident number that is simply wrong — and the export's units follow the
+   * phone's locale, so this can change without anything else changing.
+   */
+  describe("units it will not reinterpret", () => {
+    const dirs: string[] = [];
+
+    function xml(body: string): string {
+      const dir = mkdtempSync(join(tmpdir(), "health-units-"));
+      dirs.push(dir);
+      const path = join(dir, "export.xml");
+      writeFileSync(path, `<HealthData>\n${body}\n</HealthData>\n`);
+      return path;
+    }
+
+    afterEach(() => {
+      for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("drops a workout whose duration is not in minutes, and names the unit", async () => {
+      const all = await collect(xml(
+        '<Workout workoutActivityType="HKWorkoutActivityTypeWalking" duration="1.5"'
+        + ' durationUnit="h" sourceName="Watch" startDate="2026-03-01 17:00:00 +0100"'
+        + ' endDate="2026-03-01 18:30:00 +0100"/>',
+      ));
+
+      expect(all.filter((e) => e.kind === "workout")).toHaveLength(0);
+      expect(all.filter((e) => e.kind === "dropped")).toHaveLength(1);
+      expect((all[0] as { reason: string }).reason).toMatch(/h/);
+    });
+
+    it("keeps a workout whose energy is in kJ, but without the energy", async () => {
+      const all = await collect(xml(
+        '<Workout workoutActivityType="HKWorkoutActivityTypeWalking" duration="18.2"'
+        + ' durationUnit="min" sourceName="Watch" startDate="2026-03-01 17:00:00 +0100"'
+        + ' endDate="2026-03-01 17:18:12 +0100">\n'
+        + '  <WorkoutStatistics type="HKQuantityTypeIdentifierActiveEnergyBurned" sum="1000" unit="kJ"/>\n'
+        + '</Workout>',
+      ));
+
+      const workouts = all.filter((e) => e.kind === "workout");
+      expect(workouts).toHaveLength(1);
+      // 1000 kJ is 239 kcal. Storing 1000 would have been the worse outcome.
+      expect(workouts[0]!.energyKcal).toBeNull();
+      expect(all.filter((e) => e.kind === "dropped")).toHaveLength(1);
+    });
   });
 
   describe("zip failure modes", () => {

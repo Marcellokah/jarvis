@@ -113,6 +113,30 @@ if (!range) {
 
 console.log(`  ${days.length} nap · ${workouts.length} edzés · ${range.from} .. ${range.to}`);
 
+// Days where more than one source recorded the same thing: iPhone, Watch and
+// third-party apps all write raw samples over the same minutes, and the rollup
+// has to union or choose between them. The number stored on such a day is the
+// result of that decision rather than of a single measurement, so it is said
+// out loud here — this is where a later "why does that day look like that?"
+// gets answered.
+const contested = days.filter((d) => Object.keys(d.contested).length > 0);
+if (contested.length > 0) {
+  const marks = contested.flatMap((d) => Object.values(d.contested));
+  const unions = marks.filter((m) => m.resolution === "union").length;
+  const picks = marks.length - unions;
+  console.log(
+    `  Több forrás versengett ${contested.length} napon `
+    + `(${unions} idősáv egyesítve, ${picks} forrásválasztás):`,
+  );
+  for (const d of contested.slice(0, 3)) {
+    const detail = Object.entries(d.contested)
+      .map(([column, m]) => `${column}=${m.chosen ?? "egyesítve"} [${m.sources.join(", ")}]`)
+      .join(" · ");
+    console.log(`    ${d.date}  ${detail}`);
+  }
+  if (contested.length > 3) console.log(`    … és további ${contested.length - 3} nap`);
+}
+
 // One transaction for ~2,750 statements: without it each write would fsync on
 // its own and the import would take minutes instead of seconds.
 app.db.transaction(() => {

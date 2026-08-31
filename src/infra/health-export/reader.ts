@@ -26,7 +26,33 @@ export interface WorkoutEntry {
   source: string;
 }
 
-export type ExportEntry = HealthRecordEntry | WorkoutEntry;
+/**
+ * A piece of the export that was read but could not be trusted: a <Record>
+ * with no type or start, or a value in a unit this project does not store.
+ *
+ * Yielded rather than silently dropped. A silent drop is indistinguishable
+ * downstream from data that was never recorded, and the rollup's `skipped` map
+ * is what the import prints — so anything discarded here still gets counted
+ * and named. `reason` is a stable, human-readable key: it is what appears in
+ * that report.
+ */
+export interface DroppedEntry {
+  kind: "dropped";
+  reason: string;
+}
+
+export type ExportEntry = HealthRecordEntry | WorkoutEntry | DroppedEntry;
+
+/**
+ * Units this reader refuses to reinterpret.
+ *
+ * Apple writes `durationUnit` on every workout and a `unit` on every
+ * statistic, both following the phone's locale. Nothing here converts: a
+ * duration silently read as hours instead of minutes, or kJ read as kcal,
+ * produces a confident number that is simply wrong. Mismatches are reported.
+ */
+const WORKOUT_DURATION_UNIT = "min";
+const WORKOUT_ENERGY_UNIT = "kcal";
 
 /** Fixed location of the XML inside every Apple Health export archive. */
 const ZIP_MEMBER = "apple_health_export/export.xml";
@@ -103,7 +129,10 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
 
       if (t.startsWith("<Record ")) {
         const a = attrs(t);
-        if (!a.type || !a.startDate) continue;
+        if (!a.type || !a.startDate) {
+          yield { kind: "dropped", reason: "Record: hiányzó type vagy startDate" };
+          continue;
+        }
         yield {
           kind: "record",
           type: shortType(a.type),
@@ -118,7 +147,18 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
 
       if (t.startsWith("<Workout ")) {
         if (pending) yield pending;
+        pending = undefined;
         const a = attrs(t);
+        const durationUnit = a.durationUnit ?? "";
+        if (durationUnit !== WORKOUT_DURATION_UNIT) {
+          // `pending` stays undefined, so this workout's own statistics and
+          // closing tag fall through the handlers below without effect.
+          yield {
+            kind: "dropped",
+            reason: `Workout: nem várt időtartam-egység (${durationUnit || "hiányzik"})`,
+          };
+          continue;
+        }
         pending = {
           kind: "workout",
           type: shortType(a.workoutActivityType ?? ""),
@@ -136,7 +176,15 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
       if (pending && t.startsWith("<WorkoutStatistics ")) {
         const a = attrs(t);
         if (a.type?.endsWith("ActiveEnergyBurned") && a.sum) {
-          pending.energyKcal = Number(a.sum);
+          // A workout without its energy is still a workout worth storing, so
+          // only the energy is dropped here — but it is dropped, not rescaled.
+          if (a.unit === WORKOUT_ENERGY_UNIT) pending.energyKcal = Number(a.sum);
+          else {
+            yield {
+              kind: "dropped",
+              reason: `WorkoutStatistics: nem várt energia-egység (${a.unit ?? "hiányzik"})`,
+            };
+          }
         }
         continue;
       }

@@ -1,9 +1,31 @@
 import type { ExportEntry } from "./reader.ts";
 
+/**
+ * How a column's value was reconciled when several sources recorded it.
+ *
+ * Apple's export is raw: iPhone, Watch and third-party apps all write their own
+ * samples for the same minutes, and Health only de-duplicates for display. The
+ * rollup has to do it itself — and when it does, the number stored is the
+ * result of a decision, not a measurement. That is worth being able to see.
+ */
+export interface Provenance {
+  /** 'union': overlapping intervals merged. 'pick': one source's total kept. */
+  resolution: "union" | "pick";
+  /** Every source that recorded this column on this day, sorted. */
+  sources: string[];
+  /** For 'pick', the source whose total was kept. */
+  chosen?: string;
+}
+
 export interface DailyValues {
   /** YYYY-MM-DD, already local: the export carries the offset it was recorded in. */
   date: string;
   values: Record<string, number>;
+  /**
+   * Only the columns more than one source recorded — empty on an ordinary day.
+   * Present exactly when the value above came out of a de-duplication decision.
+   */
+  contested: Record<string, Provenance>;
 }
 
 export interface WorkoutRow {
@@ -31,22 +53,29 @@ export interface RollupResult {
  * for point measurements taken more than once (resting heart rate). Everything
  * absent from this map is skipped: handwashing events, headphone volume and
  * gait asymmetry are not what a morning assistant reasons about.
+ *
+ * `unit` is the unit we store the column in. Apple writes a unit on every
+ * quantity record and it follows the phone's locale and Health's display
+ * settings — kJ instead of kcal, mi instead of km. Nothing here converts: a
+ * silently rescaled number that still looks plausible is the worst thing this
+ * import can produce. A record whose unit is not ours is counted as skipped
+ * instead, so the import's own output names it.
  */
-const DAILY: Record<string, { column: string; agg: "sum" | "avg" }> = {
-  RestingHeartRate: { column: "rhr", agg: "avg" },
-  HeartRateVariabilitySDNN: { column: "hrv", agg: "avg" },
-  VO2Max: { column: "vo2max", agg: "avg" },
-  WalkingHeartRateAverage: { column: "walking_hr", agg: "avg" },
-  HeartRateRecoveryOneMinute: { column: "hr_recovery", agg: "avg" },
-  ActiveEnergyBurned: { column: "move_kcal", agg: "sum" },
-  BasalEnergyBurned: { column: "basal_kcal", agg: "sum" },
-  StepCount: { column: "steps", agg: "sum" },
-  AppleExerciseTime: { column: "exercise_min", agg: "sum" },
-  FlightsClimbed: { column: "flights", agg: "sum" },
-  DietaryEnergyConsumed: { column: "diet_kcal", agg: "sum" },
-  DietaryProtein: { column: "diet_protein_g", agg: "sum" },
-  DietaryCarbohydrates: { column: "diet_carbs_g", agg: "sum" },
-  DietaryFatTotal: { column: "diet_fat_g", agg: "sum" },
+const DAILY: Record<string, { column: string; agg: "sum" | "avg"; unit: string }> = {
+  RestingHeartRate: { column: "rhr", agg: "avg", unit: "count/min" },
+  HeartRateVariabilitySDNN: { column: "hrv", agg: "avg", unit: "ms" },
+  VO2Max: { column: "vo2max", agg: "avg", unit: "mL/min·kg" },
+  WalkingHeartRateAverage: { column: "walking_hr", agg: "avg", unit: "count/min" },
+  HeartRateRecoveryOneMinute: { column: "hr_recovery", agg: "avg", unit: "count/min" },
+  ActiveEnergyBurned: { column: "move_kcal", agg: "sum", unit: "kcal" },
+  BasalEnergyBurned: { column: "basal_kcal", agg: "sum", unit: "kcal" },
+  StepCount: { column: "steps", agg: "sum", unit: "count" },
+  AppleExerciseTime: { column: "exercise_min", agg: "sum", unit: "min" },
+  FlightsClimbed: { column: "flights", agg: "sum", unit: "count" },
+  DietaryEnergyConsumed: { column: "diet_kcal", agg: "sum", unit: "kcal" },
+  DietaryProtein: { column: "diet_protein_g", agg: "sum", unit: "g" },
+  DietaryCarbohydrates: { column: "diet_carbs_g", agg: "sum", unit: "g" },
+  DietaryFatTotal: { column: "diet_fat_g", agg: "sum", unit: "g" },
 };
 
 const STAGE: Record<string, string> = {
@@ -54,6 +83,12 @@ const STAGE: Record<string, string> = {
   HKCategoryValueSleepAnalysisAsleepREM: "rem_min",
   HKCategoryValueSleepAnalysisAsleepDeep: "deep_min",
 };
+
+/**
+ * Interval columns holding a count of separate intervals rather than minutes.
+ * One awakening recorded by two sources is still one awakening.
+ */
+const COUNT_COLUMNS: ReadonlySet<string> = new Set(["awakenings"]);
 
 /**
  * '2026-03-01 23:10:00 +0100' -> a local day and an instant.
@@ -69,28 +104,66 @@ function parseAppleDate(s: string): { day: string; ms: number } {
   return { day, ms: Date.parse(iso) };
 }
 
-const minutes = (fromMs: number, toMs: number) => Math.round((toMs - fromMs) / 60_000);
+interface Span { from: number; to: number; source: string }
+
+/** Overlapping and touching intervals collapsed into one, in start order. */
+function union(spans: Span[]): { from: number; to: number }[] {
+  const sorted = [...spans].sort((a, b) => a.from - b.from);
+  const merged: { from: number; to: number }[] = [];
+
+  for (const s of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && s.from <= last.to) last.to = Math.max(last.to, s.to);
+    else merged.push({ from: s.from, to: s.to });
+  }
+  return merged;
+}
+
+function nested<V>(
+  outer: Map<string, Map<string, V>>, day: string, column: string, make: () => V,
+): V {
+  let inner = outer.get(day);
+  if (!inner) { inner = new Map(); outer.set(day, inner); }
+  let value = inner.get(column);
+  if (value === undefined) { value = make(); inner.set(column, value); }
+  return value;
+}
 
 export async function rollup(entries: AsyncIterable<ExportEntry>): Promise<RollupResult> {
-  const sums = new Map<string, Record<string, number>>();
-  const counts = new Map<string, Record<string, number>>();
+  // Accumulating types stay separated by source, so one can be chosen at the
+  // end. Adding them together is what produced 81,272-step days and nineteen-
+  // hour nights: every source's raw samples cover the same real-world minutes.
+  const accum = new Map<string, Map<string, Map<string, { total: number; n: number }>>>();
+  // Point measurements, averaged across every source. Deliberately not
+  // de-duplicated: a mean of two sources' resting heart rates is still a
+  // resting heart rate. Only addition and interval-summing can manufacture a
+  // number that could not physically have happened, and that is the hazard
+  // the source handling here exists for.
+  const means = new Map<string, Map<string, { total: number; n: number }>>();
+  // Interval types, kept raw until the end and then unioned.
+  const spans = new Map<string, Map<string, Span[]>>();
+
   const workouts: WorkoutRow[] = [];
   const skipped: Record<string, number> = {};
   let from: string | undefined;
   let to: string | undefined;
 
-  const bump = (day: string, column: string, value: number) => {
-    const s = sums.get(day) ?? {};
-    const c = counts.get(day) ?? {};
-    s[column] = (s[column] ?? 0) + value;
-    c[column] = (c[column] ?? 0) + 1;
-    sums.set(day, s);
-    counts.set(day, c);
+  const drop = (key: string) => { skipped[key] = (skipped[key] ?? 0) + 1; };
+  const seen = (day: string) => {
     if (!from || day < from) from = day;
     if (!to || day > to) to = day;
   };
 
+  const addSpan = (day: string, column: string, span: Span) => {
+    nested(spans, day, column, () => [] as Span[]).push(span);
+    seen(day);
+  };
+
   for await (const e of entries) {
+    // Read but not trusted — counted here so the import reports it rather than
+    // letting it look like data that never existed.
+    if (e.kind === "dropped") { drop(e.reason); continue; }
+
     if (e.kind === "workout") {
       const started = parseAppleDate(e.startDate);
       workouts.push({
@@ -101,64 +174,113 @@ export async function rollup(entries: AsyncIterable<ExportEntry>): Promise<Rollu
         energyKcal: e.energyKcal,
         source: e.source,
       });
-      if (!from || started.day < from) from = started.day;
-      if (!to || started.day > to) to = started.day;
+      seen(started.day);
       continue;
     }
 
     if (e.type === "SleepAnalysis") {
       const start = parseAppleDate(e.startDate);
       const end = parseAppleDate(e.endDate);
+      if (!Number.isFinite(start.ms) || !Number.isFinite(end.ms) || end.ms < start.ms) {
+        drop("SleepAnalysis: értelmezhetetlen időtartam");
+        continue;
+      }
       // The day you woke up on, not the day you lay down.
       const day = end.day;
-      const mins = minutes(start.ms, end.ms);
+      const span: Span = { from: start.ms, to: end.ms, source: e.source };
 
       if (e.value === "HKCategoryValueSleepAnalysisInBed") {
-        bump(day, "in_bed_min", mins);
+        addSpan(day, "in_bed_min", span);
       } else if (e.value === "HKCategoryValueSleepAnalysisAwake") {
-        bump(day, "awakenings", 1);
+        addSpan(day, "awakenings", span);
       } else {
         // Core, REM, Deep and Unspecified all count as asleep; only the three
         // named stages also get their own column.
-        bump(day, "asleep_min", mins);
+        addSpan(day, "asleep_min", span);
         const stage = STAGE[e.value];
-        if (stage) bump(day, stage, mins);
+        if (stage) addSpan(day, stage, span);
       }
       continue;
     }
 
     const spec = DAILY[e.type];
-    if (!spec) {
-      skipped[e.type] = (skipped[e.type] ?? 0) + 1;
+    if (!spec) { drop(e.type); continue; }
+
+    if (e.unit !== spec.unit) {
+      drop(`${e.type}: nem várt egység (${e.unit ?? "hiányzik"})`);
       continue;
     }
 
     const value = Number(e.value);
-    if (!Number.isFinite(value)) {
-      skipped[e.type] = (skipped[e.type] ?? 0) + 1;
-      continue;
+    if (!Number.isFinite(value)) { drop(e.type); continue; }
+
+    const day = parseAppleDate(e.startDate).day;
+    if (spec.agg === "avg") {
+      const acc = nested(means, day, spec.column, () => ({ total: 0, n: 0 }));
+      acc.total += value;
+      acc.n += 1;
+    } else {
+      const bySource = nested(
+        accum, day, spec.column, () => new Map<string, { total: number; n: number }>(),
+      );
+      const acc = bySource.get(e.source) ?? { total: 0, n: 0 };
+      acc.total += value;
+      acc.n += 1;
+      bySource.set(e.source, acc);
     }
-    bump(parseAppleDate(e.startDate).day, spec.column, value);
+    seen(day);
   }
 
-  const days: DailyValues[] = [...sums.keys()].sort().map((date) => {
-    const s = sums.get(date)!;
-    const c = counts.get(date)!;
-    const values: Record<string, number> = {};
+  const dates = [...new Set([...accum.keys(), ...means.keys(), ...spans.keys()])].sort();
 
-    for (const [column, total] of Object.entries(s)) {
-      const spec = Object.values(DAILY).find((d) => d.column === column);
-      values[column] = spec?.agg === "avg"
-        ? Math.round((total / c[column]!) * 100) / 100
-        : total;
+  const days: DailyValues[] = dates.map((date) => {
+    const values: Record<string, number> = {};
+    const contested: Record<string, Provenance> = {};
+
+    for (const [column, acc] of means.get(date) ?? []) {
+      values[column] = Math.round((acc.total / acc.n) * 100) / 100;
+    }
+
+    for (const [column, bySource] of accum.get(date) ?? []) {
+      // One source per day per type. Ordering by total keeps the source that
+      // recorded the most of it that day: a phone left on the desk all morning
+      // has a real but partial count, and taking the larger of two partial
+      // views is the one rule that never invents movement that did not happen.
+      // Record count then name break ties, so the choice is deterministic.
+      const ranked = [...bySource.entries()].sort(
+        (a, b) => b[1].total - a[1].total || b[1].n - a[1].n || a[0].localeCompare(b[0]),
+      );
+      const [chosen, acc] = ranked[0]!;
+      values[column] = Math.round(acc.total * 1000) / 1000;
+      if (ranked.length > 1) {
+        contested[column] = {
+          resolution: "pick",
+          chosen,
+          sources: ranked.map(([source]) => source).sort(),
+        };
+      }
+    }
+
+    for (const [column, list] of spans.get(date) ?? []) {
+      // Two sources recording 23:00-07:00 is eight hours, not sixteen.
+      const merged = union(list);
+      values[column] = COUNT_COLUMNS.has(column)
+        ? merged.length
+        : Math.round(merged.reduce((total, m) => total + (m.to - m.from), 0) / 60_000);
+
+      const sources = [...new Set(list.map((s) => s.source))].sort();
+      if (sources.length > 1) contested[column] = { resolution: "union", sources };
     }
 
     // The existing brief reads sleep in hours; keep it derived rather than
     // stored twice from two sources.
     if (values.asleep_min !== undefined) {
       values.sleep_h = Math.round((values.asleep_min / 60) * 10) / 10;
+      // sleep_h is the column the brief actually reads and comments on, so it
+      // must carry the same "this came out of a decision" mark as its source.
+      if (contested.asleep_min) contested.sleep_h = contested.asleep_min;
     }
-    return { date, values };
+    return { date, values, contested };
   });
 
   return {

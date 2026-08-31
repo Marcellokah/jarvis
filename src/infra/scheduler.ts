@@ -41,8 +41,11 @@ export function startScheduler(opts: SchedulerOptions): Scheduler {
       opts.logger.warn({ err: String(err) }, "nightly cleanup failed");
     }
 
-    // Second recording point (the first is start-up, in main.ts): between the
-    // two, a month cannot pass unrecorded while the Mac is in regular use.
+    // Second recording point (the first is start-up, in main.ts). It is not a
+    // guarantee that no month goes unrecorded: croner does not replay a run
+    // missed while the machine was asleep, and on a laptop that sleeps at 04:00
+    // this leg may simply never fire. Start-up is the leg that actually holds —
+    // whenever the agent restarts, the month gets recorded.
     // Same shared implementation as main.ts calls, so the two cannot drift
     // the way they already had once (see core/subscription-snapshot.ts).
     // The already-captured `now` is reused rather than calling clock.now()

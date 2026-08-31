@@ -43,6 +43,16 @@ export interface HealthSnapshot {
 }
 
 export interface HealthRepo {
+  /**
+   * Writes what the phone posted, without erasing what it did not send.
+   *
+   * The route accepts an explicit `date`, and the import fills the same rows —
+   * so a post for a day the import already filled used to blank every column
+   * the Shortcut left out. COALESCE closes the other direction of the guard
+   * `fillGaps` provides. Nothing is lost by it: the route already separates
+   * "no sample" from "measured zero", so a null arriving here means the
+   * reading genuinely was not taken.
+   */
   upsert(snapshot: Omit<HealthSnapshot, "ingestedAt">, raw: unknown, now: Date): void;
   latest(onOrBefore: string): HealthSnapshot | undefined;
   forDate(date: string): HealthSnapshot | undefined;
@@ -119,10 +129,14 @@ export function createHealthRepo(db: Db): HealthRepo {
            (date, sleep_h, hrv, rhr, move_kcal, exercise_min, steps, raw_json, ingested_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date) DO UPDATE SET
-           sleep_h = excluded.sleep_h, hrv = excluded.hrv, rhr = excluded.rhr,
-           move_kcal = excluded.move_kcal, exercise_min = excluded.exercise_min,
-           steps = excluded.steps, raw_json = excluded.raw_json,
-           ingested_at = excluded.ingested_at`,
+           sleep_h      = COALESCE(excluded.sleep_h, health_snapshots.sleep_h),
+           hrv          = COALESCE(excluded.hrv, health_snapshots.hrv),
+           rhr          = COALESCE(excluded.rhr, health_snapshots.rhr),
+           move_kcal    = COALESCE(excluded.move_kcal, health_snapshots.move_kcal),
+           exercise_min = COALESCE(excluded.exercise_min, health_snapshots.exercise_min),
+           steps        = COALESCE(excluded.steps, health_snapshots.steps),
+           raw_json     = excluded.raw_json,
+           ingested_at  = excluded.ingested_at`,
         s.date, s.sleepH, s.hrv, s.rhr, s.moveKcal, s.exerciseMin, s.steps,
         JSON.stringify(raw), now.toISOString(),
       );

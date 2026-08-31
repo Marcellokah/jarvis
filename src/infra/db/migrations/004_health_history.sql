@@ -6,8 +6,12 @@
 -- actually reads.
 --
 -- One row per day whatever the source. The iOS Shortcut writes today's
--- readings; the import fills gaps in any day. They never compete, because the
--- import only ever writes a column that is NULL.
+-- readings; the import fills gaps in any day. They never compete, but that
+-- takes a guard in both directions: the import only ever writes a column that
+-- is NULL (fillGaps' COALESCE), and a phone post only ever writes the columns
+-- it actually carries (upsert's COALESCE). Either half alone loses data — the
+-- route accepts an explicit date, so without the second half a post could
+-- blank a day the import had already filled.
 
 ALTER TABLE health_snapshots ADD COLUMN asleep_min     REAL;
 ALTER TABLE health_snapshots ADD COLUMN in_bed_min     REAL;
