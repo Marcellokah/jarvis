@@ -18,6 +18,7 @@ import { groqChat, type ChatService } from "./core/chat.ts";
 import { OAUTH_TOKEN_VAR } from "./core/synthesis/claude-cli.ts";
 import { GROQ_KEY_VAR } from "./infra/groq.ts";
 import { createSubscriptionRepo, type SubscriptionRepo } from "./infra/db/repositories/subscriptions.ts";
+import { createSubscriptionMonthRepo, type SubscriptionMonthRepo } from "./infra/db/repositories/subscription-months.ts";
 import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
 import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
@@ -27,7 +28,7 @@ import { keychainSecrets, type SecretResolver } from "./infra/secrets.ts";
 import { caldavCalendar, ICLOUD_CALDAV_URL } from "./infra/calendar/caldav.ts";
 import { CalendarNotConfiguredError, type CalendarService } from "./infra/calendar/service.ts";
 import { systemClock, type Clock } from "./infra/clock.ts";
-import { TZ } from "./shared/dates.ts";
+import { TZ, isoDate } from "./shared/dates.ts";
 import { fromRoot } from "./shared/paths.ts";
 
 export interface App {
@@ -42,6 +43,7 @@ export interface App {
   chat: ChatService;
   actions: ReturnType<typeof createActionRepo>;
   subscriptions: SubscriptionRepo;
+  subscriptionMonths: SubscriptionMonthRepo;
   health: HealthRepo;
   workouts: WorkoutRepo;
   runner: RunnerDeps;
@@ -115,9 +117,23 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     env, db, logger, clock, briefs, synthesizers, proposals, chat, health, workouts, runner,
     actions,
     subscriptions: createSubscriptionRepo(db),
+    subscriptionMonths: createSubscriptionMonthRepo(db),
     modules: ALL_MODULES,
     close: () => db.close(),
   };
+}
+
+/** The current month's subscription state, as it stands right now. */
+export function recordSubscriptionMonth(app: Pick<App, "subscriptions" | "subscriptionMonths" | "clock">): void {
+  const now = app.clock.now();
+  const month = isoDate(now, TZ).slice(0, 7);
+  app.subscriptionMonths.record(
+    month,
+    app.subscriptions.listAll().map((s) => ({
+      name: s.name, amountHuf: s.amountHuf, cycle: s.cycle, active: s.active,
+    })),
+    now,
+  );
 }
 
 /**

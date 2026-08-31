@@ -19,6 +19,8 @@ export type SubscriptionSeed = Omit<Subscription, "id" | "active"> & { active?: 
 
 export interface SubscriptionRepo {
   listActive(): Subscription[];
+  /** Every row, active or not — needed wherever a cancellation must stay visible. */
+  listAll(): Subscription[];
   replaceAll(subs: SubscriptionSeed[]): void;
   markUsed(nameFragment: string, at: Date): Subscription | undefined;
   count(): number;
@@ -40,6 +42,10 @@ export function createSubscriptionRepo(db: Db): SubscriptionRepo {
   return {
     listActive() {
       return db.all<Row>("SELECT * FROM subscriptions WHERE active = 1 ORDER BY name").map(toSub);
+    },
+
+    listAll() {
+      return db.all<Row>("SELECT * FROM subscriptions ORDER BY name").map(toSub);
     },
 
     replaceAll(subs) {

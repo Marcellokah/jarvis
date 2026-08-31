@@ -1,4 +1,4 @@
-import { createApp } from "./app.ts";
+import { createApp, recordSubscriptionMonth } from "./app.ts";
 import { requireApiToken } from "./env.ts";
 import { buildServer } from "./delivery/http/server.ts";
 import { buildBot } from "./delivery/telegram/bot.ts";
@@ -137,6 +137,10 @@ const onSignal = (signal: string, code: number) => () => {
 
 process.on("SIGINT", onSignal("SIGINT", 130));
 process.on("SIGTERM", onSignal("SIGTERM", 143));
+
+// Recorded at start-up and again in the nightly sweep. Neither is in the request
+// path, and between them a month cannot pass unrecorded while the Mac is used.
+recordSubscriptionMonth(app);
 
 try {
   await server.listen({ host: app.env.JARVIS_HOST, port: app.env.JARVIS_PORT });
