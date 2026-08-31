@@ -5,7 +5,7 @@ import type { Logger } from "./logger.ts";
 import { createSeenStore } from "./db/repositories/seen.ts";
 import { createSubscriptionRepo } from "./db/repositories/subscriptions.ts";
 import { createSubscriptionMonthRepo } from "./db/repositories/subscription-months.ts";
-import { isoDate } from "../shared/dates.ts";
+import { recordSubscriptionMonth } from "../core/subscription-snapshot.ts";
 
 export interface SchedulerOptions {
   db: Db;
@@ -43,11 +43,16 @@ export function startScheduler(opts: SchedulerOptions): Scheduler {
 
     // Second recording point (the first is start-up, in main.ts): between the
     // two, a month cannot pass unrecorded while the Mac is in regular use.
+    // Same shared implementation as main.ts calls, so the two cannot drift
+    // the way they already had once (see core/subscription-snapshot.ts).
+    // The already-captured `now` is reused rather than calling clock.now()
+    // again, so this snapshot's recorded_at matches the cleanup run above it.
     try {
-      const month = isoDate(now).slice(0, 7);
-      const subs = createSubscriptionRepo(opts.db).listAll()
-        .map((s) => ({ name: s.name, amountHuf: s.amountHuf, cycle: s.cycle, active: s.active }));
-      createSubscriptionMonthRepo(opts.db).record(month, subs, now);
+      recordSubscriptionMonth({
+        subscriptions: createSubscriptionRepo(opts.db),
+        subscriptionMonths: createSubscriptionMonthRepo(opts.db),
+        clock: { now: () => now },
+      });
     } catch (err) {
       opts.logger.warn({ err: String(err) }, "nightly subscription snapshot failed");
     }

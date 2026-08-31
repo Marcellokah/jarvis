@@ -138,9 +138,18 @@ const onSignal = (signal: string, code: number) => () => {
 process.on("SIGINT", onSignal("SIGINT", 130));
 process.on("SIGTERM", onSignal("SIGTERM", 143));
 
-// Recorded at start-up and again in the nightly sweep. Neither is in the request
-// path, and between them a month cannot pass unrecorded while the Mac is used.
-recordSubscriptionMonth(app);
+// Recorded at start-up and again in the nightly sweep, so between the two a
+// month cannot pass unrecorded while the Mac is in regular use. Guarded like
+// every other start-up step here: a transient DB error must not become an
+// unhandled exception that exits non-zero before the server ever binds —
+// under launchd's KeepAlive/SuccessfulExit=false that turns one bad snapshot
+// into a restart loop. A missed snapshot is a gap the nightly sweep can still
+// fill; a crash loop takes the whole assistant down.
+try {
+  recordSubscriptionMonth(app);
+} catch (err) {
+  app.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "start-up subscription snapshot failed");
+}
 
 try {
   await server.listen({ host: app.env.JARVIS_HOST, port: app.env.JARVIS_PORT });
