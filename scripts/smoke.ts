@@ -8,6 +8,7 @@
 import { config } from "../config/config.ts";
 import { createApp } from "../src/app.ts";
 import { requireApiToken, API_TOKEN_VAR } from "../src/env.ts";
+import { GROQ_KEY_VAR } from "../src/infra/groq.ts";
 import { createMealRepo } from "../src/infra/db/repositories/meals.ts";
 import { buildModuleContext } from "../src/core/runner.ts";
 
@@ -24,15 +25,20 @@ try {
   // ever be present because someone deliberately opted in.
   const chain = (app.env.SYNTHESIS_CHAIN ?? config.synthesis.chain.join(",")).split(",").map((s) => s.trim());
   const paid = chain.filter((s) => s === "api");
+  // Two different questions that used to be one check. The daily brief must
+  // never cost money — that stays a hard rule. Which provider serves it is a
+  // reporting matter.
   add(
-    "cost: no paid synthesizer",
+    "cost: brief never metered",
     paid.length === 0,
-    paid.length === 0 ? `chain = ${chain.join(" → ")}` : `PAID PATH ENABLED: ${paid.join(", ")}`,
+    paid.length === 0
+      ? `a lánc végig ingyenes: ${chain.join(" → ")}`
+      : `FIZETŐS SZINTETIZÁLÓ A LÁNCBAN: ${paid.join(", ")}`,
   );
   add(
     "cost: ANTHROPIC_API_KEY unset",
     !process.env.ANTHROPIC_API_KEY,
-    process.env.ANTHROPIC_API_KEY ? "set — metered API calls are possible" : "unset",
+    process.env.ANTHROPIC_API_KEY ? "beállítva — mért hívás lehetséges" : "unset",
   );
 
   // --- Local prerequisites --------------------------------------------------
@@ -51,6 +57,14 @@ try {
   } catch (err) {
     add(`config: ${API_TOKEN_VAR}`, false, err instanceof Error ? err.message.split("\n")[0]! : String(err));
   }
+  const groqKey = await app.runner.secrets.get(GROQ_KEY_VAR);
+  add(
+    `config: ${GROQ_KEY_VAR}`,
+    Boolean(groqKey),
+    groqKey
+      ? `${groqKey.length} karakter — a szintézis és a chat a Groq ingyenes tierjén megy`
+      : `hiányzik — a brief a template renderelővel készül. Tárold: ./scripts/set-secret.sh ${GROQ_KEY_VAR}`,
+  );
   add("db: reachable", true, app.env.JARVIS_DB);
 
   const meals = createMealRepo(app.db).count();
