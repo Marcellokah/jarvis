@@ -187,10 +187,27 @@ console.log(`✓ ${stored} nap az adatbázisban · ${totalWorkouts} edzés (ebb�
 console.log(`  ${((Date.now() - started) / 1000).toFixed(1)} másodperc`);
 
 const ignored = Object.entries(skipped).sort((a, b) => b[1] - a[1]);
-if (ignored.length > 0) {
+
+// A unit mismatch drops a whole column, and the affected types are low-volume
+// (VO2Max: a few hundred records in seven years). Ranked by count they would sit
+// far below the types we ignore on purpose and fall outside any top-N, so the
+// column would vanish in silence -- the one outcome the unit check exists to
+// prevent. These print in full, and separately.
+const unitProblems = ignored.filter(([type]) => type.includes("nem várt egység"));
+const onPurpose = ignored.filter(([type]) => !type.includes("nem várt egység"));
+
+if (unitProblems.length > 0) {
   console.log();
-  console.log(`Kihagyott típusok (${ignored.length}), a legnagyobbak:`);
-  for (const [type, n] of ignored.slice(0, 8)) {
+  console.log(`⚠ Nem várt mértékegység (${unitProblems.length}) — ezek az oszlopok üresen maradtak:`);
+  for (const [type, n] of unitProblems) {
+    console.log(`  ${type.padEnd(52)} ${n.toLocaleString("hu-HU")}`);
+  }
+}
+
+if (onPurpose.length > 0) {
+  console.log();
+  console.log(`Kihagyott típusok (${onPurpose.length}), a legnagyobbak:`);
+  for (const [type, n] of onPurpose.slice(0, 8)) {
     console.log(`  ${type.padEnd(34)} ${n.toLocaleString("hu-HU")}`);
   }
 }
