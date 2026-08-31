@@ -38,7 +38,12 @@ A `security add-generic-password` **sikeres esetben semmit nem ír ki**, és ür
 vagy félremásolt értékre is `exit 0`-t ad — a hiba csak később, 401-ként derülne
 ki. A `set-secret.sh` visszaolvassa és összeveti, amit írt.
 
-## 2. Ingyenes próza (opcionális, de érdemes)
+## 2. Claude Code szintézis (opcionális, alapból kikapcsolva)
+
+Az alapértelmezett lánc `groq → template` — ehhez a lépéshez nincs szükség.
+A `claude-code` szintetizáló kódja megmaradt, és env-változóval bárhonnan
+visszakapcsolható a láncba (pl. `SYNTHESIS_CHAIN=claude-code,groq,template`),
+ha egyszer megint hozzáférsz Claude Code előfizetéshez:
 
 ```bash
 claude setup-token                                  # kiír egy sk-ant-oat01-… tokent
@@ -49,9 +54,6 @@ A `setup-token` **nem menti el magától** a tokent — csak kiírja. A Jarvis a
 Kulcskarikából olvassa, és `CLAUDE_CODE_OAUTH_TOKEN` néven adja át a
 gyerekfolyamatnak; így a launchd alól induló szerver is be tud jelentkezni,
 pedig sem shell profilt, sem lemezre írt CLI-loginat nem örököl.
-
-Nélküle a brief a **template** renderelővel készül — teljes tartalommal, csak
-kevésbé folyékony szöveggel. Semmi nem törik el.
 
 > A `claude auth status` bármilyen nem-üres tokenre `loggedIn: true`-t mond, a
 > lejártra is. Egy visszavont token tehát átmegy az ellenőrzésen és csak a
@@ -84,8 +86,8 @@ launchctl bootout gui/$(id -u)/local.jarvis.agent
 ```
 
 A `kill`/SIGTERM szándékosan 143-mal lép ki, amire a launchd újraindítja: egy
-véletlen szignál nem veheti el a holnap reggeli briefinget. Csak a `bootout`
-állítja le tényleg.
+véletlen szignál nem veheti el a Telegram botot és a HTTP API-t. Csak a
+`bootout` állítja le tényleg.
 
 Két eset lép ki 0-val, mert ott az újraindítás sem segítene — ilyenkor a
 launchd békén hagyja:
@@ -96,21 +98,13 @@ launchd békén hagyja:
 > **LaunchAgent, nem LaunchDaemon.** A daemon root-ként fut, nem látja sem a
 > login Kulcskarikát, sem a Claude Code hitelesítést.
 
-## 5. Ébresztés 07:15-re
-
-A pre-warm 07:20-kor fut, de alvó gép nem futtat cront:
+Ha korábban beállítottad az ébresztést, vond vissza:
 
 ```bash
-sudo pmset repeat wakeorpoweron MTWRFSU 07:15:00
-pmset -g sched          # ellenőrzés
+sudo pmset repeat cancel
 ```
 
-> ⚠️ **Lecsukott fedél, akkumulátorról a gép így is alszik.** Ha ez a
-> jellemző eset, hagyd nyitva/tápon, vagy vidd át a rendszert egy mindig ébren
-> lévő gépre — a `node:sqlite` és a környezetből jövő konfiguráció miatt ez
-> átírás nélkül megy (pl. Oracle Cloud Always Free ARM instance).
-
-## 6. Elérés a telefonról — Tailscale
+## 5. Elérés a telefonról — Tailscale
 
 ```bash
 brew install --cask tailscale-app     # a cask neve `tailscale-app`, nem `tailscale`
@@ -142,7 +136,7 @@ Ez valódi HTTPS-t ad a stabil MagicDNS néven (`jarvis.<tailnet>.ts.net`),
 Az iPhone-on legyen fent a Tailscale app, **ugyanazzal a fiókkal** belépve
 (különben nem látja a gépet), always-on VPN profillal.
 
-## 7. Ellenőrzés
+## 6. Ellenőrzés
 
 ```bash
 npm run smoke
@@ -152,18 +146,21 @@ curl -sH "Authorization: Bearer $(security find-generic-password -s jarvis -a JA
 
 ## Napi működés
 
-| Idő | Mi történik |
+Nincs ütemezett brief. Te indítod, amikor kell:
+
+| Ahogy kéred | Mi történik |
 |---|---|
-| 07:15 | `pmset` felébreszti a gépet |
-| 07:20 | pre-warm: modulok lefutnak, brief elkészül és eltárolódik |
-| 07:30 | a Shortcut POST-olja az egészség-adatot, majd lekéri a briefet |
-| 08:00 | ellenőrzés: jelentkezett-e ma a telefon. Ha nem, Telegram-riasztás |
-| 04:00 | takarítás: lejárt cache és 21 napnál régebbi `seen_items` törlése |
+| `npm run brief` | A brief a terminálon, 15–25 másodperc alatt |
+| Telegram `/brief` | Ugyanaz, gombokkal |
+| `GET /api/morning-brief` | Ugyanaz, a telefonról vagy scriptből |
+
+| Idő | Mi történik magától |
+|---|---|
+| 04:00 | Takarítás: lejárt cache és 21 napnál régebbi `seen_items` |
+
+A launchd agent továbbra is fut, amíg a Mac be van kapcsolva — ettől elérhető a
+Telegram bot és a HTTP API. **Nem ébreszti fel a gépet, és nem gyárt magától
+briefet.**
 
 Minden HTTP kérés bekerül a `data/jarvis.log`-ba (`msg: "request"`), a `/healthz`
-kivételével — az `debug` szinten megy, hogy ne temesse maga alá azt az egy kérést,
-ami reggelente számít. Az utolsó hitelesített `/api/*` hívás a `client_contact`
-táblában is rögzül; erre épül a 08:00-s ellenőrzés.
-
-A riasztás kikapcsolása, amíg a Shortcut még nincs kész:
-`config/config.ts` → `schedule.contactAlert: false`.
+kivételével — az `debug` szinten megy, hogy ne temesse maga alá az API-hívásokat.

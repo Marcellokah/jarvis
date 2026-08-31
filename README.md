@@ -1,7 +1,7 @@
 # Jarvis
 
-Személyi asszisztens. Reggel 07:30-kor egy értesítés, ami felkészít a napra —
-és egy Telegram bot, amivel bármikor lehet beszélgetni róla.
+Személyi asszisztens. Brief kérésre — terminálból, Telegramból vagy a
+telefonról — és egy Telegram bot, amivel bármikor lehet beszélgetni róla.
 
 **Havi költség: $0.** Nincs VPS, nincs domain, nincs metered API.
 
@@ -28,7 +28,7 @@ npm run brief                             # a brief a terminálban
 npm start                                 # HTTP API + Telegram bot
 ```
 
-Teljes telepítés (launchd, ébresztés, Tailscale): [`deploy/README.md`](deploy/README.md)
+Teljes telepítés (launchd, Tailscale): [`deploy/README.md`](deploy/README.md)
 Az iPhone Shortcut: [`shortcuts/README.md`](shortcuts/README.md)
 
 ## Parancsok
@@ -38,23 +38,30 @@ npm run brief                      # brief a stdout-ra
 npm run brief -- --format=md       # markdown
 npm run brief -- --at=2026-09-04T06:20:00+02:00   # adott időpontra
 npm run smoke                      # minden hitelesítés, titkok kiírása nélkül
-npm test                           # 140 teszt, hálózat nélkül
+npm test                           # 192 teszt, hálózat nélkül
 npm run typecheck
 ```
 
 ## Hogyan marad ingyenes
 
-A szintézis a **Claude Code előfizetésen** fut (`claude -p`), nem metered API-n.
-Ha a CLI nincs bejelentkezve vagy elérhetetlen, a **template** renderelő veszi
-át — teljes tartalommal, LLM nélkül. Ezért a 07:30-as értesítés soha nem marad el.
+A szintézis és a chat a **Groq ingyenes tierjén** fut. A szolgáltatási szerződése
+tiltja, hogy a bemeneteden tanítson, hacsak kifejezetten nem engedélyezed — ezért
+esett rá a választás egy egészség- és pénzügyi adatokat hordozó rendszerben.
+
+Ha a Groq nem elérhető, rate limitel, vagy a szerződésen kívüli kimenetet ad, a
+**template** renderelő veszi át — teljes tartalommal, LLM nélkül.
 
 ```
-claude-code  →  template
-   ingyenes     ingyenes, sosem bukik el
+groq  →  template
+ ingyenes   ingyenes, sosem bukik el
 ```
 
 A fizetős `api` szintetizáló megvan, de **alapból ki van kapcsolva**, és a
 `npm run smoke` ellenőrzi, hogy az is marad.
+
+Az ingyenes tier 6 000 token/percet ad. Ezért megy a promptba előre kiszámolt,
+tömör tény a nyers történet helyett — és ez amúgy is pontosabb, mert egy modell
+nem számol megbízhatóan átlagot.
 
 Az összes adatforrás ingyenes és kulcs nélküli: GitHub Releases, HN Algolia,
 Open-Meteo, CheapShark, Telegram Bot API, iCloud CalDAV.
@@ -62,11 +69,15 @@ Open-Meteo, CheapShark, Telegram Bot API, iCloud CalDAV.
 ## Architektúra
 
 ```
-iPhone Shortcut ─┐
-                 ├─→ BriefService ─→ registry → runner → modulok
-Telegram ────────┘         │
-                           ├─→ szintézis: claude-code → template
-                           └─→ renderer: ios-text | telegram-html | json
+Bemenetek: npm run brief · Telegram · GET /api/morning-brief
+              │
+              ▼
+        BriefService ─→ registry → runner → modulok
+              │
+              ├─→ szintézis: groq → template
+              └─→ renderer: ios-text | telegram-html | json
+
+iPhone Shortcut ─→ POST /api/ingest/health   (Apple Health adat, külön útvonal)
 ```
 
 - **`src/core/`** — a motor. Nem tud a HTTP-ről és a Telegramról.
