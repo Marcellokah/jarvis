@@ -83,8 +83,8 @@ export function buildBot(opts: TelegramOptions): Bot {
 
     if (!(await opts.chat.available())) {
       await reply(ctx, {
-        text: "A beszélgetés a Claude Code előfizetést használja, ami most nincs bejelentkezve.\n"
-            + "Futtasd egyszer: <code>claude setup-token</code>\n\n"
+        text: "A beszélgetés a Groq ingyenes tierjét használja, aminek most nincs beállítva a kulcsa.\n"
+            + "Futtasd egyszer: <code>./scripts/set-secret.sh GROQ_API_KEY</code>\n\n"
             + "A <code>/brief</code> és a modulparancsok addig is működnek.",
       });
       return;

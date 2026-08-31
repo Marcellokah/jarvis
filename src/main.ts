@@ -25,7 +25,6 @@ const server = await buildServer({
   briefs: app.briefs,
   proposals: app.proposals,
   health: app.health,
-  contacts: app.contacts,
   modules: app.modules,
   runner: app.runner,
   clock: app.clock,
@@ -77,26 +76,11 @@ if (!telegramToken) {
   app.logger.warn({}, "TELEGRAM_BOT_TOKEN not set — the bot is inactive; the HTTP API still works");
 }
 
-// A morning that never arrived cannot be reported through the channel that
-// failed, so the alert goes out over Telegram. Without a bot it is only logged
-// — which is still better than the nothing there was before.
-const notify = bot && allowedChatId
-  ? async (text: string): Promise<void> => { await bot.api.sendMessage(allowedChatId, text); }
-  : undefined;
-
-// Started here rather than earlier so the contact alert has a way to reach you.
-// Only the lock holder pre-warms; two processes would double every fetch.
 const scheduler = startScheduler({
-  preWarmCron: config.schedule.preWarmCron,
-  briefs: app.briefs,
   db: app.db,
   clock: app.clock,
   logger: app.logger,
   seenRetentionDays: config.schedule.seenRetentionDays,
-  contacts: app.contacts,
-  contactCheckCron: config.schedule.contactCheckCron,
-  contactAlert: config.schedule.contactAlert,
-  notify,
 });
 
 let shuttingDown = false;
@@ -157,7 +141,7 @@ process.on("SIGTERM", onSignal("SIGTERM", 143));
 try {
   await server.listen({ host: app.env.JARVIS_HOST, port: app.env.JARVIS_PORT });
 } catch (err) {
-  // A raw EADDRINUSE stack trace in a log file explains nothing at 07:20.
+  // A raw EADDRINUSE stack trace in a log file explains nothing on its own.
   const code = (err as NodeJS.ErrnoException).code;
   if (code === "EADDRINUSE") {
     app.logger.error(

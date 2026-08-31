@@ -8,6 +8,7 @@
 import { config } from "../config/config.ts";
 import { createApp } from "../src/app.ts";
 import { requireApiToken, API_TOKEN_VAR } from "../src/env.ts";
+import { GROQ_KEY_VAR } from "../src/infra/groq.ts";
 import { createMealRepo } from "../src/infra/db/repositories/meals.ts";
 import { buildModuleContext } from "../src/core/runner.ts";
 
@@ -24,15 +25,20 @@ try {
   // ever be present because someone deliberately opted in.
   const chain = (app.env.SYNTHESIS_CHAIN ?? config.synthesis.chain.join(",")).split(",").map((s) => s.trim());
   const paid = chain.filter((s) => s === "api");
+  // Two different questions that used to be one check. The daily brief must
+  // never cost money — that stays a hard rule. Which provider serves it is a
+  // reporting matter.
   add(
-    "cost: no paid synthesizer",
+    "cost: brief never metered",
     paid.length === 0,
-    paid.length === 0 ? `chain = ${chain.join(" → ")}` : `PAID PATH ENABLED: ${paid.join(", ")}`,
+    paid.length === 0
+      ? `a lánc végig ingyenes: ${chain.join(" → ")}`
+      : `FIZETŐS SZINTETIZÁLÓ A LÁNCBAN: ${paid.join(", ")}`,
   );
   add(
     "cost: ANTHROPIC_API_KEY unset",
     !process.env.ANTHROPIC_API_KEY,
-    process.env.ANTHROPIC_API_KEY ? "set — metered API calls are possible" : "unset",
+    process.env.ANTHROPIC_API_KEY ? "beállítva — mért hívás lehetséges" : "unset",
   );
 
   // --- Local prerequisites --------------------------------------------------
@@ -51,6 +57,14 @@ try {
   } catch (err) {
     add(`config: ${API_TOKEN_VAR}`, false, err instanceof Error ? err.message.split("\n")[0]! : String(err));
   }
+  const groqKey = await app.runner.secrets.get(GROQ_KEY_VAR);
+  add(
+    `config: ${GROQ_KEY_VAR}`,
+    Boolean(groqKey),
+    groqKey
+      ? `${groqKey.length} karakter — a szintézis és a chat a Groq ingyenes tierjén megy`
+      : `hiányzik — a brief a template renderelővel készül. Tárold: ./scripts/set-secret.sh ${GROQ_KEY_VAR}`,
+  );
   add("db: reachable", true, app.env.JARVIS_DB);
 
   const meals = createMealRepo(app.db).count();
@@ -62,6 +76,13 @@ try {
   // instead of mysterious.
   // The app's own chain, not a rebuilt one: rebuilding it here without the
   // secret resolver is exactly what made a stored token look absent.
+  // Remediation is provider-specific — `claude setup-token` only helps the
+  // claude-code path, and telling a Groq user to run it just wastes their time.
+  const remedy: Record<string, string> = {
+    "claude-code": "run `claude setup-token`",
+    groq: `store the key: ./scripts/set-secret.sh ${GROQ_KEY_VAR}`,
+    api: "set ANTHROPIC_API_KEY (deliberately, this path costs money)",
+  };
   for (const synth of app.synthesizers) {
     const ok = await synth.available();
     add(
@@ -71,7 +92,7 @@ try {
         ? "always available (the guarantee)"
         : ok
           ? "available — briefs will use it"
-          : "unavailable — run `claude setup-token`, then re-run smoke. Falling back to template.",
+          : `unavailable — ${remedy[synth.name] ?? "check its configuration"}, then re-run smoke. Falling back to template.`,
     );
   }
 

@@ -98,7 +98,7 @@ export async function handleSynth(deps: TelegramDeps, now: Date): Promise<BotRep
       `<b>Generálva:</b> ${escapeHtml(brief.generatedAt)}`,
       `<b>Időtartam:</b> ${brief.durationMs} ms`,
       brief.synthesizer === "template"
-        ? "\n⚠️ A template fallback fut. Prózához: <code>claude setup-token</code>."
+        ? "\n⚠️ A template fallback fut. Prózához: <code>./scripts/set-secret.sh GROQ_API_KEY</code>."
         : "",
     ].filter(Boolean).join("\n"),
   };

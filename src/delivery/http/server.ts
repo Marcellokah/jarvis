@@ -6,7 +6,6 @@ import type { JarvisModule } from "../../core/module.ts";
 import type { RunnerDeps } from "../../core/runner.ts";
 import type { Clock } from "../../infra/clock.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
-import type { ContactRepo } from "../../infra/db/repositories/contacts.ts";
 import type { Logger } from "../../infra/logger.ts";
 import { bearerAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
@@ -19,7 +18,6 @@ export interface ServerDeps {
   briefs: BriefService;
   proposals: ProposalService;
   health: HealthRepo;
-  contacts: ContactRepo;
   modules: readonly JarvisModule[];
   runner: RunnerDeps;
   clock: Clock;
@@ -64,15 +62,6 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     // The liveness probe would bury the one request a day that matters.
     if (route === "/healthz") deps.logger.debug(entry, "request");
     else deps.logger.info(entry, "request");
-
-    if (route.startsWith("/api/") && reply.statusCode < 400) {
-      try {
-        deps.contacts.record(deps.clock.now(), route, reply.statusCode);
-      } catch (err) {
-        // Bookkeeping must never cost a served brief.
-        deps.logger.warn({ err: String(err) }, "could not record client contact");
-      }
-    }
   });
 
   app.setErrorHandler(async (error: Error & { statusCode?: number }, _request, reply) => {

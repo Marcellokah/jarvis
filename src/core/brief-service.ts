@@ -5,6 +5,7 @@ import { runModules, type RunnerDeps } from "./runner.ts";
 import { selectModules } from "./registry.ts";
 import type { BriefRepo, StoredBrief } from "../infra/db/repositories/briefs.ts";
 import type { ActionRepo, StoredAction } from "../infra/db/repositories/actions.ts";
+import type { HealthRepo } from "../infra/db/repositories/health.ts";
 import type { Logger } from "../infra/logger.ts";
 import { huLongDate, isoDate, isoTime, type Tz } from "../shared/dates.ts";
 
@@ -26,6 +27,7 @@ export interface BriefServiceOptions {
   runner: RunnerDeps;
   briefs: BriefRepo;
   actions: ActionRepo;
+  health: HealthRepo;
   logger: Logger;
   tz: Tz;
   freshnessMinutes: number;
@@ -153,7 +155,22 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
 
   function isFresh(stored: StoredBrief, now: Date): boolean {
     const ageMs = now.getTime() - Date.parse(stored.generatedAt);
-    return ageMs >= 0 && ageMs < opts.freshnessMinutes * 60_000;
+    if (ageMs < 0 || ageMs >= opts.freshnessMinutes * 60_000) return false;
+
+    // A health snapshot ingested at or after this brief was generated means
+    // the brief's readiness verdict cannot be proven to reflect it — stale
+    // regardless of how young the brief itself is. `>=`, not `>`: two writes
+    // landing in the same clock tick (a frozen test clock, or real-world
+    // timer coarseness) must not be read as "the brief must have won" — this
+    // project would rather over-regenerate than risk serving a verdict from
+    // data that arrived first. This is what lets ingest.ts stop deleting the
+    // row: there is no hole to fall into, so a request during regeneration
+    // still gets a genuinely-today (if outdated) answer instead of reaching
+    // across to another date.
+    const health = opts.health.forDate(stored.date);
+    if (health && Date.parse(health.ingestedAt) >= Date.parse(stored.generatedAt)) return false;
+
+    return true;
   }
 
   async function regenerate(now: Date): Promise<Brief> {
@@ -175,9 +192,10 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
     },
 
     /**
-     * The 07:30 path. Returns instantly when a fresh brief exists; otherwise
+     * The on-demand path: GET /api/morning-brief, `/brief` in Telegram, or
+     * `npm run brief`. Returns instantly when a fresh brief exists; otherwise
      * joins an in-flight generation, bounded, and falls back to the last good
-     * brief rather than making the Shortcut hang.
+     * brief rather than making the caller hang.
      */
     async get(now, options = {}) {
       const date = isoDate(now, opts.tz);
@@ -192,13 +210,13 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
         return fromStored(stored, now);
       }
 
-      // A generation already running means the cached brief is known to be out
-      // of date — that is exactly what the health POST signals. Serving the
-      // cache here is what made the Shortcut's POST-then-GET flow silently
-      // return yesterday's numbers.
+      // A generation already running means a fresher brief is on its way —
+      // e.g. this same call started it a moment ago below. Serving the stale
+      // cache here instead of joining it would hand the caller data that is
+      // already known to be superseded.
       if (pending) {
         try {
-          return await withTimeout(pending, waitMs);
+          return await raceDeadline(pending, waitMs);
         } catch (err) {
           if (stored) {
             opts.logger.warn(
@@ -217,15 +235,18 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
 
       const generation = regenerate(now);
       try {
-        return await withTimeout(generation, waitMs);
+        return await raceDeadline(generation, waitMs);
       } catch (err) {
-        const fallback = stored ?? opts.briefs.latest();
-        if (fallback) {
+        // Only `stored` — today's own row — is an acceptable fallback. Reaching
+        // for the most recent brief across all dates is exactly the bug this
+        // guards against: it would hand the caller another day's meal plan,
+        // subscriptions, and readiness verdict dressed up as today's.
+        if (stored) {
           opts.logger.warn(
-            { err: String(err), servedFrom: fallback.generatedAt },
+            { err: String(err), servedFrom: stored.generatedAt },
             "generation did not finish in time; serving last good brief",
           );
-          return fromStored(fallback, now);
+          return fromStored(stored, now);
         }
         throw err;
       }
@@ -233,7 +254,7 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
   };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function raceDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
     promise.then(

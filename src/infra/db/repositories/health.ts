@@ -8,10 +8,13 @@ export interface HealthSnapshot {
   moveKcal: number | null;
   exerciseMin: number | null;
   steps: number | null;
+  /** When this snapshot was written — used to tell a brief it was generated
+   *  from stale numbers, not just to know what the numbers were. */
+  ingestedAt: string;
 }
 
 export interface HealthRepo {
-  upsert(snapshot: HealthSnapshot, raw: unknown, now: Date): void;
+  upsert(snapshot: Omit<HealthSnapshot, "ingestedAt">, raw: unknown, now: Date): void;
   latest(onOrBefore: string): HealthSnapshot | undefined;
   forDate(date: string): HealthSnapshot | undefined;
   /** Most recent `days` snapshots strictly before `date`, for baselines. */
@@ -26,6 +29,7 @@ interface Row {
   move_kcal: number | null;
   exercise_min: number | null;
   steps: number | null;
+  ingested_at: string;
 }
 
 const toSnapshot = (r: Row): HealthSnapshot => ({
@@ -36,6 +40,7 @@ const toSnapshot = (r: Row): HealthSnapshot => ({
   moveKcal: r.move_kcal,
   exerciseMin: r.exercise_min,
   steps: r.steps,
+  ingestedAt: r.ingested_at,
 });
 
 export function createHealthRepo(db: Db): HealthRepo {

@@ -62,15 +62,10 @@ export const config = {
 
   synthesis: {
     /**
-     * First available synthesizer that succeeds wins. `template` must stay
-     * last — it is the only one that cannot fail, and dropping it would make
-     * the 07:30 notification conditional on a working subprocess.
-     *
-     * `claude-code` costs nothing: it runs on the Claude Code subscription.
-     * It needs a one-time `claude setup-token` before a launchd agent can use
-     * it; until then it reports itself unavailable and `template` takes over.
+     * `groq` first, `template` last. The template can never fail, which is what
+     * makes every other entry optional rather than load-bearing.
      */
-    chain: ["claude-code", "template"] as const,
+    chain: ["groq", "template"] as const,
     /** 'sonnet' | 'opus' | 'haiku', or a full model id. */
     model: "sonnet",
     /** Phase 3: let the CLI use its own WebSearch to fill gaps in feed data. */
@@ -79,6 +74,35 @@ export const config = {
     timeoutMs: 90_000,
   },
 
+  groq: {
+    /**
+     * Chosen by measurement, not by Groq's docs: npm run eval-models lists
+     * what the endpoint actually serves, then runs today's real brief through
+     * each candidate. openai/gpt-oss-120b, openai/gpt-oss-20b, and
+     * qwen/qwen3.6-27b all burned the 1,500-token budget on hidden reasoning
+     * before writing an answer and came back truncated; qwen/qwen3.8-27b was
+     * the only candidate that reliably held the format contract (verbatim
+     * `## ` titles, `- [ ] ` todos) — format fidelity decided it.
+     * Compare candidates with: npm run eval-models
+     */
+    model: "qwen/qwen3.8-27b",
+    chatModel: "qwen/qwen3.8-27b",
+    /**
+     * The free tier allows 6,000 tokens per minute across prompt and
+     * completion. jarvis.md plus the payload is roughly 4,200, so the answer
+     * has to stay well under two thousand.
+     */
+    maxTokens: 1_500,
+    chatMaxTokens: 800,
+    /** Low: the output contract is strict, and invention is the failure mode. */
+    temperature: 0.3,
+    timeoutMs: 60_000,
+  },
+
+  // Unused since app.ts switched Telegram follow-ups to groqChat (see
+  // config.groq.chatModel). Kept, along with the still-exported claudeChat in
+  // core/chat.ts, so reverting to the Claude Code subscription for chat is a
+  // one-line swap in app.ts rather than a rebuild of this block.
   chat: {
     /** Telegram follow-ups. Cheaper and faster than the brief model. */
     model: "haiku",
@@ -97,23 +121,6 @@ export const config = {
   },
 
   schedule: {
-    /**
-     * Ten minutes before the 07:30 notification. Synthesis takes 10-40s, which
-     * Apple Shortcuts will not wait for, so the brief must already exist.
-     */
-    preWarmCron: "20 7 * * *",
-    /**
-     * Half an hour after the Shortcut is due. Late enough that a slow phone or
-     * a late wake-up is not reported as a failure, early enough that you learn
-     * about it while you can still act on it.
-     */
-    contactCheckCron: "0 8 * * *",
-    /**
-     * Warn when the phone did not call the API at all on a given day. Turn off
-     * while the Shortcut is still being built, or it will report every morning
-     * that the automation you have not written yet did not run.
-     */
-    contactAlert: true,
     /** After this, a previously reported item may resurface. */
     seenRetentionDays: 21,
   },
