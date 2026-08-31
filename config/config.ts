@@ -76,11 +76,17 @@ export const config = {
 
   groq: {
     /**
-     * Production model ids, verified against GET /openai/v1/models.
+     * Chosen by measurement, not by Groq's docs: npm run eval-models lists
+     * what the endpoint actually serves, then runs today's real brief through
+     * each candidate. openai/gpt-oss-120b, openai/gpt-oss-20b, and
+     * qwen/qwen3.6-27b all burned the 1,500-token budget on hidden reasoning
+     * before writing an answer and came back truncated; qwen/qwen3.8-27b was
+     * the only candidate that reliably held the format contract (verbatim
+     * `## ` titles, `- [ ] ` todos) — format fidelity decided it.
      * Compare candidates with: npm run eval-models
      */
-    model: "llama-3.3-70b-versatile",
-    chatModel: "llama-3.3-70b-versatile",
+    model: "qwen/qwen3.8-27b",
+    chatModel: "qwen/qwen3.8-27b",
     /**
      * The free tier allows 6,000 tokens per minute across prompt and
      * completion. jarvis.md plus the payload is roughly 4,200, so the answer
