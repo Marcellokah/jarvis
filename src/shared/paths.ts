@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
  *
  * launchd starts agents with an unpredictable working directory, so anything
  * cwd-relative — the database, jarvis.md, the YAML configs — silently resolves
- * somewhere else at 07:20 and the brief comes back empty.
+ * somewhere else and the brief comes back empty.
  */
 export const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 

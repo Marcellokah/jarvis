@@ -19,14 +19,14 @@ async function boot() {
 }
 
 /**
- * The Shortcut's exact sequence: POST health, then GET the brief.
+ * A health snapshot POST followed by a GET for the brief — whenever the
+ * Shortcut, or anything else, happens to do that.
  *
- * This is the flow the whole 07:30 design exists to serve, and it is easy to
- * break invisibly — a brief generated an hour ago is still "fresh" by the
- * cache's own rules, so the answer looks perfectly valid while silently
- * predating the data that just arrived.
+ * It is easy to break invisibly — a brief generated an hour ago is still
+ * "fresh" by the cache's own rules, so the answer looks perfectly valid while
+ * silently predating the data that just arrived.
  */
-describe("the Shortcut's POST-then-GET flow", () => {
+describe("POST-then-GET reflects new data", () => {
   it("reflects health data that arrives after a brief was already cached", async () => {
     await boot();
 

@@ -143,7 +143,7 @@ function buildCalendar(secrets: SecretResolver, clock: Clock, logger: Logger): C
 
 /**
  * `template` must always be last: it is the only synthesizer that cannot fail,
- * and dropping it would make the 07:30 notification conditional on a network.
+ * and dropping it would make the brief conditional on a network.
  */
 export function buildSynthesisChain(
   env: Env, logger: Logger, secrets?: SecretResolver,

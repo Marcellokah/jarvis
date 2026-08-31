@@ -2,9 +2,9 @@ import type { Db } from "../index.ts";
 import type { Logger } from "../../logger.ts";
 
 /**
- * Per-module response cache, so the 07:20 pre-warm and an on-demand `/dev`
- * five minutes later share one fetch — and so a brief regenerated after a
- * health snapshot arrives does not re-hit every upstream API.
+ * Per-module response cache, so a brief generation and an on-demand `/dev`
+ * moments later share one fetch — and so a brief rebuilt after a health
+ * snapshot arrives does not re-hit every upstream API.
  */
 export interface ModuleCache {
   /** Returns the cached value, or computes and stores it. */

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Synthesizer, BriefContext } from "./synthesizer.ts";
 import type { Logger } from "../../infra/logger.ts";
+import { buildPrompt, assertContract } from "./prompt.ts";
 
 export interface ApiSynthesizerOptions {
   /** Path to jarvis.md — the persona and the output contract. */
@@ -86,32 +87,9 @@ export function apiSynthesizer(opts: ApiSynthesizerOptions): Synthesizer {
         "api synthesis complete (THIS COSTS MONEY)",
       );
 
-      return text;
+      return assertContract(text);
     },
   };
-}
-
-function buildPrompt(ctx: BriefContext): string {
-  return [
-    "Az alábbi JSON a mai modulok nyers adata. Írd meg belőle a reggeli briefinget",
-    "PONTOSAN az OPERATIONAL CONTRACT szerint (lásd a rendszerpromptot).",
-    "",
-    "- A `title` mezőket szó szerint használd `## ` szekciócímként.",
-    "- Minden `actions` elemből legyen egy `- [ ] ` sor a szekciója végén.",
-    "- Csak a megadott adatra támaszkodj; ne találj ki tényeket.",
-    "- Ne írj bevezetőt és lezárást.",
-    "",
-    JSON.stringify({
-      date: ctx.date,
-      dateLabel: ctx.dateLabel,
-      sections: ctx.outcomes.filter((o) => o.status !== "empty").map((o) => ({
-        module: o.name, title: o.title, priority: o.priority, status: o.status,
-        facts: o.result?.data ?? null, degraded: o.result?.degraded ?? null,
-        actions: o.actions.map((a) => ({ text: a.text, kind: a.kind })),
-        fallbackText: o.plain,
-      })),
-    }, null, 2),
-  ].join("\n");
 }
 
 /** Claude Opus 5 list pricing, for the log line only. */

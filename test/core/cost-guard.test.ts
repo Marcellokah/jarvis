@@ -17,20 +17,10 @@ afterEach(() => {
  * stray config edit turning the morning brief into a metered API call.
  */
 describe("cost guards", () => {
-  it("uses no paid synthesizer by default", () => {
+  it("uses groq before template by default, with no paid synthesizer", () => {
     const chain = buildSynthesisChain(loadEnv(base), silentLogger());
     expect(chain.map((s) => s.name)).toEqual(["groq", "template"]);
     expect(chain.map((s) => s.name)).not.toContain("api");
-  });
-
-  it("puts groq in front of the template by default", () => {
-    const chain = buildSynthesisChain(loadEnv(base), silentLogger());
-    expect(chain.map((s) => s.name)).toEqual(["groq", "template"]);
-  });
-
-  it("still ends with the template whatever the chain says", () => {
-    const chain = buildSynthesisChain(loadEnv({ ...base, SYNTHESIS_CHAIN: "groq" }), silentLogger());
-    expect(chain.at(-1)!.name).toBe("template");
   });
 
   it("keeps claude-code selectable for comparison", () => {
@@ -40,14 +30,16 @@ describe("cost guards", () => {
     expect(chain.map((s) => s.name)).toEqual(["claude-code", "template"]);
   });
 
-  it("always ends with the template, whatever the chain says", () => {
-    // Dropping the free fallback would make the 07:30 notification conditional
-    // on a subprocess and a network.
-    const chain = buildSynthesisChain(
-      loadEnv({ ...base, SYNTHESIS_CHAIN: "claude-code" }), silentLogger(),
-    );
-    expect(chain.at(-1)!.name).toBe("template");
-  });
+  // Dropping the free fallback would make the brief conditional on a
+  // subprocess and a network — checked against two different single-entry
+  // chains so neither the default provider nor the comparison one can skip it.
+  it.each(["groq", "claude-code"])(
+    "always appends the template, even when the chain is just \"%s\"",
+    (name) => {
+      const chain = buildSynthesisChain(loadEnv({ ...base, SYNTHESIS_CHAIN: name }), silentLogger());
+      expect(chain.at(-1)!.name).toBe("template");
+    },
+  );
 
   it("appends the template even when the chain is nonsense", () => {
     const chain = buildSynthesisChain(
@@ -63,7 +55,7 @@ describe("cost guards", () => {
     expect(chain.map((s) => s.name)).toEqual(["api", "template"]);
   });
 
-  it("reports the paid path unavailable without an API key, rather than failing at 07:30", async () => {
+  it("reports the paid path unavailable without an API key, rather than failing mid-generation", async () => {
     const chain = buildSynthesisChain(
       loadEnv({ ...base, SYNTHESIS_CHAIN: "api,template" }), silentLogger(),
     );

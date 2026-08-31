@@ -38,9 +38,17 @@ npm run brief                      # brief a stdout-ra
 npm run brief -- --format=md       # markdown
 npm run brief -- --at=2026-09-04T06:20:00+02:00   # adott időpontra
 npm run smoke                      # minden hitelesítés, titkok kiírása nélkül
-npm test                           # 192 teszt, hálózat nélkül
+npm test                           # 191 teszt, hálózat nélkül
 npm run typecheck
 ```
+
+`GET /api/morning-brief` query paraméterei:
+
+- `?wait=0` — azonnali válasz a cache-ből, nem vár generálásra. Ha türelmetlen vagy.
+- `?format=md` — markdown, ha valahol renderelve jelenítenéd meg.
+- `?format=json` — teljes adat, benne a teendők azonosítói.
+- `?force` — figyelmen kívül hagyja a cache-t, mindig újragenerál.
+- Ha a Telegram bot is fut, ott a `/brief` ugyanezt adja, gombokkal.
 
 ## Hogyan marad ingyenes
 

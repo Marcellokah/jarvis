@@ -141,7 +141,7 @@ process.on("SIGTERM", onSignal("SIGTERM", 143));
 try {
   await server.listen({ host: app.env.JARVIS_HOST, port: app.env.JARVIS_PORT });
 } catch (err) {
-  // A raw EADDRINUSE stack trace in a log file explains nothing at 07:20.
+  // A raw EADDRINUSE stack trace in a log file explains nothing on its own.
   const code = (err as NodeJS.ErrnoException).code;
   if (code === "EADDRINUSE") {
     app.logger.error(

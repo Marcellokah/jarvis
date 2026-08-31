@@ -13,6 +13,8 @@ export interface BriefRepo {
   save(brief: Omit<StoredBrief, "id">): void;
   latestForDate(date: string): StoredBrief | undefined;
   latest(): StoredBrief | undefined;
+  /** Drops the cached brief for a date so the next `get()` rebuilds it. */
+  invalidate(date: string): void;
 }
 
 interface Row {
@@ -54,6 +56,9 @@ export function createBriefRepo(db: Db): BriefRepo {
     latest() {
       const row = db.get<Row>("SELECT * FROM briefs ORDER BY generated_at DESC, id DESC LIMIT 1");
       return row ? toBrief(row) : undefined;
+    },
+    invalidate(date) {
+      db.run("DELETE FROM briefs WHERE date = ?", date);
     },
   };
 }

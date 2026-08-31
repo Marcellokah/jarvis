@@ -107,7 +107,6 @@ export function groqChat(opts: GroqChatOptions): ChatService {
       const apiKey = await opts.apiKey();
       if (!apiKey) throw new Error("GROQ_API_KEY is not set");
 
-      const system = await readFile(opts.systemPromptFile, "utf8");
       const user = [
         "A mai briefing:",
         "",
@@ -122,13 +121,17 @@ export function groqChat(opts: GroqChatOptions): ChatService {
         "attól még válaszolj — de ne találj ki tényeket a fenti adatokon túl.",
       ].join("\n");
 
-      const answer = await withTimeout(signal, opts.timeoutMs, (abortSignal) =>
-        groqComplete(opts.fetcher, {
+      // The disk read sits behind withTimeout's abort guard, not in front of
+      // it: an already-aborted signal should fail immediately, without a
+      // wasted read of jarvis.md.
+      const answer = await withTimeout(signal, opts.timeoutMs, async (abortSignal) => {
+        const system = await readFile(opts.systemPromptFile, "utf8");
+        return groqComplete(opts.fetcher, {
           apiKey, model: opts.model, system, user,
           maxTokens: opts.maxTokens, temperature: opts.temperature,
           signal: abortSignal,
-        }),
-      );
+        });
+      });
       opts.logger.debug({ chars: answer.length, model: opts.model }, "groq chat complete");
       return answer;
     },

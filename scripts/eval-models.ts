@@ -76,7 +76,7 @@ if (!captured) throw new Error("no context captured");
 
 const signal = new AbortController().signal;
 
-for (const model of models) {
+for (const [index, model] of models.entries()) {
   const synth = groqSynthesizer({
     fetcher: app.runner.http,
     model,
@@ -100,7 +100,10 @@ for (const model of models) {
   }
 
   // The free tier is 6,000 tokens a minute and each run spends most of it.
-  if (model !== models.at(-1)) {
+  // Compared by index, not value — the same model id can appear twice (e.g.
+  // to check repeatability), and a value comparison would skip the pause and
+  // hit a 429 on the second run.
+  if (index !== models.length - 1) {
     console.log("\n  …60 másodperc szünet a token/perc limit miatt\n");
     await new Promise((r) => setTimeout(r, 60_000));
   }

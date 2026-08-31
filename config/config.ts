@@ -99,6 +99,10 @@ export const config = {
     timeoutMs: 60_000,
   },
 
+  // Unused since app.ts switched Telegram follow-ups to groqChat (see
+  // config.groq.chatModel). Kept, along with the still-exported claudeChat in
+  // core/chat.ts, so reverting to the Claude Code subscription for chat is a
+  // one-line swap in app.ts rather than a rebuild of this block.
   chat: {
     /** Telegram follow-ups. Cheaper and faster than the brief model. */
     model: "haiku",

@@ -89,8 +89,8 @@ export interface JarvisModule<TData = unknown> {
    * Deterministic Hungarian rendering of the section body, without the heading.
    *
    * This is the price of the zero-cost constraint: every module must be able
-   * to state its findings with no LLM involved. It is what makes the 07:30
-   * notification unconditional, and it is what the test suite asserts against.
+   * to state its findings with no LLM involved. It is what keeps the brief
+   * available unconditionally, and it is what the test suite asserts against.
    */
   renderPlain(result: ModuleResult<TData>): string;
 

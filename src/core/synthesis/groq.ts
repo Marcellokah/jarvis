@@ -43,12 +43,13 @@ export function groqSynthesizer(opts: GroqSynthOptions): Synthesizer {
       const apiKey = await opts.apiKey();
       if (!apiKey) throw new Error("GROQ_API_KEY is not set");
 
-      // Read per call rather than at construction: editing jarvis.md should
-      // take effect on the next brief, not the next restart.
-      const system = await readFile(opts.systemPromptFile, "utf8");
-
-      const markdown = await withTimeout(signal, opts.timeoutMs, (abortSignal) =>
-        groqComplete(opts.fetcher, {
+      // The disk read sits behind withTimeout's abort guard, not in front of
+      // it: an already-aborted signal should fail immediately, without a
+      // wasted read of jarvis.md. Still read per call rather than at
+      // construction, so editing jarvis.md takes effect on the next brief.
+      const markdown = await withTimeout(signal, opts.timeoutMs, async (abortSignal) => {
+        const system = await readFile(opts.systemPromptFile, "utf8");
+        return groqComplete(opts.fetcher, {
           apiKey,
           model: opts.model,
           system,
@@ -56,8 +57,8 @@ export function groqSynthesizer(opts: GroqSynthOptions): Synthesizer {
           maxTokens: opts.maxTokens,
           temperature: opts.temperature,
           signal: abortSignal,
-        }),
-      );
+        });
+      });
 
       opts.logger.debug({ chars: markdown.length, model: opts.model }, "groq synthesis complete");
       return assertContract(markdown);

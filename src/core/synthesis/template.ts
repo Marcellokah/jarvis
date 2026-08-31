@@ -5,9 +5,10 @@ import type { ModuleOutcome } from "../module.ts";
  * The guarantee.
  *
  * Pure TypeScript: no network, no subprocess, no credentials, sub-millisecond.
- * It is what makes the 07:30 notification unconditional when the CLI is
- * missing, mid-upgrade, timing out, or the network is down — and it is what
- * the whole test suite runs against, which keeps the module contract honest.
+ * It is what keeps the brief available unconditionally when Groq (or another
+ * configured synthesizer) is missing a key, rate-limited, timing out, or the
+ * network is down — and it is what the whole test suite runs against, which
+ * keeps the module contract honest.
  */
 export function templateSynthesizer(): Synthesizer {
   return {

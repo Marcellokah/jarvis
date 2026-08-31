@@ -48,6 +48,8 @@ export interface BriefService {
   /** Fire-and-forget regeneration, e.g. after a health snapshot arrives. */
   regenerate(now: Date): Promise<Brief>;
   inFlight(): boolean;
+  /** Drops the cached brief for a date so the next `get()` rebuilds it. */
+  invalidate(date: string): void;
 }
 
 export function createBriefService(opts: BriefServiceOptions): BriefService {
@@ -166,6 +168,7 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
     generate,
     regenerate,
     inFlight: () => pending !== null,
+    invalidate: (date) => opts.briefs.invalidate(date),
 
     async runOne(name, now) {
       const module = opts.modules.find((m) => m.name.toLowerCase() === name.toLowerCase());
@@ -175,9 +178,10 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
     },
 
     /**
-     * The 07:30 path. Returns instantly when a fresh brief exists; otherwise
+     * The on-demand path: GET /api/morning-brief, `/brief` in Telegram, or
+     * `npm run brief`. Returns instantly when a fresh brief exists; otherwise
      * joins an in-flight generation, bounded, and falls back to the last good
-     * brief rather than making the Shortcut hang.
+     * brief rather than making the caller hang.
      */
     async get(now, options = {}) {
       const date = isoDate(now, opts.tz);
@@ -192,13 +196,13 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
         return fromStored(stored, now);
       }
 
-      // A generation already running means the cached brief is known to be out
-      // of date — that is exactly what the health POST signals. Serving the
-      // cache here is what made the Shortcut's POST-then-GET flow silently
-      // return yesterday's numbers.
+      // A generation already running means a fresher brief is on its way —
+      // e.g. this same call started it a moment ago below. Serving the stale
+      // cache here instead of joining it would hand the caller data that is
+      // already known to be superseded.
       if (pending) {
         try {
-          return await withTimeout(pending, waitMs);
+          return await raceDeadline(pending, waitMs);
         } catch (err) {
           if (stored) {
             opts.logger.warn(
@@ -217,7 +221,7 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
 
       const generation = regenerate(now);
       try {
-        return await withTimeout(generation, waitMs);
+        return await raceDeadline(generation, waitMs);
       } catch (err) {
         const fallback = stored ?? opts.briefs.latest();
         if (fallback) {
@@ -233,7 +237,7 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
   };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function raceDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
     promise.then(

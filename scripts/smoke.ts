@@ -76,6 +76,13 @@ try {
   // instead of mysterious.
   // The app's own chain, not a rebuilt one: rebuilding it here without the
   // secret resolver is exactly what made a stored token look absent.
+  // Remediation is provider-specific — `claude setup-token` only helps the
+  // claude-code path, and telling a Groq user to run it just wastes their time.
+  const remedy: Record<string, string> = {
+    "claude-code": "run `claude setup-token`",
+    groq: `store the key: ./scripts/set-secret.sh ${GROQ_KEY_VAR}`,
+    api: "set ANTHROPIC_API_KEY (deliberately, this path costs money)",
+  };
   for (const synth of app.synthesizers) {
     const ok = await synth.available();
     add(
@@ -85,7 +92,7 @@ try {
         ? "always available (the guarantee)"
         : ok
           ? "available — briefs will use it"
-          : "unavailable — run `claude setup-token`, then re-run smoke. Falling back to template.",
+          : `unavailable — ${remedy[synth.name] ?? "check its configuration"}, then re-run smoke. Falling back to template.`,
     );
   }
 

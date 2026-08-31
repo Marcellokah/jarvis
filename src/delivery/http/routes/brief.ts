@@ -14,7 +14,7 @@ export function registerBriefRoutes(
   app: FastifyInstance,
   deps: { briefs: BriefService; clock: Clock },
 ): void {
-  /** The Apple Shortcut's target. Defaults to plain text — iOS notifications do not render markdown. */
+  /** The main brief endpoint. Defaults to plain text — a bare HTTP client (browser, curl, Shortcut) doesn't render markdown; pass ?format=md or ?format=json for that. */
   app.get("/api/morning-brief", async (request, reply) => {
     const parsed = query.safeParse(request.query);
     if (!parsed.success) {

@@ -5,6 +5,7 @@ import { templateSynthesizer } from "../../src/core/synthesis/template.ts";
 import { synthesizeWithFallback, type BriefContext } from "../../src/core/synthesis/synthesizer.ts";
 import { silentLogger } from "../../src/infra/logger.ts";
 import type { Fetcher } from "../../src/infra/http-client.ts";
+import { groqChat } from "../../src/core/chat.ts";
 
 const signal = new AbortController().signal;
 
@@ -185,8 +186,6 @@ describe("groqSynthesizer", () => {
     expect(Date.now() - started).toBeLessThan(20);
   });
 });
-
-import { groqChat } from "../../src/core/chat.ts";
 
 describe("groqChat", () => {
   const answer = {

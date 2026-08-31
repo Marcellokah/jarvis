@@ -114,12 +114,15 @@ export function registerIngestRoutes(
       now,
     );
 
-    // Today's numbers just changed, so the cached brief is stale. Start the
-    // rebuild now; the Shortcut's GET moments later joins this same promise
-    // instead of waiting for a second, serial generation.
-    const regeneration = deps.briefs.regenerate(now);
-    regeneration.catch((err) => deps.logger.warn({ err: String(err) }, "background regeneration failed"));
+    // Today's numbers just changed, so the cached brief is stale. Drop it
+    // rather than regenerating here: nothing reads this route's response, an
+    // eager regeneration would spend a Groq call nobody sees, and a separate
+    // `npm run brief` invocation (which runs with `force: true` in its own
+    // process) cannot join an in-flight generation started here — the two
+    // together can push ~11,400 tokens into one minute against Groq's
+    // 6,000/minute ceiling and draw a 429. The next GET rebuilds on demand.
+    deps.briefs.invalidate(date);
 
-    return reply.code(202).send({ ok: true, date, regenerating: true, accepted, ignored });
+    return reply.code(202).send({ ok: true, date, regenerating: false, accepted, ignored });
   });
 }
