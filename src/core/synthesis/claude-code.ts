@@ -1,6 +1,7 @@
 import type { Synthesizer, BriefContext } from "./synthesizer.ts";
 import type { Logger } from "../../infra/logger.ts";
 import { claudeAvailable, isAuthFailure, markAuthFailed, runClaude, ISOLATION_ARGS } from "./claude-cli.ts";
+import { buildPrompt, assertContract } from "./prompt.ts";
 
 export interface ClaudeCodeOptions {
   bin: string;
@@ -78,58 +79,8 @@ export function claudeCodeSynthesizer(opts: ClaudeCodeOptions): Synthesizer {
         throw err;
       }
 
-      // The contract in jarvis.md opens with exactly one `#` date heading, and
-      // the renderer splits on that. A model with no tools that wants one
-      // writes the call out as prose instead — non-empty, so the chain's only
-      // guard would wave it through and deliver it as your brief. Failing here
-      // hands the morning to the template renderer, which is the whole point of
-      // having one.
-      if (!markdown.startsWith("#")) {
-        throw new Error(
-          `output did not start with a '#' heading: ${markdown.slice(0, 80)}`,
-        );
-      }
-
       opts.logger.debug({ chars: markdown.length }, "claude-code synthesis complete");
-      return markdown;
+      return assertContract(markdown);
     },
   };
-}
-
-/** Exported so the exact prompt can be inspected without a live run. */
-export function buildPrompt(ctx: BriefContext): string {
-  const payload = {
-    date: ctx.date,
-    dateLabel: ctx.dateLabel,
-    time: ctx.time,
-    sections: ctx.outcomes
-      .filter((o) => o.status !== "empty")
-      .map((o) => ({
-        module: o.name,
-        title: o.title,
-        priority: o.priority,
-        status: o.status,
-        facts: o.result?.data ?? null,
-        degraded: o.result?.degraded ?? null,
-        actions: o.actions.map((a) => ({
-          text: a.text,
-          kind: a.kind,
-          ...(a.kind === "proposal" ? { proposal: a.proposal } : {}),
-        })),
-        fallbackText: o.plain,
-      })),
-  };
-
-  return [
-    "Az alábbi JSON a mai modulok nyers adata. Írd meg belőle a reggeli briefinget",
-    "PONTOSAN az OPERATIONAL CONTRACT szerint (lásd a rendszerpromptot).",
-    "",
-    "Fontos:",
-    "- A `title` mezőket szó szerint használd `## ` szekciócímként.",
-    "- Minden `actions` elemből legyen egy `- [ ] ` sor, a szekciója végén.",
-    "- Csak a megadott adatra támaszkodj; ne találj ki tényeket.",
-    "- Ne írj bevezetőt és lezárást.",
-    "",
-    JSON.stringify(payload, null, 2),
-  ].join("\n");
 }
