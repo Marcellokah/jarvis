@@ -70,7 +70,11 @@ describe("brief content", () => {
   it("renders health data pushed by the Shortcut", async () => {
     seedMeals(db, [meal({ weekday: 1, meal: "ebed", item: "Csirke", proteinG: 55 })]);
     createHealthRepo(db).upsert(
-      { date: "2026-08-31", sleepH: 8.1, hrv: 62, rhr: 51, moveKcal: 640, exerciseMin: 45, steps: 9000 },
+      { date: "2026-08-31", sleepH: 8.1, hrv: 62, rhr: 51, moveKcal: 640, exerciseMin: 45, steps: 9000,
+        asleepMin: null, inBedMin: null, coreMin: null, remMin: null, deepMin: null,
+        awakenings: null, vo2max: null, hrRecovery: null, walkingHr: null,
+        basalKcal: null, flights: null, dietKcal: null, dietProteinG: null,
+        dietCarbsG: null, dietFatG: null },
       {}, new Date(MONDAY_0620),
     );
 
