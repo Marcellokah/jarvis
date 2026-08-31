@@ -4,6 +4,9 @@ import type { Fetcher } from "./http-client.ts";
 export const GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models";
 
+/** The Groq API key, from the login Keychain. */
+export const GROQ_KEY_VAR = "GROQ_API_KEY";
+
 export interface GroqRequest {
   apiKey: string;
   model: string;

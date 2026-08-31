@@ -19,8 +19,25 @@ afterEach(() => {
 describe("cost guards", () => {
   it("uses no paid synthesizer by default", () => {
     const chain = buildSynthesisChain(loadEnv(base), silentLogger());
-    expect(chain.map((s) => s.name)).toEqual(["claude-code", "template"]);
+    expect(chain.map((s) => s.name)).toEqual(["groq", "template"]);
     expect(chain.map((s) => s.name)).not.toContain("api");
+  });
+
+  it("puts groq in front of the template by default", () => {
+    const chain = buildSynthesisChain(loadEnv(base), silentLogger());
+    expect(chain.map((s) => s.name)).toEqual(["groq", "template"]);
+  });
+
+  it("still ends with the template whatever the chain says", () => {
+    const chain = buildSynthesisChain(loadEnv({ ...base, SYNTHESIS_CHAIN: "groq" }), silentLogger());
+    expect(chain.at(-1)!.name).toBe("template");
+  });
+
+  it("keeps claude-code selectable for comparison", () => {
+    const chain = buildSynthesisChain(
+      loadEnv({ ...base, SYNTHESIS_CHAIN: "claude-code,template" }), silentLogger(),
+    );
+    expect(chain.map((s) => s.name)).toEqual(["claude-code", "template"]);
   });
 
   it("always ends with the template, whatever the chain says", () => {

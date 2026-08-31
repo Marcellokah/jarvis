@@ -62,21 +62,35 @@ export const config = {
 
   synthesis: {
     /**
-     * First available synthesizer that succeeds wins. `template` must stay
-     * last — it is the only one that cannot fail, and dropping it would make
-     * the 07:30 notification conditional on a working subprocess.
-     *
-     * `claude-code` costs nothing: it runs on the Claude Code subscription.
-     * It needs a one-time `claude setup-token` before a launchd agent can use
-     * it; until then it reports itself unavailable and `template` takes over.
+     * `groq` first, `template` last. The template can never fail, which is what
+     * makes every other entry optional rather than load-bearing.
      */
-    chain: ["claude-code", "template"] as const,
+    chain: ["groq", "template"] as const,
     /** 'sonnet' | 'opus' | 'haiku', or a full model id. */
     model: "sonnet",
     /** Phase 3: let the CLI use its own WebSearch to fill gaps in feed data. */
     webGapFill: false,
     /** Hard ceiling; a wedged CLI is killed rather than holding the brief open. */
     timeoutMs: 90_000,
+  },
+
+  groq: {
+    /**
+     * Production model ids, verified against GET /openai/v1/models.
+     * Compare candidates with: npm run eval-models
+     */
+    model: "llama-3.3-70b-versatile",
+    chatModel: "llama-3.3-70b-versatile",
+    /**
+     * The free tier allows 6,000 tokens per minute across prompt and
+     * completion. jarvis.md plus the payload is roughly 4,200, so the answer
+     * has to stay well under two thousand.
+     */
+    maxTokens: 1_500,
+    chatMaxTokens: 800,
+    /** Low: the output contract is strict, and invention is the failure mode. */
+    temperature: 0.3,
+    timeoutMs: 60_000,
   },
 
   chat: {

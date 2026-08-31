@@ -6,6 +6,7 @@ Minden lépés ingyenes. Nincs VPS, nincs domain, nincs metered API.
 
 ```bash
 ./scripts/set-secret.sh JARVIS_TOKEN            # openssl rand -hex 32
+./scripts/set-secret.sh GROQ_API_KEY            # console.groq.com → API Keys
 ./scripts/set-secret.sh CLAUDE_CODE_OAUTH_TOKEN # claude setup-token eredménye
 ./scripts/set-secret.sh TELEGRAM_BOT_TOKEN      # @BotFather → /newbot
 ./scripts/set-secret.sh ICLOUD_USERNAME         # az Apple ID email címed
