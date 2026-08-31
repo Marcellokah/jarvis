@@ -88,6 +88,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     runner,
     briefs: createBriefRepo(db),
     actions,
+    health,
     logger,
     tz: TZ,
     freshnessMinutes: config.brief.freshnessMinutes,

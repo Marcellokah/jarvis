@@ -13,6 +13,7 @@ import { createApp } from "../src/app.ts";
 import { createBriefService } from "../src/core/brief-service.ts";
 import { createBriefRepo } from "../src/infra/db/repositories/briefs.ts";
 import { createActionRepo } from "../src/infra/db/repositories/actions.ts";
+import { createHealthRepo } from "../src/infra/db/repositories/health.ts";
 import { nullSeenStore } from "../src/infra/db/repositories/seen.ts";
 import { openDb } from "../src/infra/db/index.ts";
 import { silentLogger } from "../src/infra/logger.ts";
@@ -65,6 +66,7 @@ const briefs = createBriefService({
   runner: { ...app.runner, seen: nullSeenStore() },
   briefs: createBriefRepo(scratch),
   actions: createActionRepo(scratch),
+  health: createHealthRepo(scratch),
   logger: silentLogger(),
   tz: TZ,
   freshnessMinutes: 0,

@@ -120,19 +120,19 @@ export async function buildTestApp(options: {
     logger: silentLogger(),
   });
 
+  const health = createHealthRepo(db);
   const briefs = createBriefService({
     modules: options.modules,
     synthesizers: options.synthesizers ?? [templateSynthesizer()],
     runner,
     briefs: createBriefRepo(db),
     actions,
+    health,
     logger: silentLogger(),
     tz: TZ,
     freshnessMinutes: options.freshnessMinutes ?? 90,
     maxWaitSeconds: options.maxWaitSeconds ?? 5,
   });
-
-  const health = createHealthRepo(db);
   const server = await buildServer({
     token: TEST_TOKEN, briefs, proposals, health, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
