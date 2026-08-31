@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { resolve } from "node:path";
+import { describe, it, expect, afterEach } from "vitest";
+import { resolve, join } from "node:path";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { readExport, type ExportEntry } from "../../src/infra/health-export/reader.ts";
 
 const FIXTURE = resolve("test/fixtures/health/export.xml");
@@ -65,5 +68,67 @@ describe("readExport", () => {
 
   it("reports a missing file rather than yielding nothing", async () => {
     await expect(collect("./does-not-exist.xml")).rejects.toThrow(/does-not-exist/);
+  });
+
+  describe("zip failure modes", () => {
+    // Each test builds its own throwaway archive in a temp dir — no network, and
+    // never the real export. `zip` (like `unzip`) ships with macOS; it is only
+    // ever invoked here, to construct a fixture, never by the reader itself.
+    const dirs: string[] = [];
+
+    function tmpDir(): string {
+      const dir = mkdtempSync(join(tmpdir(), "health-export-"));
+      dirs.push(dir);
+      return dir;
+    }
+
+    afterEach(() => {
+      for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("fails loudly, naming the file and unzip's stderr, when the zip archive is corrupt", async () => {
+      const dir = tmpDir();
+      const badZip = join(dir, "export.zip");
+      // Not a zip at all — unzip exits non-zero and writes nothing to stdout, which
+      // is exactly the shape that used to look like "zero entries, no error".
+      writeFileSync(badZip, "not actually a zip file\n");
+
+      let message = "";
+      try {
+        await collect(badZip);
+        expect.unreachable("expected readExport to throw on a corrupt archive");
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toContain(badZip);
+      // Info-ZIP's own diagnostic; asserting on it proves stderr is actually
+      // surfaced, not just the bare exit code.
+      expect(message).toMatch(/zipfile/i);
+    });
+
+    it("fails loudly, naming the expected member, when unzip exits 0 but the export member is empty", async () => {
+      const dir = tmpDir();
+      mkdirSync(join(dir, "apple_health_export"));
+      // A present-but-zero-byte member: unzip -p exits 0 and writes nothing — the
+      // silent-zero case a non-zero exit code can't catch.
+      writeFileSync(join(dir, "apple_health_export", "export.xml"), "");
+      const zipPath = join(dir, "export.zip");
+      execFileSync("zip", ["-q", zipPath, "apple_health_export/export.xml"], { cwd: dir });
+
+      await expect(collect(zipPath)).rejects.toThrow(/apple_health_export\/export\.xml/);
+    });
+
+    it("still fails loudly when the archive is valid but the member name doesn't match", async () => {
+      // A locale/export-version drift scenario: the archive is fine, but the path
+      // the reader looks for isn't in it. Info-ZIP exits non-zero for this too, so
+      // it goes through the same exit-code check as a corrupt archive.
+      const dir = tmpDir();
+      mkdirSync(join(dir, "apple_health_export"));
+      writeFileSync(join(dir, "apple_health_export", "other.xml"), "<HealthData></HealthData>\n");
+      const zipPath = join(dir, "export.zip");
+      execFileSync("zip", ["-q", zipPath, "apple_health_export/other.xml"], { cwd: dir });
+
+      await expect(collect(zipPath)).rejects.toThrow(/unzip failed/);
+    });
   });
 });

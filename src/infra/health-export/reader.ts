@@ -28,6 +28,16 @@ export interface WorkoutEntry {
 
 export type ExportEntry = HealthRecordEntry | WorkoutEntry;
 
+/** Fixed location of the XML inside every Apple Health export archive. */
+const ZIP_MEMBER = "apple_health_export/export.xml";
+
+/** Outcome of the `unzip` child process, resolved once — never sampled mid-flight. */
+interface ZipExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  spawnError?: Error;
+}
+
 const ATTR = /(\w+)="([^"]*)"/g;
 
 function attrs(line: string): Record<string, string> {
@@ -55,12 +65,24 @@ function shortType(raw: string): string {
 export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
   if (!existsSync(path)) throw new Error(`No such export file: ${path}`);
 
+  const isZip = path.endsWith(".zip");
+
   let stream: Readable;
   let child: ReturnType<typeof spawn> | undefined;
+  // Resolved once, from the child's 'close'/'error' event. Awaited only after the
+  // line loop ends, so it never races: the loop already reflects everything the
+  // child wrote to stdout by the time this settles, whichever fires first.
+  let exitInfo: Promise<ZipExit> | undefined;
+  const stderrChunks: Buffer[] = [];
 
-  if (path.endsWith(".zip")) {
-    child = spawn("unzip", ["-p", path, "apple_health_export/export.xml"]);
+  if (isZip) {
+    child = spawn("unzip", ["-p", path, ZIP_MEMBER]);
     stream = child.stdout!;
+    child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    exitInfo = new Promise((resolveExit) => {
+      child!.on("error", (spawnError) => resolveExit({ code: null, signal: null, spawnError }));
+      child!.on("close", (code, signal) => resolveExit({ code, signal }));
+    });
   } else {
     stream = createReadStream(path);
   }
@@ -70,9 +92,13 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
   // A workout's energy arrives in a child element after its opening tag, so the
   // workout is held back until its block closes.
   let pending: WorkoutEntry | undefined;
+  // Distinguishes "the member was empty" from "the member had content but no
+  // matching records" — only the former is a silent-failure symptom worth flagging.
+  let sawAnyLine = false;
 
   try {
     for await (const line of lines) {
+      sawAnyLine = true;
       const t = line.trimStart();
 
       if (t.startsWith("<Record ")) {
@@ -121,6 +147,28 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
       }
     }
     if (pending) yield pending;
+
+    // "Missing data beats confidently wrong data": a bad member name (locale or
+    // export-version drift) or a corrupt archive must never look like "0 days of
+    // health data" downstream. `unzip -p` failing produces no stdout either way —
+    // EOF on an empty pipe is indistinguishable from EOF on a genuinely empty
+    // export unless the exit status and stderr are checked explicitly.
+    if (isZip) {
+      const outcome = await exitInfo!;
+      if (outcome.spawnError) {
+        throw new Error(`Failed to run unzip for ${path}: ${outcome.spawnError.message}`);
+      }
+      if (outcome.code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+        const status = `exit ${outcome.code}${outcome.signal ? `, signal ${outcome.signal}` : ""}`;
+        throw new Error(`unzip failed for ${path} (${status})${stderr ? `: ${stderr}` : ""}`);
+      }
+      // unzip can exit 0 while writing nothing at all — a matched-but-empty member,
+      // or (on some builds) a missing one. Either way that is not "no health data".
+      if (!sawAnyLine) {
+        throw new Error(`${ZIP_MEMBER} was empty or not found in ${path}`);
+      }
+    }
   } finally {
     lines.close();
     child?.kill();
