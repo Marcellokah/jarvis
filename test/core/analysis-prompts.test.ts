@@ -50,15 +50,20 @@ const metrics: Metrics = {
 describe("buildDomainPrompt", () => {
   it("sends only the domain's own metrics", () => {
     const { user } = buildDomainPrompt("finance", metrics, []);
-    expect(user).toContain("24390");
-    // The financial pass has no business seeing HRV; a smaller prompt is also
-    // a cheaper one against a 6,000 token/minute ceiling.
-    expect(user).not.toContain("hrvDeviationSigma");
+    expect(user).toContain(JSON.stringify(metrics.finance, null, 2));
+    // The financial pass has no business seeing other domains' metrics; a smaller
+    // prompt is also a cheaper one against a 6,000 token/minute ceiling.
+    expect(user).not.toContain(JSON.stringify(metrics.recovery, null, 2));
   });
 
   it("includes the previous summaries as memory, newest first", () => {
-    const { user } = buildDomainPrompt("physical", metrics, ["legfrissebb", "korábbi"]);
-    expect(user.indexOf("legfrissebb")).toBeLessThan(user.indexOf("korábbi"));
+    // Tokens chosen so they cannot occur in the surrounding prose. An earlier
+    // version used "legfrissebb", which the header itself contains ("a
+    // legfrissebbel kezdve"), so it passed whatever order the list was in.
+    const { user } = buildDomainPrompt("physical", metrics, ["MEMO_UJ", "MEMO_REGI"]);
+    expect(user.indexOf("MEMO_UJ")).toBeLessThan(user.indexOf("MEMO_REGI"));
+    expect(user).toContain("1. MEMO_UJ");
+    expect(user).toContain("2. MEMO_REGI");
   });
 
   it("says plainly when there is no earlier finding", () => {

@@ -61,10 +61,10 @@ export function buildDomainPrompt(
   const memoryBlock = memories.length === 0
     ? "Ez az első elemzés ezen a területen — nincs mihez viszonyítanod."
     : [
-      "Az előző megállapításaid, a legfrissebbel kezdve:",
+      "A korábbi megállapításaid, a legfrissebbel kezdve:",
       ...memories.map((m, i) => `${i + 1}. ${m}`),
       "",
-      "Ha egy régebbi aggodalom azóta megszűnt, mondd ki. Ha harmadszor tér",
+      "Ha egy korábbi aggodalom azóta megszűnt, mondd ki. Ha harmadszor tér",
       "vissza ugyanaz, azt is.",
     ].join("\n");
 
