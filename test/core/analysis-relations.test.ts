@@ -13,6 +13,9 @@ function snap(date: string, p: Partial<HealthSnapshot> = {}): HealthSnapshot {
     deepMin: null, awakenings: null, vo2max: null, hrRecovery: null,
     walkingHr: null, basalKcal: null, flights: null, dietKcal: null,
     dietProteinG: null, dietCarbsG: null, dietFatG: null,
+    distanceKm: null, standMin: null, walkingSpeed: null, stepLengthCm: null,
+    doubleSupportPct: null, asymmetryPct: null, steadinessPct: null,
+    sixMinWalkM: null, stairUpMs: null, stairDownMs: null,
     ingestedAt: "2026-08-31T00:00:00.000Z", ...p,
   };
 }

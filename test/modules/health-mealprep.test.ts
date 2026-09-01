@@ -74,7 +74,10 @@ describe("brief content", () => {
         asleepMin: null, inBedMin: null, coreMin: null, remMin: null, deepMin: null,
         awakenings: null, vo2max: null, hrRecovery: null, walkingHr: null,
         basalKcal: null, flights: null, dietKcal: null, dietProteinG: null,
-        dietCarbsG: null, dietFatG: null },
+        dietCarbsG: null, dietFatG: null,
+        distanceKm: null, standMin: null, walkingSpeed: null, stepLengthCm: null,
+        doubleSupportPct: null, asymmetryPct: null, steadinessPct: null,
+        sixMinWalkM: null, stairUpMs: null, stairDownMs: null },
       {}, new Date(MONDAY_0620),
     );
 

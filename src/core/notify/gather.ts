@@ -1,6 +1,7 @@
 import type { Logger } from "../../infra/logger.ts";
 import type { NotificationRepo } from "../../infra/db/repositories/notifications.ts";
 import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
+import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { Metrics } from "../analysis/aggregate.ts";
 import type { Tz } from "../../shared/dates.ts";
 import { candidates, type Candidate, type DeadlineItem } from "./candidates.ts";
@@ -10,6 +11,7 @@ export interface GatherDeps {
   logger: Logger;
   notifications: NotificationRepo;
   analyses: AnalysisRepo;
+  health: HealthRepo;
   /** The aggregation over the whole history. May throw; may return null. */
   metrics: () => Metrics | null;
   /**
@@ -124,5 +126,14 @@ export async function gatherCandidates(deps: GatherDeps, now: Date): Promise<Can
     deps.logger.warn({ err: String(err) }, "analyses unavailable for the notification");
   }
 
-  return candidates({ now, tz: deps.tz, metrics, newAnalyses, deadlines });
+  let lastSleepDate: string | null = null;
+  let lastDietDate: string | null = null;
+  try {
+    lastSleepDate = deps.health.lastDateWith("asleep_min");
+    lastDietDate = deps.health.lastDateWith("diet_kcal");
+  } catch (err) {
+    deps.logger.warn({ err: String(err) }, "habit lapses unavailable for the notification");
+  }
+
+  return candidates({ now, tz: deps.tz, metrics, newAnalyses, deadlines, lastSleepDate, lastDietDate });
 }

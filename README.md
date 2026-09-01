@@ -121,6 +121,37 @@ parancssor: [`deploy/README.md`](deploy/README.md).
 
 A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.
 
+### Mit küld a telefon, és mikor
+
+A Shortcut **két kérést** küld, mert a mérések nem egyszerre válnak teljessé.
+
+**A mai napra** — ami reggel már végleges: HRV, nyugalmi pulzus, az éjszaka
+**nyers alvás-mintái**, VO2max, pulzus-visszatérés, séta-stabilitás és a
+hatperces séta-teszt. Ezeket az óra egészben, egy méréssorozatból számolja ki,
+nem a nap során gyűlnek össze.
+
+**A tegnapi napra** — ami csak a nap végén teljes: lépésszám, távolság, aktív és
+alap kalória, edzésperc, emelet, állás-idő, az étkezés, valamint a nap egészére
+vett átlagok: séta-pulzus, séta-sebesség, lépéshossz, kettős támasz,
+aszimmetria, lépcső fel és le.
+
+Az átlag ugyanúgy részleges, mint az összeg: egy fél nyolckor számolt
+séta-sebesség pár száz lépésre vonatkozik, csak nem látszik rajta — a részösszeg
+feltűnően kicsi, a részátlag hihetőnek tűnik, és pont ezért veszélyesebb.
+
+Ez nem finomítás. A telefon írása felülírja a meglévőt, az importé nem — így egy
+reggel elküldött részösszeg (fél nyolckor kétezer lépés) **véglegesen rögzülne**,
+és a havi import soha nem tudná tizenegyezerre javítani.
+
+Az alvást a telefon **nem összegzi**: az óra fázisonként külön mintát ír, és
+Shortcutban nincs mód összeadni őket. A nyers mintákat küldi, és a szerver
+ugyanazzal a logikával számol belőlük, amivel az importot dolgozza fel —
+beleértve az átfedő források feloldását, amit a telefon sosem tudna.
+
+Amit a szerver nem ért — ismeretlen alvás-fázis, értelmezhetetlen dátum,
+váratlan mértékegység —, azt a válasz `ignored` tömbje **megnevezi**, ahelyett
+hogy elnyelné.
+
 ### Mélyelemzés
 
 `npm run analyze` végigmegy a teljes történeten, és területenként külön elemzést

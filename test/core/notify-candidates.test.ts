@@ -36,7 +36,10 @@ function metrics(over: {
 }
 
 function input(over: Partial<CandidateInput> = {}): CandidateInput {
-  return { now: NOW, tz: TZ, metrics: metrics(), newAnalyses: [], deadlines: [], ...over };
+  return {
+    now: NOW, tz: TZ, metrics: metrics(), newAnalyses: [], deadlines: [],
+    lastSleepDate: null, lastDietDate: null, ...over,
+  };
 }
 
 describe("candidates — deadlines", () => {
