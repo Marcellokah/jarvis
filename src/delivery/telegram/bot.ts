@@ -94,8 +94,7 @@ export function buildBot(opts: TelegramOptions): Bot {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90_000);
     try {
-      const brief = await opts.briefs.get(opts.clock.now(), { wait: false });
-      const answer = await opts.chat.ask(question, brief.markdown, controller.signal);
+      const answer = await opts.chat.ask(String(ctx.chat.id), question, controller.signal);
       await reply(ctx, { text: escapeHtml(answer) });
     } catch (err) {
       opts.logger.warn({ err: String(err) }, "follow-up failed");

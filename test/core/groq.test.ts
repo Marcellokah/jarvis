@@ -6,6 +6,9 @@ import { synthesizeWithFallback, type BriefContext } from "../../src/core/synthe
 import { silentLogger } from "../../src/infra/logger.ts";
 import type { Fetcher } from "../../src/infra/http-client.ts";
 import { groqChat } from "../../src/core/chat.ts";
+import { createConversationRepo } from "../../src/infra/db/repositories/conversations.ts";
+import { memoryDb } from "../helpers.ts";
+import type { AskContext } from "../../src/core/ask/context.ts";
 
 const signal = new AbortController().signal;
 
@@ -192,7 +195,21 @@ describe("groqChat", () => {
     choices: [{ message: { content: "Két előfizetés újul meg a héten." }, finish_reason: "stop" }],
   };
 
-  function chat(response: unknown, seen?: { url?: string; init?: RequestInit }) {
+  const CONTEXT: AskContext = {
+    today: "2026-08-31",
+    briefMarkdown: "# nap\n\n## 💰 Pénzügy\n\n5 előfizetés",
+    analyses: [],
+    metrics: {} as AskContext["metrics"],
+    history: [],
+  };
+
+  const clock = { now: () => new Date("2026-08-31T08:00:00.000Z") };
+
+  function chat(
+    response: unknown,
+    seen?: { url?: string; init?: RequestInit },
+    conversations = createConversationRepo(memoryDb()),
+  ) {
     return groqChat({
       fetcher: stub(response, seen ?? {}),
       model: "llama-3.3-70b-versatile",
@@ -202,17 +219,20 @@ describe("groqChat", () => {
       timeoutMs: 5_000,
       logger: silentLogger(),
       apiKey: async () => "gsk-test",
+      clock,
+      conversations,
+      context: async () => CONTEXT,
     });
   }
 
   it("answers a follow-up", async () => {
-    const out = await chat(answer).ask("részletezd a pénzügyi részt", "# nap\n\n## 💰\n\nvalami", signal);
+    const out = await chat(answer).ask("web", "részletezd a pénzügyi részt", signal);
     expect(out).toBe("Két előfizetés újul meg a héten.");
   });
 
   it("gives the model today's brief as context", async () => {
     const seen: { url?: string; init?: RequestInit } = {};
-    await chat(answer, seen).ask("mi ez?", "# nap\n\n## 💰 Pénzügy\n\n5 előfizetés", signal);
+    await chat(answer, seen).ask("web", "mi ez?", signal);
 
     const body = JSON.parse(String(seen.init?.body)) as { messages: { content: string }[] };
     expect(body.messages[1]!.content).toContain("5 előfizetés");
@@ -223,7 +243,7 @@ describe("groqChat", () => {
     // A chat reply is prose. Requiring it to start with '#' would reject every
     // useful answer.
     const prose = { choices: [{ message: { content: "Nem, csak kettő." }, finish_reason: "stop" }] };
-    await expect(chat(prose).ask("három?", "# nap", signal)).resolves.toBe("Nem, csak kettő.");
+    await expect(chat(prose).ask("web", "három?", signal)).resolves.toBe("Nem, csak kettő.");
   });
 
   it("is unavailable without a key", async () => {
@@ -231,6 +251,7 @@ describe("groqChat", () => {
       fetcher: stub(answer), model: "llama-3.3-70b-versatile",
       systemPromptFile: "./jarvis.md", maxTokens: 800, temperature: 0.4,
       timeoutMs: 5_000, logger: silentLogger(), apiKey: async () => undefined,
+      clock, conversations: createConversationRepo(memoryDb()), context: async () => CONTEXT,
     });
     expect(await noKey.available()).toBe(false);
   });
@@ -248,7 +269,8 @@ describe("groqChat", () => {
         fetcher: stub(answer), model: "llama-3.3-70b-versatile",
         systemPromptFile: "./jarvis.md", maxTokens: 800, temperature: 0.4,
         timeoutMs: 20, logger: silentLogger(), apiKey: async () => "gsk-test",
-      }).ask("mi ez?", "# nap", controller.signal),
+        clock, conversations: createConversationRepo(memoryDb()), context: async () => CONTEXT,
+      }).ask("web", "mi ez?", controller.signal),
     ).rejects.toThrow();
 
     expect(Date.now() - started).toBeLessThan(20);

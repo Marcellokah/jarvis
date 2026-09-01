@@ -94,6 +94,8 @@ export const config = {
      */
     maxTokens: 1_500,
     chatMaxTokens: 800,
+    /** How many previous turns of a thread the model sees. Each costs budget. */
+    chatHistoryDepth: 6,
     /** Low: the output contract is strict, and invention is the failure mode. */
     temperature: 0.3,
     timeoutMs: 60_000,
@@ -114,9 +116,9 @@ export const config = {
   },
 
   // Unused since app.ts switched Telegram follow-ups to groqChat (see
-  // config.groq.chatModel). Kept, along with the still-exported claudeChat in
-  // core/chat.ts, so reverting to the Claude Code subscription for chat is a
-  // one-line swap in app.ts rather than a rebuild of this block.
+  // config.groq.chatModel). `claudeChat` itself is gone from core/chat.ts —
+  // nothing calls it — so this block is dead and only documents the model
+  // name a future Claude-based chat path would reach for.
   chat: {
     /** Telegram follow-ups. Cheaper and faster than the brief model. */
     model: "haiku",
