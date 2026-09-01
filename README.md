@@ -38,9 +38,27 @@ npm run brief                      # brief a stdout-ra
 npm run brief -- --format=md       # markdown
 npm run brief -- --at=2026-09-04T06:20:00+02:00   # adott időpontra
 npm run smoke                      # minden hitelesítés, titkok kiírása nélkül
-npm test                           # 191 teszt, hálózat nélkül
+npm test                           # a teljes csomag, hálózat nélkül
 npm run typecheck
+npm run import-health -- ~/Downloads/export.zip   # Apple Health export beolvasása
 ```
+
+### Egészség-történet
+
+Az iPhone Health appjából (Profil → Összes egészségügyi adat exportálása) kapott
+zip évekre visszamenőleg tartalmaz mindent. Egy import beolvassa napi bontásban.
+
+Havonta érdemes újrafuttatni. Biztonságos: a meglévő méréseket soha nem írja
+felül, csak a hiányzó mezőket tölti ki, és ugyanaz a zip kétszer futtatva
+ugyanazt az állapotot adja.
+
+Ha fut a launchd agent, ne közben futtasd: az agent tartja nyitva az
+adatbázist, egy külön folyamat írásai emiatt nem maradnak meg, és az import
+ezt induláskor felismerve inkább hibával leáll, mint hogy csendben eldobja a
+beolvasott adatot. Állítsd le előtte, utána indítsd újra — a pontos
+parancssor: [`deploy/README.md`](deploy/README.md).
+
+A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.
 
 `GET /api/morning-brief` query paraméterei:
 

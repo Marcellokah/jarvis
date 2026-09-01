@@ -193,6 +193,26 @@ describe("POST /api/ingest/health", () => {
     expect((res.json() as { accepted: string[] }).accepted).toEqual(["sleepH"]);
   });
 
+  /**
+   * The route takes a `date`, so the phone can post about a day the Apple
+   * Health import has already filled — and it maps every reading Health had no
+   * sample for to null. Those nulls used to overwrite the imported columns.
+   */
+  it("does not blank imported history for a day it posts about", async () => {
+    app.health.fillGaps("2026-08-30", { steps: 9100, rhr: 51 }, new Date("2026-08-31T04:00:00Z"));
+
+    const res = await app.server.inject({
+      method: "POST", url: "/api/ingest/health", headers: auth,
+      payload: { date: "2026-08-30", sleepH: 7.4 },
+    });
+
+    expect(res.statusCode).toBe(202);
+    const row = app.health.forDate("2026-08-30")!;
+    expect(row.sleepH).toBe(7.4);
+    expect(row.steps).toBe(9100);
+    expect(row.rhr).toBe(51);
+  });
+
   it("still refuses a body that is not a snapshot at all", async () => {
     const res = await app.server.inject({
       method: "POST", url: "/api/ingest/health", headers: auth, payload: [1, 2, 3],

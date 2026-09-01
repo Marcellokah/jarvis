@@ -49,6 +49,16 @@ export function openDb(path: string, logger: Logger): Db {
       }
     },
     close() {
+      // Fold the WAL back into the database file before letting go of it, so
+      // every process leaves the database self-contained on disk. Best effort
+      // on purpose: a checkpoint can legitimately fail (another connection is
+      // still reading), and failing to tidy up must never turn into a failure
+      // to close.
+      try {
+        handle.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } catch (err) {
+        logger.debug({ err: String(err) }, "wal checkpoint before close failed");
+      }
       handle.close();
     },
   };
@@ -70,6 +80,23 @@ function migrate(handle: DatabaseSync, logger: Logger): void {
   );
 
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+  const onDisk = new Set(files);
+
+  // Migrations are keyed by filename and nothing else, so renaming one that has
+  // already run makes it look unapplied: it re-runs, an ALTER TABLE hits a
+  // column that already exists, and the process dies on "duplicate column name"
+  // with nothing pointing at the rename. Refuse before touching the schema, and
+  // say what happened — this has already been a live hazard once, when
+  // 005_health_history.sql became 004_health_history.sql mid-branch.
+  for (const name of applied) {
+    if (onDisk.has(name)) continue;
+    throw new Error(
+      `Migration ${name} is recorded as applied but no longer exists in ${MIGRATIONS_DIR}. `
+      + "An applied migration must never be renamed or deleted: the database identifies "
+      + "migrations by filename, so the file under its new name would be re-applied against "
+      + "a schema that already has it. Restore the original filename.",
+    );
+  }
 
   for (const file of files) {
     if (applied.has(file)) continue;

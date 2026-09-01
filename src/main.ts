@@ -1,4 +1,4 @@
-import { createApp } from "./app.ts";
+import { createApp, recordSubscriptionMonth } from "./app.ts";
 import { requireApiToken } from "./env.ts";
 import { buildServer } from "./delivery/http/server.ts";
 import { buildBot } from "./delivery/telegram/bot.ts";
@@ -137,6 +137,21 @@ const onSignal = (signal: string, code: number) => () => {
 
 process.on("SIGINT", onSignal("SIGINT", 130));
 process.on("SIGTERM", onSignal("SIGTERM", 143));
+
+// Recorded at start-up and again in the nightly sweep. This is the leg that
+// can be relied on: croner does not replay a 04:00 run missed while the Mac
+// was asleep, so the guarantee is "whenever the agent restarts", not "at least
+// once a night". Guarded like every other start-up step here: a transient DB
+// error must not become an unhandled exception that exits non-zero before the
+// server ever binds — under launchd's KeepAlive/SuccessfulExit=false that turns
+// one bad snapshot into a restart loop. A missed snapshot is a gap the next
+// start-up or nightly sweep can still fill; a crash loop takes the whole
+// assistant down.
+try {
+  recordSubscriptionMonth(app);
+} catch (err) {
+  app.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "start-up subscription snapshot failed");
+}
 
 try {
   await server.listen({ host: app.env.JARVIS_HOST, port: app.env.JARVIS_PORT });
