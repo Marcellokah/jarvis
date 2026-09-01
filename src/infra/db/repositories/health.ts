@@ -82,6 +82,8 @@ export interface HealthRepo {
    * tracking needed.
    */
   fillGaps(date: string, values: Record<string, number>, now: Date): void;
+  /** The most recent day holding a value in `column`, or null. */
+  lastDateWith(column: string): string | null;
 }
 
 interface Row {
@@ -265,6 +267,15 @@ export function createHealthRepo(db: Db): HealthRepo {
          ON CONFLICT (date) DO UPDATE SET ${keep}`,
         date, ...columns.map((c) => values[c]!), now.toISOString(),
       );
+    },
+
+    lastDateWith(column) {
+      // The same allowlist fillGaps uses. A column name is not user input
+      // today, but the guard costs nothing and the alternative is a hole.
+      if (!HISTORY_COLUMNS.has(column)) throw new Error(`Unknown column: ${column}`);
+      return db.get<{ date: string }>(
+        `SELECT date FROM health_snapshots WHERE ${column} IS NOT NULL ORDER BY date DESC LIMIT 1`,
+      )?.date ?? null;
     },
   };
 }

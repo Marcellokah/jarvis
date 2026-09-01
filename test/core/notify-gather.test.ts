@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { gatherCandidates, type GatherDeps } from "../../src/core/notify/gather.ts";
 import { createNotificationRepo } from "../../src/infra/db/repositories/notifications.ts";
 import { createAnalysisRepo } from "../../src/infra/db/repositories/analyses.ts";
+import { createHealthRepo } from "../../src/infra/db/repositories/health.ts";
 import { memoryDb, recordingLogger } from "../helpers.ts";
 import { TZ } from "../../src/shared/dates.ts";
 import type { Db } from "../../src/infra/db/index.ts";
@@ -14,6 +15,7 @@ function deps(db: Db, over: Partial<GatherDeps> = {}): GatherDeps {
     logger: recordingLogger(),
     notifications: createNotificationRepo(db),
     analyses: createAnalysisRepo(db),
+    health: createHealthRepo(db),
     metrics: () => null,
     runModule: async () => null,
     ...over,

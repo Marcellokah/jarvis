@@ -1,7 +1,8 @@
 import type { Metrics } from "../analysis/aggregate.ts";
-import { daysBetween, type Tz } from "../../shared/dates.ts";
+import { daysBetween, isoDate, type Tz } from "../../shared/dates.ts";
+import { dayGap } from "../analysis/stats.ts";
 
-export type CandidateKind = "deadline" | "health" | "analysis";
+export type CandidateKind = "deadline" | "health" | "analysis" | "habit";
 
 export interface Candidate {
   /**
@@ -39,6 +40,9 @@ export interface CandidateInput {
   metrics: Metrics | null;
   newAnalyses: { domain: string; summary: string; createdAt: string }[];
   deadlines: DeadlineItem[];
+  /** The most recent day with sleep data, or null if there has never been any. */
+  lastSleepDate: string | null;
+  lastDietDate: string | null;
 }
 
 /** A deadline further out than this can wait for the next time we speak. */
@@ -61,6 +65,9 @@ export const HRV_SIGMA_THRESHOLD = 1.5;
 
 /** Resting heart rate worsening by at least this many bpm per 30 days. */
 export const RHR_SLOPE_THRESHOLD = 2;
+
+/** A habit is lapsed once this many days have passed with nothing recorded. */
+export const HABIT_LAPSE_DAYS = 3;
 
 /**
  * Sample-size floors. A push is a stronger claim than a line in a report, so
@@ -200,6 +207,23 @@ export function candidates(input: CandidateInput): Candidate[] {
       text: `${DOMAIN_LABEL[a.domain] ?? a.domain} — ${leadOf(a.summary)}`,
     });
   }
+
+  const lapse = (label: string, key: string, last: string | null) => {
+    // Null means the habit was never started, and nagging about one that never
+    // existed is not the assistant's business.
+    if (last === null) return;
+    const days = dayGap(last, isoDate(input.now, input.tz));
+    if (days < HABIT_LAPSE_DAYS) return;
+    out.push({
+      // No date in the key: the same lapse must not resurface every morning.
+      key,
+      kind: "habit",
+      urgency: "soon",
+      text: `${label}: ${days} napja nincs adat (utoljára ${last}).`,
+    });
+  };
+  lapse("Alvás", "habit:sleep-lapsed", input.lastSleepDate);
+  lapse("Étkezés", "habit:diet-lapsed", input.lastDietDate);
 
   return [...out].sort(byUrgency);
 }

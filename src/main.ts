@@ -134,6 +134,7 @@ const scheduler = startScheduler({
                 logger: app.logger,
                 notifications: app.notifications,
                 analyses: app.analyses,
+                health: app.health,
                 metrics: () => aggregate({
                   today: isoDate(at, TZ),
                   snapshots: app.health.between("1970-01-01", isoDate(at, TZ)),
