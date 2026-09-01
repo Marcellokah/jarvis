@@ -10,7 +10,7 @@ import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
-import { bearerAuth, pageAuth } from "./auth.ts";
+import { bearerAuth, chatAuth, pageAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
 import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
@@ -53,11 +53,18 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   // server binds to 127.0.0.1, but `deploy/README.md` documents a
   // `tailscale serve` that proxies the whole origin — protection cannot depend
   // on which of those happens to be switched on today.
+  //
+  // `/api/chat` takes the cookie too: it is the page's own fetch, and the page
+  // is already proving itself with that cookie one request earlier. Every
+  // other `/api/*` route is called by a Shortcut or a script, which sends a
+  // header and never a cookie, so those stay bearer-only.
   const auth = bearerAuth(deps.token);
+  const chat = chatAuth(deps.token);
   const page = pageAuth(deps.token);
   app.addHook("onRequest", async (request, reply) => {
     const route = request.url.split("?")[0] ?? request.url;
-    if (route.startsWith("/api/")) await auth(request, reply);
+    if (route === "/api/chat") await chat(request, reply);
+    else if (route.startsWith("/api/")) await auth(request, reply);
     else if (route === "/") await page(request, reply);
   });
 

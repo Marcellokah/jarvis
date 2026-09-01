@@ -95,17 +95,40 @@ export const config = {
     maxTokens: 1_500,
     chatMaxTokens: 800,
     /**
-     * How many previous turns of a thread the model sees. Each costs budget.
+     * How many previous turns of a thread the model sees. A turn is one
+     * message, so 2 is the last exchange: the previous question and its answer.
      *
-     * Four, not six, and measured rather than estimated: the design's original
-     * ~2,900-token figure left out jarvis.md (~2,300 tokens), which every chat
-     * call carries as its system prompt. Against the real data one question
-     * costs ~4,300 input tokens with an empty thread and 5,100–6,300 with a
-     * six-turn one — a warm thread alone could reach the 6,000 token/minute
-     * ceiling before the answer was written. Four turns keeps the worst case
-     * under it while still holding a follow-up's context.
+     * Measured, and the arithmetic has to close against 6,000 tokens per
+     * minute covering prompt AND completion — not prompt alone. The design's
+     * original ~2,900 left out jarvis.md entirely; the first correction put it
+     * back but still compared an input-only total against the ceiling, which
+     * is the same under-count one order smaller.
+     *
+     *   jarvis.md, the system prompt, every call   ~2,300
+     *   the per-domain analysis summaries          ~  600
+     *   the trimmed statistics                     ~1,100
+     *   today's brief                              ~  350
+     *   ------------------------------------------------
+     *   input with an empty thread                 ~4,350   (matches the ~4,300 measured)
+     *   2 turns, at 125–325 tokens each              250–650
+     *   ------------------------------------------------
+     *   input, worst case                          ~5,000
+     *   + chatMaxTokens                                800
+     *   ================================================
+     *   worst case, prompt + completion            ~5,800   under 6,000, by 200
+     *
+     * The per-turn range is measured across real threads (a six-turn thread
+     * cost 5,100–6,300 in total, so 750–1,950 for the thread itself). It is
+     * not a hard bound: a deliberately maximal turn — a question at the
+     * 2,000-character cap plus an answer at the full 800 tokens — is ~1,400
+     * tokens on its own, and no depth above 1 can bound that arithmetically.
+     * That case is a Groq 429, which both doors report rather than swallow;
+     * a visible failure, not a quietly truncated answer.
+     *
+     * Every step above six is what pushed this down: 4 turns is ~5,650 input
+     * and ~6,450 with the completion, over the ceiling. 3 is ~6,125, still over.
      */
-    chatHistoryDepth: 4,
+    chatHistoryDepth: 2,
     /** Low: the output contract is strict, and invention is the failure mode. */
     temperature: 0.3,
     timeoutMs: 60_000,

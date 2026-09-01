@@ -251,6 +251,47 @@ describe("page routes", () => {
     await app.close();
   });
 
+  it("accepts the page's own cookie on the question route", async () => {
+    // The page proves itself with this cookie one request earlier. Without it
+    // here, a returning visitor got a 200 page and a 401 on every question —
+    // sessionStorage dies with the browser session, the 30-day cookie does not.
+    const app = await boot();
+    const first = await app.server.inject({ method: "GET", url: `/?token=${TEST_TOKEN}` });
+    const cookie = cookieFrom(first);
+
+    const res = await app.server.inject({
+      method: "POST", url: "/api/chat", headers: { cookie }, payload: { question: "Mi újság?" },
+    });
+    // Past auth. 502 is the stub chat service refusing to answer, not a refusal
+    // to let the question through — 401 is the failure this test exists for.
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).toBe(502);
+    await app.close();
+  });
+
+  it("refuses a wrong cookie value on the question route", async () => {
+    const app = await boot();
+    const res = await app.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { cookie: "jarvis_token=nem-ez-az" },
+      payload: { question: "Mi újság?" },
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("still refuses a cookie on the other API routes", async () => {
+    // Only /api/chat takes the cookie. Every other route is called by a
+    // Shortcut or a script, which sends a header and never a cookie.
+    const app = await boot();
+    const first = await app.server.inject({ method: "GET", url: `/?token=${TEST_TOKEN}` });
+    const res = await app.server.inject({
+      method: "GET", url: "/api/morning-brief", headers: { cookie: cookieFrom(first) },
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
   it("rejects an empty question", async () => {
     const app = await boot();
     const res = await app.server.inject({

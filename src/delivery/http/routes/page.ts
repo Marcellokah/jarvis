@@ -63,12 +63,22 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without the numbers");
     }
 
+    let history: PageData["history"] = [];
+    try {
+      history = deps.conversations.recent(WEB_CHAT_ID, 20);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without the thread");
+    }
+
+    // `chat.available()` is deliberately not wrapped: it only asks the secrets
+    // store for a key, and `keychainSecrets` already swallows its own errors
+    // and answers undefined. There is nothing here for it to throw.
     const data: PageData = {
       dateLabel: huLongDate(now, TZ),
       briefMarkdown,
       analyses,
       metricsRows,
-      history: deps.conversations.recent(WEB_CHAT_ID, 20),
+      history,
       chatAvailable: await deps.chat.available(),
     };
 
