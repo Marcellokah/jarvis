@@ -22,6 +22,18 @@ export interface GatherDeps {
   runModule: (name: string, now: Date) => Promise<unknown>;
 }
 
+/**
+ * An analysis older than this is not news, whatever the notification log says.
+ *
+ * `latestPerDomain()` has no age limit of its own, so on the first tick after
+ * a fresh install — `lastSentAt()` null, nothing filtered — every domain's
+ * newest analysis would count as new and all four would go out at once, over
+ * Telegram's 4096 characters and split into several messages, at the moment
+ * the system has the least headroom. And an analysis from three weeks ago
+ * would be announced as new, which it is not.
+ */
+const ANALYSIS_MAX_AGE_H = 24;
+
 interface DefrostShape { item?: unknown; takeOutBy?: unknown; overdue?: unknown }
 interface RenewalShape { name?: unknown; renewsOn?: unknown }
 
@@ -50,12 +62,14 @@ function renewalDeadlines(data: unknown, now: Date): DeadlineItem[] {
     if (typeof raw.name !== "string" || typeof raw.renewsOn !== "string") continue;
     // A renewal has a day, not a moment. The fixed 07:00Z instant is 09:00
     // Budapest in summer and 08:00 in winter — pinned in UTC rather than
-    // computed with real tz math, which is more than a single per-day
-    // instant warrants. `overdue` is derived from that instant instead of
-    // assumed false: `nextOccurrence()` in finance-subs only guarantees
-    // `renewsOn >= today` at the moment the module runs, not at the moment
-    // this notification path checks it, so a renewal read well after its
-    // instant has already happened and must not be reported as still ahead.
+    // computed with real tz math, which is more than a single per-day instant
+    // warrants, and either way it lands on the renewal's own local date, which
+    // is what `candidates()` judges an event by. `overdue` is derived from the
+    // instant instead of assumed false: `nextOccurrence()` in finance-subs
+    // only guarantees `renewsOn >= today` at the moment the module runs, not
+    // at the moment this path reads it. The event wording no longer consults
+    // it — a renewal read at 21:00 on its own day is still "ma" — but
+    // recording it as still ahead would be untrue.
     const dueAt = `${raw.renewsOn}T07:00:00.000Z`;
     out.push({
       label: `${raw.name} megújul`,
@@ -75,11 +89,7 @@ function renewalDeadlines(data: unknown, now: Date): DeadlineItem[] {
  * calendar, the aggregation walks seven years of rows — and one of them
  * falling over must not silence a finding that is already in hand.
  */
-export async function gatherCandidates(
-  deps: GatherDeps,
-  now: Date,
-  _signal: AbortSignal,
-): Promise<Candidate[]> {
+export async function gatherCandidates(deps: GatherDeps, now: Date): Promise<Candidate[]> {
   const deadlines: DeadlineItem[] = [];
   try {
     const health = await deps.runModule("HealthAndMealPrep", now);
@@ -105,8 +115,10 @@ export async function gatherCandidates(
   let newAnalyses: { domain: string; summary: string; createdAt: string }[] = [];
   try {
     const since = deps.notifications.lastSentAt();
+    const oldest = now.getTime() - ANALYSIS_MAX_AGE_H * 3_600_000;
     newAnalyses = deps.analyses.latestPerDomain()
       .filter((a) => since === null || a.createdAt > since)
+      .filter((a) => Date.parse(a.createdAt) >= oldest)
       .map((a) => ({ domain: a.domain, summary: a.summary, createdAt: a.createdAt }));
   } catch (err) {
     deps.logger.warn({ err: String(err) }, "analyses unavailable for the notification");

@@ -15,7 +15,9 @@ describe("gateReason", () => {
 
   it("closes inside the four-hour window", () => {
     const threeHoursAgo = "2026-09-01T07:00:00.000Z";
-    expect(gateReason(at(NOON), TZ, threeHoursAgo, OPTS)).toMatch(/négy|óra/i);
+    // "korlát 4 óra", not /óra/: the quiet-hours reason contains "órák" too,
+    // so the looser pattern passed for the wrong reason.
+    expect(gateReason(at(NOON), TZ, threeHoursAgo, OPTS)).toMatch(/korlát 4 óra/);
   });
 
   it("opens once four hours have passed", () => {

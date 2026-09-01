@@ -78,11 +78,13 @@ export async function composeNotification(
       });
     });
 
-    if (!answer.trim()) throw new Error("a modell üres választ adott");
+    if (!answer.trim()) throw new Error("the model returned an empty answer");
 
     // Reject answers that look like brief format (start with markdown heading).
     // The persona's output contract should not leak into a short notification.
-    if (answer.trim().startsWith("#")) throw new Error("a modell rövid összefoglalót adott helyett");
+    if (answer.trim().startsWith("#")) {
+      throw new Error("the model answered in brief format instead of one short message");
+    }
 
     return { text: answer.trim(), source: "groq" };
   } catch (err) {

@@ -7,7 +7,7 @@ import { startScheduler } from "./infra/scheduler.ts";
 import { aggregate } from "./core/analysis/aggregate.ts";
 import { metricsRowsFrom } from "./delivery/http/page.ts";
 import { isoDate, TZ } from "./shared/dates.ts";
-import { runNotifyTick } from "./core/notify/tick.ts";
+import { createGatherMark, runNotifyTick } from "./core/notify/tick.ts";
 import { gatherCandidates } from "./core/notify/gather.ts";
 import { composeNotification } from "./core/notify/message.ts";
 import { GROQ_KEY_VAR } from "./infra/groq.ts";
@@ -100,6 +100,10 @@ if (!telegramToken) {
   app.logger.warn({}, "TELEGRAM_BOT_TOKEN not set — the bot is inactive; the HTTP API still works");
 }
 
+// One mark for the life of the process, created outside the tick so that two
+// ticks fifteen minutes apart see the same one.
+const notifyGatherMark = createGatherMark();
+
 const scheduler = startScheduler({
   db: app.db,
   clock: app.clock,
@@ -119,12 +123,13 @@ const scheduler = startScheduler({
               logger: app.logger,
               notifications: app.notifications,
               seen: app.runner.seen,
+              gatherMark: notifyGatherMark,
               gates: {
                 minHoursBetween: config.notify.minHoursBetween,
                 quietFromHour: config.notify.quietFromHour,
                 quietToHour: config.notify.quietToHour,
               },
-              gather: (at, signal) => gatherCandidates({
+              gather: (at) => gatherCandidates({
                 tz: TZ,
                 logger: app.logger,
                 notifications: app.notifications,
@@ -141,7 +146,7 @@ const scheduler = startScheduler({
                 // brief, which is a Groq call — this path must never trigger one.
                 runModule: async (name, moduleNow) =>
                   (await app.briefs.runOne(name, moduleNow))?.result?.data ?? null,
-              }, at, signal),
+              }, at),
               compose: (cs, signal) => composeNotification(cs, {
                 fetcher: app.runner.http,
                 model: config.notify.model,

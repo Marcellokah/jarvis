@@ -73,42 +73,66 @@ describe("candidates — deadlines", () => {
 });
 
 describe("candidates — events", () => {
-  it("words a future event without deadline vocabulary", () => {
-    const found = candidates(input({
-      deadlines: [{
-        label: "Netflix megújul", dueAt: "2026-09-01T11:00:00.000Z",
-        overdue: false, sort: "event",
-      }],
-    }));
+  // An event is judged in local days, not in hours: a renewal is known a day
+  // ahead (`alertDaysBefore` is [7, 3, 1]), so every alert the finance module
+  // can emit is at least seventeen hours away. Under the four-hour instant
+  // horizon the deadlines use, not one of them would ever have been a
+  // candidate, and the source was dead in production while looking alive here.
+  const event = (over: Partial<{ label: string; dueAt: string; overdue: boolean }> = {}) => ({
+    label: "Netflix megújul", dueAt: "2026-09-01T11:00:00.000Z", overdue: false,
+    sort: "event" as const, ...over,
+  });
+
+  it("words an event on today's local date as ma", () => {
+    const found = candidates(input({ deadlines: [event()] }));
     expect(found).toHaveLength(1);
-    expect(found[0]!.text).toBe("Netflix megújul — 60 perc múlva.");
+    expect(found[0]!.text).toBe("Netflix megújul — ma.");
+    expect(found[0]!.urgency).toBe("now");
+  });
+
+  it("words an event on tomorrow's local date as holnap", () => {
+    const found = candidates(input({ deadlines: [event({ dueAt: "2026-09-02T07:00:00.000Z" })] }));
+    expect(found).toHaveLength(1);
+    expect(found[0]!.text).toBe("Netflix megújul — holnap.");
+    expect(found[0]!.urgency).toBe("soon");
+  });
+
+  it("keeps an event today that the four-hour horizon would have dropped", () => {
+    // 22:00 Budapest, ten hours out. This is the shape of every renewal the
+    // finance module produces, and the case the hours-based horizon killed.
+    const found = candidates(input({ deadlines: [event({ dueAt: "2026-09-01T20:00:00.000Z" })] }));
+    expect(found[0]!.text).toBe("Netflix megújul — ma.");
   });
 
   it("words a past event as arrived, not missed", () => {
-    // overdue:true here mirrors gather.ts deriving it from the fixed renewal
-    // instant — the case that used to render as "a határidő már lejárt.",
-    // which is untrue of something that already happened on schedule.
+    // 07:00 Budapest, five hours before `now` — the renewal already happened,
+    // on schedule. overdue:true mirrors gather.ts deriving it from the fixed
+    // instant; the wording must not turn it into "a határidő már lejárt.".
     const found = candidates(input({
-      deadlines: [{
-        label: "Netflix megújul", dueAt: "2026-08-29T07:00:00.000Z",
-        overdue: true, sort: "event",
-      }],
+      deadlines: [event({ dueAt: "2026-09-01T05:00:00.000Z", overdue: true })],
     }));
-    expect(found).toHaveLength(1);
     expect(found[0]!.text).toBe("Netflix megújul — ma.");
     expect(found[0]!.text).not.toContain("lejárt");
   });
 
-  it("still applies the deadline horizon and urgency to events", () => {
-    // Only the wording differs between the two sorts — an event far in the
-    // future is dropped exactly like a distant deadline would be.
+  it("drops an event the day after tomorrow", () => {
+    expect(candidates(input({ deadlines: [event({ dueAt: "2026-09-03T07:00:00.000Z" })] }))).toEqual([]);
+  });
+
+  it("drops an event whose day is over", () => {
+    // Yesterday's renewal is not news. An event is not a deadline: nothing was
+    // missed, so there is nothing left to say about it.
+    expect(candidates(input({ deadlines: [event({ dueAt: "2026-08-31T07:00:00.000Z" })] }))).toEqual([]);
+  });
+
+  it("judges the day in Budapest time, not UTC", () => {
+    // 00:30 Budapest on the 2nd, which is still the 1st in UTC. Counting the
+    // UTC dates would call the renewal "holnap" on the morning it happens.
     const found = candidates(input({
-      deadlines: [{
-        label: "messze", dueAt: "2026-09-03T10:00:00.000Z",
-        overdue: false, sort: "event",
-      }],
+      now: new Date("2026-09-01T22:30:00.000Z"),
+      deadlines: [event({ dueAt: "2026-09-02T07:00:00.000Z" })],
     }));
-    expect(found).toEqual([]);
+    expect(found[0]!.text).toBe("Netflix megújul — ma.");
   });
 });
 
