@@ -71,6 +71,14 @@ import { createCalendarWriteRepo } from "../src/infra/db/repositories/calendar-w
 import { createProposalService, type ProposalService } from "../src/core/proposals.ts";
 import { createBriefRepo } from "../src/infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "../src/infra/db/repositories/health.ts";
+import { createWorkoutRepo } from "../src/infra/db/repositories/workouts.ts";
+import { createSubscriptionMonthRepo } from "../src/infra/db/repositories/subscription-months.ts";
+import { createAnalysisRepo, type AnalysisRepo } from "../src/infra/db/repositories/analyses.ts";
+import { createConversationRepo, type ConversationRepo } from "../src/infra/db/repositories/conversations.ts";
+import { unavailableChat, type ChatService } from "../src/core/chat.ts";
+import { aggregate } from "../src/core/analysis/aggregate.ts";
+import { metricsRowsFrom } from "../src/delivery/http/page.ts";
+import { isoDate } from "../src/shared/dates.ts";
 import { buildServer } from "../src/delivery/http/server.ts";
 import type { JarvisModule } from "../src/core/module.ts";
 import type { FastifyInstance } from "fastify";
@@ -79,7 +87,10 @@ export interface TestApp {
   db: Db;
   briefs: BriefService;
   proposals: ProposalService;
+  chat: ChatService;
   health: HealthRepo;
+  analyses: AnalysisRepo;
+  conversations: ConversationRepo;
   server: FastifyInstance;
   runner: RunnerDeps;
   modules: readonly JarvisModule[];
@@ -93,6 +104,8 @@ export async function buildTestApp(options: {
   modules: readonly JarvisModule[];
   synthesizers?: readonly Synthesizer[];
   calendar?: CalendarService;
+  /** Defaults to an always-unavailable stub — no test in this suite needs a live model. */
+  chat?: ChatService;
   now: string;
   freshnessMinutes?: number;
   maxWaitSeconds?: number;
@@ -133,14 +146,36 @@ export async function buildTestApp(options: {
     freshnessMinutes: options.freshnessMinutes ?? 90,
     maxWaitSeconds: options.maxWaitSeconds ?? 5,
   });
+  const analyses = createAnalysisRepo(db);
+  const conversations = createConversationRepo(db);
+  const workouts = createWorkoutRepo(db);
+  const subscriptionMonths = createSubscriptionMonthRepo(db);
+  const chat = options.chat ?? unavailableChat("teszt: nincs modell bekötve");
+
+  // Same construction the real ask-context assembler and main.ts use: the
+  // page's numbers table is always the freshest `aggregate()` over an
+  // in-memory (here, empty-unless-seeded) database.
+  const metricsRows = () => {
+    const today = isoDate(clock.now());
+    return metricsRowsFrom(aggregate({
+      today,
+      snapshots: health.between("1970-01-01", today),
+      workouts: workouts.between("1970-01-01", today),
+      months: subscriptionMonths.months().map((month) => ({
+        month, subs: subscriptionMonths.forMonth(month),
+      })),
+    }));
+  };
+
   const server = await buildServer({
-    token: TEST_TOKEN, briefs, proposals, health, modules: options.modules,
+    token: TEST_TOKEN, briefs, proposals, chat, health, analyses, conversations,
+    metricsRows, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
   });
 
   let closed = false;
   return {
-    db, briefs, proposals, health, server, runner,
+    db, briefs, proposals, chat, health, analyses, conversations, server, runner,
     modules: options.modules,
     setNow: (iso) => { current = new Date(iso); },
     // Idempotent: tests close explicitly and afterEach closes again.

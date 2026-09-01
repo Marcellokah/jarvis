@@ -2,22 +2,32 @@ import Fastify, { type FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import type { BriefService } from "../../core/brief-service.ts";
 import type { ProposalService } from "../../core/proposals.ts";
+import type { ChatService } from "../../core/chat.ts";
 import type { JarvisModule } from "../../core/module.ts";
 import type { RunnerDeps } from "../../core/runner.ts";
 import type { Clock } from "../../infra/clock.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
+import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
+import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
 import { bearerAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
 import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
+import { registerPageRoutes } from "./routes/page.ts";
+import type { MetricRow } from "./page.ts";
 
 export interface ServerDeps {
   token: string;
   briefs: BriefService;
   proposals: ProposalService;
+  chat: ChatService;
   health: HealthRepo;
+  analyses: AnalysisRepo;
+  conversations: ConversationRepo;
+  /** Builds the numbers table's rows from the freshest `aggregate()` output. */
+  metricsRows: () => MetricRow[];
   modules: readonly JarvisModule[];
   runner: RunnerDeps;
   clock: Clock;
@@ -75,6 +85,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     health: deps.health, briefs: deps.briefs, clock: deps.clock, logger: deps.logger,
   });
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
+  registerPageRoutes(app, {
+    briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
+    conversations: deps.conversations, metricsRows: deps.metricsRows,
+    clock: deps.clock, logger: deps.logger,
+  });
 
   return app;
 }
