@@ -433,3 +433,103 @@ describe("ingest — per-source day counters", () => {
     expect(ignored).toHaveLength(1);
   });
 });
+
+/**
+ * The first live run of the counter path, and the two defects it exposed.
+ *
+ * `LIVE_COUNTERS` is the payload verbatim out of the database — not a
+ * reconstruction. That is the whole point: the decimal comma and the empty
+ * aggregates are things a real phone did, and a hand-written approximation
+ * would only prove the parser agrees with my idea of what Shortcuts sends.
+ *
+ * What it produced before the fix: steps 12727 and flights landed (integers
+ * are unaffected), `distance_km` vanished entirely (Number("8,717…") is NaN,
+ * and the rollup drops a non-finite value), and `move_kcal` was stored as 0 —
+ * the Watch's 1198,36 was lost the same way, leaving the iPhone's `""` as the
+ * only candidate, which Number() reads as a real zero.
+ */
+const LIVE_COUNTERS = [
+  '{"startDate":"2026-09-01T23:08:34+02:00","value":"12727","endDate":"2026-09-01T23:08:34+02:00","source":"Marcell’s Apple Watch","type":"StepCount","unit":"count"}\n'
+  + '{"startDate":"2026-09-01T23:08:34+02:00","value":"8674","endDate":"2026-09-01T23:08:34+02:00","source":"Marcell’s iPhone","type":"StepCount","unit":"count"}\n'
+  + '{"startDate":"2026-09-01T23:08:34+02:00","value":"8,71793477021344","endDate":"2026-09-01T23:08:34+02:00","source":"Marcell’s Apple Watch","type":"DistanceWalkingRunning","unit":"km"}\n'
+  + '{"startDate":"2026-09-01T23:08:34+02:00","value":"1198,36299999997","endDate":"2026-09-01T23:08:34+02:00","source":"Marcell’s Apple Watch","type":"ActiveEnergyBurned","unit":"kcal"}\n'
+  + '{"startDate":"2026-09-01T23:08:34+02:00","value":"","endDate":"2026-09-01T23:08:34+02:00","source":"Marcell’s iPhone","type":"ActiveEnergyBurned","unit":"kcal"}',
+];
+
+describe("ingest — the phone's own number format", () => {
+  const WATCH = "Marcell’s Apple Watch";
+  const PHONE = "Marcell’s iPhone";
+
+  const counter = (p: { type: string; source: string; unit: string; value: unknown }) => ({
+    type: p.type, unit: p.unit, value: p.value, source: p.source,
+    startDate: "2026-09-01T23:08:34+02:00", endDate: "2026-09-01T23:08:34+02:00",
+  });
+
+  it("stores every column of the real payload, comma decimals included", async () => {
+    const { days, ignored } = await readSamples(LIVE_COUNTERS);
+
+    expect(days).toHaveLength(1);
+    expect(days[0]!.date).toBe("2026-09-01");
+    // The integers that always worked, still picked per source rather than added.
+    expect(days[0]!.values.steps).toBe(12727);
+    // The column that vanished: 8,71793477021344 km, rounded as the rollup rounds.
+    expect(days[0]!.values.distance_km).toBe(8.718);
+    // The column that was stored as 0: the Watch's real 1198,36 kcal.
+    expect(days[0]!.values.move_kcal).toBe(1198.363);
+
+    // The iPhone's empty ActiveEnergyBurned no longer becomes a zero: the strict
+    // parser refuses it. Noisily for now, one line per entry — turning that into
+    // one aggregate line is the next commit's job. The point here is only that
+    // nothing was invented.
+    expect(ignored).toHaveLength(1);
+    expect(ignored[0]!.reason).toContain("értelmezhetetlen szám");
+  });
+
+
+
+  it("keeps a genuine zero, which is a measurement and not an absence", async () => {
+    // A source that has samples and sums to zero said something. Only the empty
+    // string means it said nothing.
+    const { days, ignored } = await readSamples([
+      counter({ type: "FlightsClimbed", source: WATCH, unit: "count", value: "0" }),
+    ]);
+
+    expect(ignored).toEqual([]);
+    expect(days[0]!.values.flights).toBe(0);
+  });
+
+  it("refuses a numeric shape it cannot read, by name, without guessing", async () => {
+    // A grouped number is the one case where the decimal comma stops being the
+    // only reading. Refusing names it in the reply; guessing would store a
+    // plausible-looking number that is wrong by a factor of a thousand.
+    const { days, ignored } = await readSamples([
+      counter({ type: "StepCount", source: WATCH, unit: "count", value: "12727" }),
+      counter({ type: "ActiveEnergyBurned", source: WATCH, unit: "kcal", value: "1.198,363" }),
+      counter({ type: "DistanceWalkingRunning", source: WATCH, unit: "km", value: "8,7 km" }),
+    ]);
+
+    // The good counter beside them survives, as with a wrong unit.
+    expect(days[0]!.values.steps).toBe(12727);
+    expect(days[0]!.values.move_kcal).toBeUndefined();
+    expect(days[0]!.values.distance_km).toBeUndefined();
+
+    expect(ignored).toHaveLength(2);
+    expect(ignored[0]).toEqual({
+      field: "samples[1]",
+      reason: "ActiveEnergyBurned: értelmezhetetlen szám (1.198,363)",
+    });
+    expect(ignored[1]!.reason).toContain("8,7 km");
+  });
+
+
+  it("writes the real payload's columns to the row, end to end", async () => {
+    const a = await boot();
+    const res = await post(a, { samples: LIVE_COUNTERS });
+    expect(res.statusCode).toBe(202);
+
+    const row = a.health.forDate("2026-09-01")!;
+    expect(row.steps).toBe(12727);
+    expect(row.distanceKm).toBeCloseTo(8.718, 3);
+    expect(row.moveKcal).toBeCloseTo(1198.363, 3);
+  });
+});

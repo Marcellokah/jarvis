@@ -7,7 +7,7 @@ import type { Logger } from "../../../infra/logger.ts";
 import { isoDate, TZ } from "../../../shared/dates.ts";
 import { rollup, DAILY } from "../../../infra/health-export/rollup.ts";
 import type { ExportEntry } from "../../../infra/health-export/reader.ts";
-import { toAppleDate, normaliseSleepValue } from "../../../core/health/phone-samples.ts";
+import { toAppleDate, normaliseSleepValue, normalisePhoneNumber } from "../../../core/health/phone-samples.ts";
 
 /**
  * Apple Health has no server-side API, so the iOS Shortcut pushes a snapshot
@@ -207,6 +207,11 @@ function unpackSamples(
  * Health's display unit, so it declares what it believes it is sending and the
  * server's job is to refuse a declared mismatch — never to convert.
  *
+ * The value itself is normalised before the rollup sees it, and refused rather
+ * than coerced when it cannot be read: the phone writes decimals in its own
+ * locale (a comma), and the rollup reads values with `Number()`, which turns
+ * that into NaN — losing a whole column rather than mis-storing it.
+ *
  * `agg: "avg"` types stay refused here. They are not broken: a Shortcut
  * averages a quantity type perfectly well, and the direct `READING` fields
  * already carry every one of them. Accepting them here would only open a second
@@ -268,11 +273,35 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
         continue;
       }
 
+      // A missing `value` key is a half-wired Shortcut step, not an empty
+      // aggregate — named, because it is a mistake somebody has to fix.
+      const rawValue = typeof s.value === "string" ? s.value.trim()
+        : typeof s.value === "number" ? String(s.value)
+        : null;
+      if (rawValue === null) {
+        ignored.push({ field: `samples[${i}]`, reason: `${type}: hiányzó érték` });
+        continue;
+      }
+
+      // The phone's locale renders decimals with a comma. Translated here at
+      // the boundary rather than in the rollup, whose correctness must not
+      // depend on the phone's path growing — and refused by name when the shape
+      // is not the unambiguous one, never guessed at.
+      const value = normalisePhoneNumber(rawValue);
+      if (value === null) {
+        ignored.push({
+          field: `samples[${i}]`,
+          reason: `${type}: értelmezhetetlen szám (${rawValue})`,
+        });
+        continue;
+      }
+
       entries.push({
         kind: "record", type,
-        // Left as text on purpose: the rollup parses and range-checks the value
-        // itself, and a number that is not finite is counted in its `skipped`.
-        value: typeof s.value === "string" ? s.value : String(s.value ?? ""),
+        // Still text: the rollup parses and range-checks the value itself. What
+        // changed is only that the text is now guaranteed to be a shape
+        // `Number()` reads the same way this boundary read it.
+        value,
         unit, startDate: start, endDate: end, source,
       });
       continue;
