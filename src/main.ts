@@ -81,7 +81,7 @@ const scheduler = startScheduler({
   clock: app.clock,
   logger: app.logger,
   seenRetentionDays: config.schedule.seenRetentionDays,
-  conversationRetentionDays: 30,
+  conversationRetentionDays: config.schedule.conversationRetentionDays,
 });
 
 let shuttingDown = false;

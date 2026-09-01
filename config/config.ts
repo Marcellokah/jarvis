@@ -137,6 +137,12 @@ export const config = {
   schedule: {
     /** After this, a previously reported item may resurface. */
     seenRetentionDays: 21,
+    /**
+     * A conversation thread is not durable memory — that is the `analyses`
+     * table's job — only the recent back-and-forth a follow-up question
+     * depends on. Nobody asks a follow-up to a turn from last month.
+     */
+    conversationRetentionDays: 30,
   },
 
   brief: {

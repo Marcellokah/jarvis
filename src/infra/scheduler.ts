@@ -28,6 +28,46 @@ export interface Scheduler {
 }
 
 /**
+ * The nightly sweep's body, pulled out of the cron callback so it can be
+ * tested directly against a fixed `now` rather than by trying to trigger
+ * croner's own schedule — a timing-dependent test would be slow and flaky for
+ * no real coverage gain, whereas this function is a plain call.
+ */
+export function runNightlyCleanup(opts: SchedulerOptions, now: Date): void {
+  // The only thing still on a timer. Not automation — the process's own hygiene:
+  // expired cache entries and dedupe records that have outlived their purpose.
+  try {
+    const prunedSeen = createSeenStore(opts.db).prune(opts.seenRetentionDays, now);
+    const prunedTurns = createConversationRepo(opts.db).prune(
+      new Date(now.getTime() - opts.conversationRetentionDays * 86_400_000),
+    );
+    opts.db.run("DELETE FROM module_cache WHERE expires_at < ?", now.toISOString());
+    opts.logger.info({ prunedSeen, prunedTurns }, "nightly cleanup complete");
+  } catch (err) {
+    opts.logger.warn({ err: String(err) }, "nightly cleanup failed");
+  }
+
+  // Second recording point (the first is start-up, in main.ts). It is not a
+  // guarantee that no month goes unrecorded: croner does not replay a run
+  // missed while the machine was asleep, and on a laptop that sleeps at 04:00
+  // this leg may simply never fire. Start-up is the leg that actually holds —
+  // whenever the agent restarts, the month gets recorded.
+  // Same shared implementation as main.ts calls, so the two cannot drift
+  // the way they already had once (see core/subscription-snapshot.ts).
+  // The already-captured `now` is reused rather than calling clock.now()
+  // again, so this snapshot's recorded_at matches the cleanup run above it.
+  try {
+    recordSubscriptionMonth({
+      subscriptions: createSubscriptionRepo(opts.db),
+      subscriptionMonths: createSubscriptionMonthRepo(opts.db),
+      clock: { now: () => now },
+    });
+  } catch (err) {
+    opts.logger.warn({ err: String(err) }, "nightly subscription snapshot failed");
+  }
+}
+
+/**
  * The only timer left in the system.
  *
  * The brief used to be pre-warmed at 07:20 so an unattended 07:30 request could
@@ -37,39 +77,8 @@ export interface Scheduler {
 export function startScheduler(opts: SchedulerOptions): Scheduler {
   const timezone = "Europe/Budapest";
 
-  // The only thing still on a timer. Not automation — the process's own hygiene:
-  // expired cache entries and dedupe records that have outlived their purpose.
   const cleanup = new Cron("0 4 * * *", { timezone, protect: true }, () => {
-    const now = opts.clock.now();
-    try {
-      const prunedSeen = createSeenStore(opts.db).prune(opts.seenRetentionDays, now);
-      const prunedTurns = createConversationRepo(opts.db).prune(
-        new Date(now.getTime() - opts.conversationRetentionDays * 86_400_000),
-      );
-      opts.db.run("DELETE FROM module_cache WHERE expires_at < ?", now.toISOString());
-      opts.logger.info({ prunedSeen, prunedTurns }, "nightly cleanup complete");
-    } catch (err) {
-      opts.logger.warn({ err: String(err) }, "nightly cleanup failed");
-    }
-
-    // Second recording point (the first is start-up, in main.ts). It is not a
-    // guarantee that no month goes unrecorded: croner does not replay a run
-    // missed while the machine was asleep, and on a laptop that sleeps at 04:00
-    // this leg may simply never fire. Start-up is the leg that actually holds —
-    // whenever the agent restarts, the month gets recorded.
-    // Same shared implementation as main.ts calls, so the two cannot drift
-    // the way they already had once (see core/subscription-snapshot.ts).
-    // The already-captured `now` is reused rather than calling clock.now()
-    // again, so this snapshot's recorded_at matches the cleanup run above it.
-    try {
-      recordSubscriptionMonth({
-        subscriptions: createSubscriptionRepo(opts.db),
-        subscriptionMonths: createSubscriptionMonthRepo(opts.db),
-        clock: { now: () => now },
-      });
-    } catch (err) {
-      opts.logger.warn({ err: String(err) }, "nightly subscription snapshot failed");
-    }
+    runNightlyCleanup(opts, opts.clock.now());
   });
 
   opts.logger.info({ cleanup: "0 4 * * *" }, "scheduler started");

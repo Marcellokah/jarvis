@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { memoryDb } from "../helpers.ts";
 import { createConversationRepo } from "../../src/infra/db/repositories/conversations.ts";
+import type { Db } from "../../src/infra/db/index.ts";
 
 const AT = (iso: string) => new Date(iso);
 
@@ -82,5 +83,30 @@ describe("conversation repo", () => {
       .toThrow(/üres/);
     expect(repo.recent("web", 10)).toEqual([]);
     db.close();
+  });
+
+  it("rolls back the question when storing the answer fails", () => {
+    // The guard above catches an empty answer before the transaction ever
+    // opens, so it proves nothing about the transaction itself. This test
+    // fails *inside* it — between the two inserts — which is the case the
+    // transaction exists for: without it, a crash there would leave a
+    // question in the thread with no reply after it.
+    const real = memoryDb();
+    let inserts = 0;
+    const flaky: Db = {
+      ...real,
+      run(sql: string, ...params: unknown[]) {
+        if (sql.includes("INSERT INTO conversations") && ++inserts === 2) {
+          throw new Error("megtelt a lemez");
+        }
+        real.run(sql, ...params);
+      },
+    };
+
+    expect(() =>
+      createConversationRepo(flaky).appendExchange("web", "kérdés", "válasz", AT("2026-09-01T08:00:00.000Z")),
+    ).toThrow(/megtelt/);
+    expect(createConversationRepo(real).recent("web", 10)).toEqual([]);
+    real.close();
   });
 });
