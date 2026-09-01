@@ -2,7 +2,7 @@ import type { HealthSnapshot } from "../../infra/db/repositories/health.ts";
 import type { WorkoutRow } from "../../infra/health-export/rollup.ts";
 import type { MonthlySubscription } from "../../infra/db/repositories/subscription-months.ts";
 import {
-  mean, shiftDay, slopePer30d, stdDev, windowed, type Metric, type Point,
+  shiftDay, slopePer30d, stdDev, windowed, type Metric, type Point,
 } from "./stats.ts";
 
 export interface AggregateInput {
@@ -103,9 +103,11 @@ export function aggregate(input: AggregateInput): Metrics {
   const acute = dailyAverageMinutes(byDay, today, 28);
   const chronic = dailyAverageMinutes(byDay, today, 365);
 
-  // A ratio needs a baseline to be a ratio. Under a month of history in the
-  // long window there is nothing to be "relative to", so it stays null.
-  const loadRatio = chronic.daysWithTraining >= 28 && chronic.avg > 0
+  // A ratio needs a prior baseline to compare against. The baseline is training
+  // days in the 365-day window *excluding* the most recent 28 days being measured.
+  // Without at least 28 prior training days, there is nothing to be "relative to".
+  const baselineDays = chronic.daysWithTraining - acute.daysWithTraining;
+  const loadRatio = baselineDays >= 28 && chronic.avg > 0
     ? acute.avg / chronic.avg
     : null;
 

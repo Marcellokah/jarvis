@@ -34,6 +34,17 @@ describe("aggregate — physical", () => {
     expect(m.physical.loadRatio).toBeCloseTo(1, 6);
   });
 
+  it("measures load against the window, not against the days trained", () => {
+    // Daily for the last 28 days, then only every fourth day before that.
+    // Dividing by the window length gives roughly 3.3; dividing by days trained
+    // would give 1.0, so this fixture tells the two apart.
+    const recent = Array.from({ length: 28 }, (_, i) => workout(shiftDay(TODAY, -i), 60));
+    const older = Array.from({ length: 84 }, (_, i) => workout(shiftDay(TODAY, -(28 + i * 4)), 60));
+    const ratio = aggregate(input({ workouts: [...recent, ...older] })).physical.loadRatio!;
+    expect(ratio).toBeGreaterThan(2.5);
+    expect(ratio).toBeLessThan(4);
+  });
+
   it("shows a ratio below 1 when recent training has dropped off", () => {
     // Trained daily for the year, but nothing in the last 28 days.
     const workouts = Array.from({ length: 365 }, (_, i) => workout(shiftDay(TODAY, -(i + 28)), 60));
@@ -46,6 +57,13 @@ describe("aggregate — physical", () => {
     // One day of training is not a 365-day baseline; a ratio here would be
     // arithmetically computable and completely meaningless.
     expect(m.physical.loadRatio).toBeNull();
+  });
+
+  it("has no ratio for someone with no history before the window being measured", () => {
+    // 28 days of daily training and nothing before it satisfies a naive guard on
+    // the strength of the very days being measured, and reports about 13x.
+    const workouts = Array.from({ length: 28 }, (_, i) => workout(shiftDay(TODAY, -i), 60));
+    expect(aggregate(input({ workouts })).physical.loadRatio).toBeNull();
   });
 
   it("counts strength sessions per week over 28 days", () => {
@@ -75,7 +93,7 @@ describe("aggregate — physical", () => {
   });
 
   it("carries the VO2max trend as a slope per 30 days", () => {
-    // 40.0 falling by 0.1/day for 60 days => -3.0 per 30 days.
+    // Rising from 34.0 to 40.0 over 60 days: 0.1/day = 3.0 per 30 days.
     const snapshots = Array.from({ length: 61 }, (_, i) =>
       snap(shiftDay(TODAY, -60 + i), { vo2max: 40 - (60 - i) * 0.1 }));
     const m = aggregate(input({ snapshots }));
@@ -154,5 +172,11 @@ describe("aggregate — finance", () => {
     // The table was created in S2; there is no history before it, and an
     // invented comparison would be an estimate wearing a measurement's clothes.
     expect(m.finance.monthOverMonth).toBeNull();
+  });
+
+  it("annualises the latest month's total spending", () => {
+    const m = aggregate(input({ months }));
+    // August total is 4990, so annualised is 4990 * 12.
+    expect(m.finance.annualisedHuf).toBe(59880);
   });
 });
