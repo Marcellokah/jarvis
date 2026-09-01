@@ -1,12 +1,17 @@
 import { createApp, recordSubscriptionMonth } from "./app.ts";
 import { requireApiToken } from "./env.ts";
 import { buildServer } from "./delivery/http/server.ts";
-import { buildBot } from "./delivery/telegram/bot.ts";
+import { buildBot, sendTo } from "./delivery/telegram/bot.ts";
 import { acquireInstanceLock } from "./infra/instance-lock.ts";
 import { startScheduler } from "./infra/scheduler.ts";
 import { aggregate } from "./core/analysis/aggregate.ts";
 import { metricsRowsFrom } from "./delivery/http/page.ts";
 import { isoDate, TZ } from "./shared/dates.ts";
+import { createGatherMark, runNotifyTick } from "./core/notify/tick.ts";
+import { gatherCandidates } from "./core/notify/gather.ts";
+import { composeNotification } from "./core/notify/message.ts";
+import { GROQ_KEY_VAR } from "./infra/groq.ts";
+import { fromRoot } from "./shared/paths.ts";
 import { config } from "../config/config.ts";
 
 const app = createApp();
@@ -95,12 +100,71 @@ if (!telegramToken) {
   app.logger.warn({}, "TELEGRAM_BOT_TOKEN not set — the bot is inactive; the HTTP API still works");
 }
 
+// One mark for the life of the process, created outside the tick so that two
+// ticks fifteen minutes apart see the same one.
+const notifyGatherMark = createGatherMark();
+
 const scheduler = startScheduler({
   db: app.db,
   clock: app.clock,
   logger: app.logger,
   seenRetentionDays: config.schedule.seenRetentionDays,
   conversationRetentionDays: config.schedule.conversationRetentionDays,
+  // No chat to speak into without both a running bot and a chat allow-listed
+  // to receive it — the same pair that gates every other unprompted message.
+  ...(bot && allowedChatId
+    ? {
+        notify: {
+          cron: config.notify.cron,
+          run: (now: Date) => runNotifyTick(
+            {
+              db: app.db,
+              tz: TZ,
+              logger: app.logger,
+              notifications: app.notifications,
+              seen: app.runner.seen,
+              gatherMark: notifyGatherMark,
+              gates: {
+                minHoursBetween: config.notify.minHoursBetween,
+                quietFromHour: config.notify.quietFromHour,
+                quietToHour: config.notify.quietToHour,
+              },
+              gather: (at) => gatherCandidates({
+                tz: TZ,
+                logger: app.logger,
+                notifications: app.notifications,
+                analyses: app.analyses,
+                metrics: () => aggregate({
+                  today: isoDate(at, TZ),
+                  snapshots: app.health.between("1970-01-01", isoDate(at, TZ)),
+                  workouts: app.workouts.between("1970-01-01", isoDate(at, TZ)),
+                  months: app.subscriptionMonths.months().map((month) => ({
+                    month, subs: app.subscriptionMonths.forMonth(month),
+                  })),
+                }),
+                // runOne runs a single module. `get` and `generate` synthesise a
+                // brief, which is a Groq call — this path must never trigger one.
+                runModule: async (name, moduleNow) =>
+                  (await app.briefs.runOne(name, moduleNow))?.result?.data ?? null,
+              }, at),
+              compose: (cs, signal) => composeNotification(cs, {
+                fetcher: app.runner.http,
+                model: config.notify.model,
+                systemPromptFile: fromRoot("jarvis.md"),
+                maxTokens: config.notify.maxTokens,
+                temperature: config.notify.temperature,
+                timeoutMs: config.notify.timeoutMs,
+                logger: app.logger,
+                apiKey: () => app.runner.secrets.get(GROQ_KEY_VAR),
+              }, signal),
+              send: (text) => sendTo(bot, allowedChatId, text),
+            },
+            now,
+            new AbortController().signal,
+          ).then(() => {}),
+        },
+      }
+    : {}),
 });
 
 let shuttingDown = false;

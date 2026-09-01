@@ -25,6 +25,7 @@ import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/healt
 import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
 import { createAnalysisRepo, type AnalysisRepo } from "./infra/db/repositories/analyses.ts";
 import { createConversationRepo, type ConversationRepo } from "./infra/db/repositories/conversations.ts";
+import { createNotificationRepo, type NotificationRepo } from "./infra/db/repositories/notifications.ts";
 import { buildAskContext } from "./core/ask/context.ts";
 import { createFetcher } from "./infra/http-client.ts";
 import { createLogger, type Logger } from "./infra/logger.ts";
@@ -52,6 +53,7 @@ export interface App {
   workouts: WorkoutRepo;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
+  notifications: NotificationRepo;
   runner: RunnerDeps;
   modules: readonly typeof ALL_MODULES[number][];
   close(): void;
@@ -88,6 +90,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   const subscriptionMonths = createSubscriptionMonthRepo(db);
   const analyses = createAnalysisRepo(db);
   const conversations = createConversationRepo(db);
+  const notifications = createNotificationRepo(db);
 
   const proposals = createProposalService({
     actions,
@@ -137,6 +140,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     subscriptionMonths,
     analyses,
     conversations,
+    notifications,
     modules: ALL_MODULES,
     close: () => db.close(),
   };

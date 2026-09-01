@@ -65,6 +65,41 @@ más helyzet.
 A beszélgetéseket a 04:00-s takarítás 30 nap után nyesi. A tartós emlékezet nem
 ez, hanem az `analyses` tábla.
 
+### Amikor magától szól
+
+Negyedóránként ellenőrzi, van-e miért megszólalnia, és Telegramon szól. Két
+kapun kell átjutnia: az utolsó ilyen üzenet óta eltelt négy óra, és 07:00 és
+22:00 között vagyunk. Ha bármelyik zár, semmit nem csinál — nem is olvas. A
+négy óra a legutóbbi *ellenőrzés* óta is számít, nem csak a legutóbbi üzenet
+óta: egy néma napon sem futnak a modulok negyedóránként.
+
+Három dolog éri meg neki:
+
+- **Időzaklató teendő** — kiolvasztási határidő a következő négy órán belül,
+  vagy ma, illetve holnap megújuló előfizetés. Az előfizetés nem határidő: nap
+  a pontossága, nem óra, és nem lehet „lekésni”.
+- **Egészségi eltérés** — a HRV másfél szórásra a saját 90 napos alapvonalától,
+  vagy a nyugalmi pulzus 30 naponta legalább 2 bpm-es emelkedése. Mindkettőnek
+  át kell mennie ugyanazokon a mintaszám-kapukon, amiket a mélyelemzés használ.
+- **Új elemzési megállapítás** — ami az utolsó értesítés óta és 24 óránál nem
+  régebben született.
+
+Egy üzenetben legfeljebb öt tétel megy ki, a sürgősek elöl: ez értesítés, nem
+jelentés. Ami kimaradt, azt nem jegyzi föl elküldöttként, tehát megmarad a
+következő alkalomra.
+
+Amit egyszer elmondott, azt nem mondja újra: a kulcsok a `seen_items` táblába
+kerülnek, és a 04:00-s takarítás nyesi őket, tehát három hét múlva egy még
+mindig fennálló dolog újra felszínre kerülhet.
+
+A megfogalmazás a modellé, de a döntés nem: hogy egyáltalán megszólaljon-e,
+azt küszöbök döntik kódban. Ha a modell nem érhető el, a tételek egyszerű
+felsorolásként mennek ki — egy elmaradt határidő rosszabb, mint egy csúnya
+mondat.
+
+A kiküldött üzenetek a `notifications` táblában maradnak, tehát utólag
+megnézhető, mit mondott és mikor.
+
 ### Egészség-történet
 
 Az iPhone Health appjából (Profil → Összes egészségügyi adat exportálása) kapott
