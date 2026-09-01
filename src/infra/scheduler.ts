@@ -5,6 +5,7 @@ import type { Logger } from "./logger.ts";
 import { createSeenStore } from "./db/repositories/seen.ts";
 import { createSubscriptionRepo } from "./db/repositories/subscriptions.ts";
 import { createSubscriptionMonthRepo } from "./db/repositories/subscription-months.ts";
+import { createConversationRepo } from "./db/repositories/conversations.ts";
 import { recordSubscriptionMonth } from "../core/subscription-snapshot.ts";
 
 export interface SchedulerOptions {
@@ -13,6 +14,13 @@ export interface SchedulerOptions {
   logger: Logger;
   /** Drop seen_items older than this, so a re-released item can resurface. */
   seenRetentionDays: number;
+  /**
+   * A conversation thread is not long-term memory — that is what the
+   * `analyses` table is for — only the recent back-and-forth a follow-up
+   * question depends on. Nobody asks "what did I say a month ago?", so
+   * anything older than this is safe to drop.
+   */
+  conversationRetentionDays: number;
 }
 
 export interface Scheduler {
@@ -35,8 +43,11 @@ export function startScheduler(opts: SchedulerOptions): Scheduler {
     const now = opts.clock.now();
     try {
       const prunedSeen = createSeenStore(opts.db).prune(opts.seenRetentionDays, now);
+      const prunedTurns = createConversationRepo(opts.db).prune(
+        new Date(now.getTime() - opts.conversationRetentionDays * 86_400_000),
+      );
       opts.db.run("DELETE FROM module_cache WHERE expires_at < ?", now.toISOString());
-      opts.logger.info({ prunedSeen }, "nightly cleanup complete");
+      opts.logger.info({ prunedSeen, prunedTurns }, "nightly cleanup complete");
     } catch (err) {
       opts.logger.warn({ err: String(err) }, "nightly cleanup failed");
     }

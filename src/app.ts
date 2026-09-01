@@ -24,6 +24,7 @@ import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
 import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
 import { createAnalysisRepo, type AnalysisRepo } from "./infra/db/repositories/analyses.ts";
+import { createConversationRepo, type ConversationRepo } from "./infra/db/repositories/conversations.ts";
 import { createFetcher } from "./infra/http-client.ts";
 import { createLogger, type Logger } from "./infra/logger.ts";
 import { keychainSecrets, type SecretResolver } from "./infra/secrets.ts";
@@ -49,6 +50,7 @@ export interface App {
   health: HealthRepo;
   workouts: WorkoutRepo;
   analyses: AnalysisRepo;
+  conversations: ConversationRepo;
   runner: RunnerDeps;
   modules: readonly typeof ALL_MODULES[number][];
   close(): void;
@@ -122,6 +124,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     subscriptions: createSubscriptionRepo(db),
     subscriptionMonths: createSubscriptionMonthRepo(db),
     analyses: createAnalysisRepo(db),
+    conversations: createConversationRepo(db),
     modules: ALL_MODULES,
     close: () => db.close(),
   };
