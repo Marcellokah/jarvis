@@ -127,6 +127,44 @@ export interface SampleResult {
 }
 
 /**
+ * What a Shortcut actually puts in a JSON array field, unpacked.
+ *
+ * Shortcuts cannot splice a list variable into a JSON array. Asked to, it
+ * renders the whole list as ONE string — its items joined by newlines, each
+ * item its own JSON object. Measured, not assumed: the first live run stored
+ * `samples` as a one-element array whose element was 45 newline-separated
+ * objects.
+ *
+ * So the phone can send its night in exactly one shape, and this is where that
+ * shape becomes the array the rest of the function expects. A real array of
+ * objects passes through untouched — the phone is not the only possible caller,
+ * and a caller that can send proper JSON should not be punished for it.
+ *
+ * A line that does not parse is dropped and named, never guessed at: a
+ * half-read night would file stages against the wrong minutes.
+ */
+function unpackSamples(
+  raw: unknown, ignored: { field: string; reason: string }[],
+): unknown[] | null {
+  if (typeof raw === "string") return unpackSamples([raw], ignored);
+  if (!Array.isArray(raw)) return null;
+
+  return raw.flatMap((item, i) => {
+    if (typeof item !== "string") return [item];
+    return item.split("\n").flatMap((line, j) => {
+      const text = line.trim();
+      if (text === "") return [];
+      try {
+        return [JSON.parse(text) as unknown];
+      } catch {
+        ignored.push({ field: `samples[${i}].${j}`, reason: "értelmezhetetlen JSON sor" });
+        return [];
+      }
+    });
+  });
+}
+
+/**
  * Runs the phone's raw SLEEP samples — and its per-source day totals — through
  * the import's own rollup.
  *
@@ -174,44 +212,6 @@ export interface SampleResult {
  * already carry every one of them. Accepting them here would only open a second
  * route to one column for no gain. Every other type is refused and named too.
  */
-/**
- * What a Shortcut actually puts in a JSON array field, unpacked.
- *
- * Shortcuts cannot splice a list variable into a JSON array. Asked to, it
- * renders the whole list as ONE string — its items joined by newlines, each
- * item its own JSON object. Measured, not assumed: the first live run stored
- * `samples` as a one-element array whose element was 45 newline-separated
- * objects.
- *
- * So the phone can send its night in exactly one shape, and this is where that
- * shape becomes the array the rest of the function expects. A real array of
- * objects passes through untouched — the phone is not the only possible caller,
- * and a caller that can send proper JSON should not be punished for it.
- *
- * A line that does not parse is dropped and named, never guessed at: a
- * half-read night would file stages against the wrong minutes.
- */
-function unpackSamples(
-  raw: unknown, ignored: { field: string; reason: string }[],
-): unknown[] | null {
-  if (typeof raw === "string") return unpackSamples([raw], ignored);
-  if (!Array.isArray(raw)) return null;
-
-  return raw.flatMap((item, i) => {
-    if (typeof item !== "string") return [item];
-    return item.split("\n").flatMap((line, j) => {
-      const text = line.trim();
-      if (text === "") return [];
-      try {
-        return [JSON.parse(text) as unknown];
-      } catch {
-        ignored.push({ field: `samples[${i}].${j}`, reason: "értelmezhetetlen JSON sor" });
-        return [];
-      }
-    });
-  });
-}
-
 export async function readSamples(raw: unknown): Promise<SampleResult> {
   const ignored: { field: string; reason: string }[] = [];
   const unpacked = unpackSamples(raw, ignored);
