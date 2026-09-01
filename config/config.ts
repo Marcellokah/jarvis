@@ -186,7 +186,16 @@ export const config = {
     quietFromHour: 22,
     quietToHour: 7,
     model: "qwen/qwen3.8-27b",
-    maxTokens: 300,
+    /**
+     * Output budget for the phrased message, not the input. `groqComplete`
+     * throws away a truncated completion whole rather than returning the
+     * partial text, so an undersized budget does not shorten the message —
+     * it silently loses the model's wording and falls back to the template.
+     * 300 was too small: four real candidates alone were 1,257 characters,
+     * and qwen also spends from this same budget on hidden reasoning before
+     * it writes the answer. 800 leaves headroom for both.
+     */
+    maxTokens: 800,
     temperature: 0.4,
     timeoutMs: 30_000,
   },

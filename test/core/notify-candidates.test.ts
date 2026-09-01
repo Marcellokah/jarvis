@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   candidates, HRV_SIGMA_THRESHOLD, RHR_SLOPE_THRESHOLD,
+  leadOf, ANALYSIS_LEAD_MAX_CHARS,
   type CandidateInput,
 } from "../../src/core/notify/candidates.ts";
 import { TZ } from "../../src/shared/dates.ts";
@@ -207,6 +208,59 @@ describe("candidates — analyses", () => {
     const first = candidates(input({ newAnalyses }))[0]!.key;
     const later = candidates(input({ now: new Date("2026-09-01T10:30:00.000Z"), newAnalyses }))[0]!.key;
     expect(later).toBe(first);
+  });
+
+  it("uses the lead, not the whole summary, when the summary runs long", () => {
+    // A one-paragraph analysis summary — the shape `analyst.ts` actually
+    // writes, well past ANALYSIS_LEAD_MAX_CHARS.
+    const longSummary = Array.from({ length: 40 }, (_, i) => `megállapítás${i}`).join(" ");
+    const found = candidates(input({
+      newAnalyses: [{ domain: "physical", summary: longSummary, createdAt: "2026-09-01T09:00:00.000Z" }],
+    }));
+    expect(found[0]!.text).not.toContain(longSummary);
+    expect(found[0]!.text).toBe(`${DOMAIN_LABEL_PHYSICAL} — ${leadOf(longSummary)}`);
+    expect(found[0]!.text.endsWith("…")).toBe(true);
+  });
+});
+
+// Mirrors DOMAIN_LABEL.physical in candidates.ts — kept local because the map
+// itself is not exported, only its effect on the text.
+const DOMAIN_LABEL_PHYSICAL = "Fizikai fejlődés";
+
+describe("leadOf", () => {
+  it("leaves a summary at or under the limit completely unchanged", () => {
+    const short = "A terhelés magas, érdemes lassítani a jövő héten.";
+    expect(leadOf(short)).toBe(short);
+    expect(leadOf(short).endsWith("…")).toBe(false);
+  });
+
+  it("cuts a long summary at a word boundary and ends with an ellipsis", () => {
+    const long = Array.from({ length: 40 }, (_, i) => `szó${i}`).join(" ");
+    const lead = leadOf(long);
+
+    expect(lead.endsWith("…")).toBe(true);
+
+    // What precedes the ellipsis must be an exact prefix of the source that
+    // stops exactly at a space (or the end of the string) — never mid-word.
+    const withoutEllipsis = lead.slice(0, -1);
+    expect(long.startsWith(withoutEllipsis)).toBe(true);
+    const nextChar = long[withoutEllipsis.length];
+    expect(nextChar === " " || nextChar === undefined).toBe(true);
+  });
+
+  it("never produces a result longer than the limit, ellipsis included", () => {
+    for (const len of [1, ANALYSIS_LEAD_MAX_CHARS - 1, ANALYSIS_LEAD_MAX_CHARS,
+      ANALYSIS_LEAD_MAX_CHARS + 1, ANALYSIS_LEAD_MAX_CHARS + 50, 1_000]) {
+      const summary = Array.from({ length: Math.ceil(len / 4) }, (_, i) => `w${i}`).join(" ").slice(0, len);
+      expect(leadOf(summary).length).toBeLessThanOrEqual(ANALYSIS_LEAD_MAX_CHARS);
+    }
+  });
+
+  it("respects an explicit maxChars override", () => {
+    const summary = "egy két három négy öt hat hét nyolc kilenc tíz";
+    const lead = leadOf(summary, 10);
+    expect(lead.length).toBeLessThanOrEqual(10);
+    expect(lead.endsWith("…")).toBe(true);
   });
 });
 
