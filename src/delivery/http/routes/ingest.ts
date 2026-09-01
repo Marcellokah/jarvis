@@ -25,6 +25,28 @@ const READING = {
   moveKcal: z.coerce.number().min(0).max(10_000),
   exerciseMin: z.coerce.number().min(0).max(1440),
   steps: z.coerce.number().int().min(0).max(200_000),
+  vo2max: z.coerce.number().min(10).max(90),
+  hrRecovery: z.coerce.number().min(0).max(100),
+  walkingHr: z.coerce.number().min(40).max(200),
+  walkingSpeed: z.coerce.number().min(0).max(12),
+  stepLengthCm: z.coerce.number().min(0).max(200),
+  doubleSupportPct: z.coerce.number().min(0).max(100),
+  asymmetryPct: z.coerce.number().min(0).max(100),
+  steadinessPct: z.coerce.number().min(0).max(100),
+  sixMinWalkM: z.coerce.number().min(0).max(2000),
+  stairUpMs: z.coerce.number().min(0).max(5),
+  stairDownMs: z.coerce.number().min(0).max(5),
+  distanceKm: z.coerce.number().min(0).max(300),
+  basalKcal: z.coerce.number().min(0).max(10_000),
+  // Not in the brief's field list, but required by the "flights" column the
+  // upsert now writes and by the zero-is-real-reading test below: a day with
+  // no stairs climbed is a fact, so this needs its own range like `steps`.
+  flights: z.coerce.number().int().min(0).max(1000),
+  standMin: z.coerce.number().min(0).max(1440),
+  dietKcal: z.coerce.number().min(0).max(20_000),
+  dietProteinG: z.coerce.number().min(0).max(1000),
+  dietCarbsG: z.coerce.number().min(0).max(2000),
+  dietFatG: z.coerce.number().min(0).max(1000),
 } as const;
 
 type Reading = keyof typeof READING;
@@ -37,10 +59,16 @@ type Reading = keyof typeof READING;
  * heart rate of zero — but the brief believed it, and told you your recovery
  * was poor on the strength of a reading that was never taken.
  *
- * `moveKcal`, `exerciseMin` and `steps` are deliberately absent from this list:
- * at 07:30 those can honestly be zero.
+ * `steps`, `moveKcal`, `exerciseMin`, `flights`, `distanceKm` and `standMin`
+ * are deliberately absent from this list: at 07:30 those can honestly be zero.
  */
-const ZERO_MEANS_ABSENT: ReadonlySet<Reading> = new Set(["sleepH", "hrv", "rhr"]);
+const ZERO_MEANS_ABSENT: ReadonlySet<Reading> = new Set([
+  "sleepH", "hrv", "rhr",
+  "vo2max", "hrRecovery", "walkingHr", "basalKcal",
+  "walkingSpeed", "stepLengthCm", "doubleSupportPct", "asymmetryPct",
+  "steadinessPct", "sixMinWalkM", "stairUpMs", "stairDownMs",
+  "dietKcal", "dietProteinG", "dietCarbsG", "dietFatG",
+]);
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -176,23 +204,36 @@ export function registerIngestRoutes(
         moveKcal: values.moveKcal ?? null,
         exerciseMin: values.exerciseMin ?? null,
         steps: values.steps ?? null,
-        // The Shortcut only ever sends the six readings above; the history
-        // columns are exclusively filled by the Apple Health import.
+        // Sleep-stage columns come only from the raw-sample path below, via
+        // fillGaps — a Shortcut cannot compute stage durations itself (see
+        // readSamples). They still have to be listed here, even as null: an
+        // upsert that omitted them from its column list would let a later
+        // post's ON CONFLICT overwrite what fillGaps had already written.
         asleepMin: null,
         inBedMin: null,
         coreMin: null,
         remMin: null,
         deepMin: null,
         awakenings: null,
-        vo2max: null,
-        hrRecovery: null,
-        walkingHr: null,
-        basalKcal: null,
-        flights: null,
-        dietKcal: null,
-        dietProteinG: null,
-        dietCarbsG: null,
-        dietFatG: null,
+        vo2max: values.vo2max ?? null,
+        hrRecovery: values.hrRecovery ?? null,
+        walkingHr: values.walkingHr ?? null,
+        basalKcal: values.basalKcal ?? null,
+        flights: values.flights ?? null,
+        dietKcal: values.dietKcal ?? null,
+        dietProteinG: values.dietProteinG ?? null,
+        dietCarbsG: values.dietCarbsG ?? null,
+        dietFatG: values.dietFatG ?? null,
+        distanceKm: values.distanceKm ?? null,
+        standMin: values.standMin ?? null,
+        walkingSpeed: values.walkingSpeed ?? null,
+        stepLengthCm: values.stepLengthCm ?? null,
+        doubleSupportPct: values.doubleSupportPct ?? null,
+        asymmetryPct: values.asymmetryPct ?? null,
+        steadinessPct: values.steadinessPct ?? null,
+        sixMinWalkM: values.sixMinWalkM ?? null,
+        stairUpMs: values.stairUpMs ?? null,
+        stairDownMs: values.stairDownMs ?? null,
       },
       fields,
       now,

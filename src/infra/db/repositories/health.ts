@@ -40,6 +40,16 @@ export interface HealthSnapshot {
   dietProteinG: number | null;
   dietCarbsG: number | null;
   dietFatG: number | null;
+  distanceKm: number | null;
+  standMin: number | null;
+  walkingSpeed: number | null;
+  stepLengthCm: number | null;
+  doubleSupportPct: number | null;
+  asymmetryPct: number | null;
+  steadinessPct: number | null;
+  sixMinWalkM: number | null;
+  stairUpMs: number | null;
+  stairDownMs: number | null;
   /** When this snapshot was written — used to tell a brief it was generated
    *  from stale numbers, not just to know what the numbers were. */
   ingestedAt: string;
@@ -97,6 +107,16 @@ interface Row {
   diet_protein_g: number | null;
   diet_carbs_g: number | null;
   diet_fat_g: number | null;
+  distance_km: number | null;
+  stand_min: number | null;
+  walking_speed: number | null;
+  step_length_cm: number | null;
+  double_support_pct: number | null;
+  asymmetry_pct: number | null;
+  steadiness_pct: number | null;
+  six_min_walk_m: number | null;
+  stair_up_ms: number | null;
+  stair_down_ms: number | null;
   ingested_at: string;
 }
 
@@ -123,6 +143,16 @@ const toSnapshot = (r: Row): HealthSnapshot => ({
   dietProteinG: r.diet_protein_g,
   dietCarbsG: r.diet_carbs_g,
   dietFatG: r.diet_fat_g,
+  distanceKm: r.distance_km,
+  standMin: r.stand_min,
+  walkingSpeed: r.walking_speed,
+  stepLengthCm: r.step_length_cm,
+  doubleSupportPct: r.double_support_pct,
+  asymmetryPct: r.asymmetry_pct,
+  steadinessPct: r.steadiness_pct,
+  sixMinWalkM: r.six_min_walk_m,
+  stairUpMs: r.stair_up_ms,
+  stairDownMs: r.stair_down_ms,
   ingestedAt: r.ingested_at,
 });
 
@@ -131,18 +161,56 @@ export function createHealthRepo(db: Db): HealthRepo {
     upsert(s, raw, now) {
       db.run(
         `INSERT INTO health_snapshots
-           (date, sleep_h, hrv, rhr, move_kcal, exercise_min, steps, raw_json, ingested_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (date, sleep_h, hrv, rhr, move_kcal, exercise_min, steps,
+            asleep_min, in_bed_min, core_min, rem_min, deep_min, awakenings,
+            vo2max, hr_recovery, walking_hr, basal_kcal, flights,
+            diet_kcal, diet_protein_g, diet_carbs_g, diet_fat_g,
+            distance_km, stand_min, walking_speed, step_length_cm,
+            double_support_pct, asymmetry_pct, steadiness_pct, six_min_walk_m,
+            stair_up_ms, stair_down_ms,
+            raw_json, ingested_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date) DO UPDATE SET
-           sleep_h      = COALESCE(excluded.sleep_h, health_snapshots.sleep_h),
-           hrv          = COALESCE(excluded.hrv, health_snapshots.hrv),
-           rhr          = COALESCE(excluded.rhr, health_snapshots.rhr),
-           move_kcal    = COALESCE(excluded.move_kcal, health_snapshots.move_kcal),
-           exercise_min = COALESCE(excluded.exercise_min, health_snapshots.exercise_min),
-           steps        = COALESCE(excluded.steps, health_snapshots.steps),
-           raw_json     = excluded.raw_json,
-           ingested_at  = excluded.ingested_at`,
+           sleep_h            = COALESCE(excluded.sleep_h, health_snapshots.sleep_h),
+           hrv                = COALESCE(excluded.hrv, health_snapshots.hrv),
+           rhr                = COALESCE(excluded.rhr, health_snapshots.rhr),
+           move_kcal          = COALESCE(excluded.move_kcal, health_snapshots.move_kcal),
+           exercise_min       = COALESCE(excluded.exercise_min, health_snapshots.exercise_min),
+           steps              = COALESCE(excluded.steps, health_snapshots.steps),
+           asleep_min         = COALESCE(excluded.asleep_min, health_snapshots.asleep_min),
+           in_bed_min         = COALESCE(excluded.in_bed_min, health_snapshots.in_bed_min),
+           core_min           = COALESCE(excluded.core_min, health_snapshots.core_min),
+           rem_min            = COALESCE(excluded.rem_min, health_snapshots.rem_min),
+           deep_min           = COALESCE(excluded.deep_min, health_snapshots.deep_min),
+           awakenings         = COALESCE(excluded.awakenings, health_snapshots.awakenings),
+           vo2max             = COALESCE(excluded.vo2max, health_snapshots.vo2max),
+           hr_recovery        = COALESCE(excluded.hr_recovery, health_snapshots.hr_recovery),
+           walking_hr         = COALESCE(excluded.walking_hr, health_snapshots.walking_hr),
+           basal_kcal         = COALESCE(excluded.basal_kcal, health_snapshots.basal_kcal),
+           flights            = COALESCE(excluded.flights, health_snapshots.flights),
+           diet_kcal          = COALESCE(excluded.diet_kcal, health_snapshots.diet_kcal),
+           diet_protein_g     = COALESCE(excluded.diet_protein_g, health_snapshots.diet_protein_g),
+           diet_carbs_g       = COALESCE(excluded.diet_carbs_g, health_snapshots.diet_carbs_g),
+           diet_fat_g         = COALESCE(excluded.diet_fat_g, health_snapshots.diet_fat_g),
+           distance_km        = COALESCE(excluded.distance_km, health_snapshots.distance_km),
+           stand_min          = COALESCE(excluded.stand_min, health_snapshots.stand_min),
+           walking_speed      = COALESCE(excluded.walking_speed, health_snapshots.walking_speed),
+           step_length_cm     = COALESCE(excluded.step_length_cm, health_snapshots.step_length_cm),
+           double_support_pct = COALESCE(excluded.double_support_pct, health_snapshots.double_support_pct),
+           asymmetry_pct      = COALESCE(excluded.asymmetry_pct, health_snapshots.asymmetry_pct),
+           steadiness_pct     = COALESCE(excluded.steadiness_pct, health_snapshots.steadiness_pct),
+           six_min_walk_m     = COALESCE(excluded.six_min_walk_m, health_snapshots.six_min_walk_m),
+           stair_up_ms        = COALESCE(excluded.stair_up_ms, health_snapshots.stair_up_ms),
+           stair_down_ms      = COALESCE(excluded.stair_down_ms, health_snapshots.stair_down_ms),
+           raw_json           = excluded.raw_json,
+           ingested_at        = excluded.ingested_at`,
         s.date, s.sleepH, s.hrv, s.rhr, s.moveKcal, s.exerciseMin, s.steps,
+        s.asleepMin, s.inBedMin, s.coreMin, s.remMin, s.deepMin, s.awakenings,
+        s.vo2max, s.hrRecovery, s.walkingHr, s.basalKcal, s.flights,
+        s.dietKcal, s.dietProteinG, s.dietCarbsG, s.dietFatG,
+        s.distanceKm, s.standMin, s.walkingSpeed, s.stepLengthCm,
+        s.doubleSupportPct, s.asymmetryPct, s.steadinessPct, s.sixMinWalkM,
+        s.stairUpMs, s.stairDownMs,
         JSON.stringify(raw), now.toISOString(),
       );
     },
