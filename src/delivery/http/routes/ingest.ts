@@ -41,7 +41,14 @@ const READING = {
   // Not in the brief's field list, but required by the "flights" column the
   // upsert now writes and by the zero-is-real-reading test below: a day with
   // no stairs climbed is a fact, so this needs its own range like `steps`.
-  flights: z.coerce.number().int().min(0).max(1000),
+  //
+  // 1000 was rejected in review as tighter than the brief's own rule: a range
+  // must exclude only what is physically impossible, not merely unusual, and
+  // dedicated stair-climbing challenges genuinely log four-figure flight
+  // counts in a day. 100,000 is comfortably past any real record (even one
+  // flight every 10 seconds, nonstop, would not reach it in 24 hours) while
+  // still catching obviously bogus data.
+  flights: z.coerce.number().int().min(0).max(100_000),
   standMin: z.coerce.number().min(0).max(1440),
   dietKcal: z.coerce.number().min(0).max(20_000),
   dietProteinG: z.coerce.number().min(0).max(1000),

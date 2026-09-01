@@ -33,10 +33,17 @@ describe("readSnapshot — the widened channel", () => {
   });
 
   it("keeps zero where zero is a real reading", () => {
-    // A day with no stairs climbed is a fact about the day.
+    // A day with no stairs climbed is a fact about the day. Asserting only
+    // `values.flights` would let a bug that silently drops the other three
+    // fields from `values`/`accepted` (without moving them to `ignored`)
+    // pass unnoticed — so every field here gets checked, not just one.
     const r = readSnapshot({ steps: 0, flights: 0, distanceKm: 0, standMin: 0 });
     expect(r.ignored).toEqual([]);
+    expect(r.accepted.sort()).toEqual(["distanceKm", "flights", "standMin", "steps"]);
+    expect(r.values.steps).toBe(0);
     expect(r.values.flights).toBe(0);
+    expect(r.values.distanceKm).toBe(0);
+    expect(r.values.standMin).toBe(0);
   });
 
   it("still rejects one bad field without losing the others", () => {
