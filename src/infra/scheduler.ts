@@ -73,6 +73,31 @@ export function runNightlyCleanup(opts: SchedulerOptions, now: Date): void {
 }
 
 /**
+ * The name of the notify job's Cron instance, so a test can find it in
+ * croner's `scheduledJobs` registry and trigger it directly rather than
+ * waiting on the real schedule.
+ */
+export const NOTIFY_CRON_NAME = "jarvis-notify-tick";
+
+/**
+ * The notify cron's body, pulled out of the callback for the same reason
+ * `runNightlyCleanup` is: testable directly against a fixed `now` and a fake
+ * `run`, without waiting on croner's own schedule or a real Telegram send.
+ */
+export async function runNotifyCronTick(
+  notify: { run: (now: Date) => Promise<void> },
+  now: Date,
+  logger: Logger,
+): Promise<void> {
+  try {
+    await notify.run(now);
+  } catch (err) {
+    // A failing tick must never take the scheduler down with it.
+    logger.warn({ err: String(err) }, "proactive notification tick failed");
+  }
+}
+
+/**
  * The only timer left in the system.
  *
  * The brief used to be pre-warmed at 07:20 so an unattended 07:30 request could
@@ -87,14 +112,8 @@ export function startScheduler(opts: SchedulerOptions): Scheduler {
   });
 
   const notify = opts.notify
-    ? new Cron(opts.notify.cron, { timezone, protect: true }, async () => {
-        try {
-          await opts.notify!.run(opts.clock.now());
-        } catch (err) {
-          // A failing tick must never take the scheduler down with it.
-          opts.logger.warn({ err: String(err) }, "proactive notification tick failed");
-        }
-      })
+    ? new Cron(opts.notify.cron, { timezone, protect: true, name: NOTIFY_CRON_NAME }, () =>
+        runNotifyCronTick(opts.notify!, opts.clock.now(), opts.logger))
     : null;
 
   opts.logger.info(

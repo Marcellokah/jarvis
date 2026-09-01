@@ -31,9 +31,15 @@ export function openDb(path: string, logger: Logger): Db {
   // that wants two repositories' writes atomic (e.g. a notification row and
   // its dedupe keys) has no way to avoid calling into a repository that
   // already wraps its own single write in a transaction. Depth tracking makes
-  // `transaction` reentrant: only the outermost call touches BEGIN/COMMIT: an
-  // inner failure still rolls back the whole thing, since its error
-  // propagates up to the outermost catch.
+  // `transaction` reentrant: only the outermost call touches BEGIN/COMMIT.
+  //
+  // This is nesting in name only — there are no SAVEPOINTs. An inner scope
+  // does not commit or roll back independently: it shares the outermost
+  // BEGIN/COMMIT, so if an inner failure is caught by an outer `fn` instead
+  // of propagating, the inner writes still land as part of the outer commit.
+  // That is fine for today's one caller (tick.ts, which never catches the
+  // inner error); a future caller that wants a real, independently-rollback-
+  // able inner scope needs SAVEPOINT/RELEASE, not this counter.
   let txDepth = 0;
 
   const db: Db = {
@@ -50,15 +56,38 @@ export function openDb(path: string, logger: Logger): Db {
       const outermost = txDepth === 0;
       if (outermost) handle.exec("BEGIN");
       txDepth++;
+      // The decrement lives in `finally`, not at the end of `try` and again in
+      // `catch`. It used to sit in both places — but if COMMIT itself throws
+      // (SQLITE_BUSY against a second connection, a full disk), control falls
+      // from the end of `try` into `catch`, which decremented a second time.
+      // txDepth went to -1 and stayed there for the life of the process: every
+      // later call then saw `outermost === false` and skipped BEGIN/COMMIT/
+      // ROLLBACK entirely, silently downgrading every transaction in the app to
+      // autocommit. `finally` runs exactly once regardless of which branch got
+      // there, so the counter cannot drift.
       try {
-        const out = fn();
-        txDepth--;
-        if (outermost) handle.exec("COMMIT");
-        return out;
+        if (outermost) {
+          const out = fn();
+          handle.exec("COMMIT");
+          return out;
+        }
+        return fn();
       } catch (err) {
-        txDepth--;
-        if (outermost) handle.exec("ROLLBACK");
+        // A failed COMMIT above leaves no transaction open; rolling back an
+        // already-closed one throws "no transaction is active" and would mask
+        // the original error, so only roll back when this call actually opened
+        // the transaction it might still be holding.
+        if (outermost) {
+          try {
+            handle.exec("ROLLBACK");
+          } catch {
+            // Nothing was open to roll back (e.g. COMMIT already failed and
+            // closed it) — the original `err` is still the one that matters.
+          }
+        }
         throw err;
+      } finally {
+        txDepth--;
       }
     },
     close() {
