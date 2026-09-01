@@ -103,12 +103,14 @@ export const ANALYSIS_LEAD_MAX_CHARS = 160;
 /**
  * Shortens an analysis summary to a lead for a push.
  *
- * Cuts at a word boundary — never mid-word — and appends `…` whenever
- * anything was cut, so a shortened finding is never mistaken for a complete
- * one. The full summary these numbers come from still lives on the local
- * page and in the `analyses` table; the ellipsis is what tells the reader
- * there is more there. A summary already within the limit is returned
- * untouched, with no ellipsis added.
+ * Prefers a word boundary for the cut, and falls back to a hard cut only
+ * when there is none to prefer — a single token longer than the limit has no
+ * space to cut at. Either way, `…` is appended whenever anything was cut, so
+ * a shortened finding is never mistaken for a complete one. The full summary
+ * these numbers come from still lives on the local page and in the
+ * `analyses` table; the ellipsis is what tells the reader there is more
+ * there. A summary already within the limit is returned untouched, with no
+ * ellipsis added.
  */
 export function leadOf(summary: string, maxChars: number = ANALYSIS_LEAD_MAX_CHARS): string {
   if (summary.length <= maxChars) return summary;
