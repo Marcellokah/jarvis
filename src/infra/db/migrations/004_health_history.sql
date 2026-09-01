@@ -6,12 +6,11 @@
 -- actually reads.
 --
 -- One row per day whatever the source. The iOS Shortcut writes today's
--- readings; the import fills gaps in any day. They never compete, but that
--- takes a guard in both directions: the import only ever writes a column that
--- is NULL (fillGaps' COALESCE), and a phone post only ever writes the columns
--- it actually carries (upsert's COALESCE). Either half alone loses data — the
--- route accepts an explicit date, so without the second half a post could
--- blank a day the import had already filled.
+-- readings; the import fills any day. Neither may blank what the other wrote,
+-- which takes a COALESCE in both directions — the route accepts an explicit
+-- date, so without upsert's half a post could wipe a day the import had
+-- already filled. Where both hold a value, `ACCUMULATES_OVER_DAY` in
+-- repositories/health.ts decides which one survives; see the rule there.
 
 ALTER TABLE health_snapshots ADD COLUMN asleep_min     REAL;
 ALTER TABLE health_snapshots ADD COLUMN in_bed_min     REAL;
