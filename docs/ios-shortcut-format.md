@@ -222,6 +222,22 @@ azért ment, mert a várakozásnak akkor nem volt dolga.
 > változat iOS-en „nincs telepítve az app" hibát ad. Generáláskor mindig az
 > `ios` alakot kell írni.
 
+## A `Sum` minden forrást összead — mérve
+
+2026-09-01-én az esti futás **21 401 lépést** küldött, miközben a Health app
+6645-öt mutatott ugyanarra a napra; aktív kalóriából 1684-et a valós 856 helyett,
+és 16,4 km-t 6645 lépésre. A `Find Health Samples` a **nyers mintákat** adja
+vissza, forrásonként külön — az óra és a telefon ugyanazt a sétát is rögzíti —,
+a `Calculate Statistics: Sum` pedig mindet összeadja.
+
+Ez pontosan az a probléma, amit az import már megold: a rollup forrásonként
+gyűjt, és a legnagyobb egyetlen forrást választja. A Shortcut ezt magától nem
+tudja, forrás-szűrés nélkül pedig a halmozódó típusokat **nem szabad** `Sum`-mal
+küldeni.
+
+Az átlagolt típusok (`Average`) érintetlenek: egy duplikált minta az átlagot alig
+mozdítja, nem sokszorozza.
+
 ## Amit a Shortcut nem tud, és ezért a szerver dolga
 
 **Az alvás összegzését.** Az óra fázisonként külön mintát ír, tehát egy éjszaka
