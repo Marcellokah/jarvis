@@ -124,4 +124,24 @@ describe("renderMarkdown", () => {
     expect(renderMarkdown("")).toBe("");
     expect(renderMarkdown("\n\n  \n")).toBe("");
   });
+
+  it("reads the asterisk bullets a model actually returns", () => {
+    // The prompts ask for hyphens; the model answers with `*   ` often enough
+    // that a whole analysis section came back as one run-on paragraph with
+    // literal asterisks on the page. Taken from a stored analysis verbatim.
+    const html = renderMarkdown([
+      "*   **7 napos átlag:** 68,7 ms.",
+      "*   **28 napos átlag:** 60,2 ms.",
+    ].join("\n"));
+    expect(html).toBe(
+      "<ul><li><strong>7 napos átlag:</strong> 68,7 ms.</li>"
+      + "<li><strong>28 napos átlag:</strong> 60,2 ms.</li></ul>",
+    );
+  });
+
+  it("does not mistake a bold opener for a bullet", () => {
+    // `**Trend:**` starts with `*` too. The bullet rule needs whitespace after
+    // the marker, which is the only thing keeping these apart.
+    expect(renderMarkdown("**Trend:** javul")).toBe("<p><strong>Trend:</strong> javul</p>");
+  });
 });

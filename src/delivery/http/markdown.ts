@@ -28,8 +28,14 @@ function inline(escaped: string): string {
 }
 
 const HEADING = /^(#{1,3})\s+(.*)$/;
-const TASK = /^-\s+\[( |x|X)\]\s+(.*)$/;
-const BULLET = /^-\s+(.*)$/;
+const TASK = /^[-*+]\s+\[( |x|X)\]\s+(.*)$/;
+// `*` and `+` as well as `-`: the analysis prompts are written to ask for
+// hyphens, but a model returns `* ` often enough that a whole section came
+// back as one run-on paragraph with literal asterisks in it. A bullet that
+// is not recognised does not fail loudly — it just looks broken, which is
+// the worst way for this page to be wrong. `**bold**` is not caught by
+// this: the second `*` is not whitespace.
+const BULLET = /^[-*+]\s+(.*)$/;
 
 export function renderMarkdown(md: string): string {
   const out: string[] = [];

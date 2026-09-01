@@ -11,8 +11,9 @@ const base: PageData = {
     { domain: "physical", markdown: "### Fizikai\n- A terhelés magas.", createdAt: "2026-09-01T07:08:45.487Z" },
   ],
   metricsRows: [
-    { label: "Terhelési arány", value: "1,41", detail: "28 nap / 365 nap" },
-    { label: "Alvás (90 nap)", value: "nincs mérés", detail: "0 nap · 0% lefedettség" },
+    { label: "Terhelési arány", value: "1,41", detail: "28 nap / 365 nap", coverage: null },
+    { label: "HRV (7 nap)", value: "68,7 ms", detail: "6 nap · 85% lefedettség (7d)", coverage: 6 / 7 },
+    { label: "Alvás (90 nap)", value: "nincs mérés", detail: "0 nap · 0% lefedettség", coverage: 0 },
   ],
   history: [
     { id: 1, chatId: "web", role: "user", content: "Kérdés?", createdAt: "2026-09-01T08:00:00.000Z" },
@@ -101,6 +102,35 @@ describe("renderPage", () => {
     expect(html).toContain(`<input type="text" placeholder="Kérdezz valamit…">`);
     expect(html).toContain(`<button type="submit">`);
     expect(html).not.toContain("nem érhető el");
+  });
+
+  it("draws a coverage rail only as wide as the measurement really is", () => {
+    // The rail is the page's one piece of ornament that is not ornament: it is
+    // drawn from `coverage`, so it cannot claim more than was measured. 6/7
+    // days is 85.7%, and the rail says so to a tenth.
+    const html = renderPage(base);
+    expect(html).toContain(`<span class="rail" style="--fill:85.7%">`);
+  });
+
+  it("gives an unmeasured row a dead channel, not a rail at zero", () => {
+    // The distinction the whole system exists to protect, made visible: the
+    // row is marked dead, so it loses the signal colour, and its rail is the
+    // dashed variant that never animates. A 0%-wide live rail would read as a
+    // bad measurement rather than as no measurement.
+    const html = renderPage(base);
+    const sleepRow = /<tr class="([a-z]+)"[^>]*><td>Alvás \(90 nap\)<\/td>.*?<\/tr>/.exec(html);
+    expect(sleepRow?.[1]).toBe("dead");
+    expect(sleepRow?.[0]).toContain(`class="rail dead"`);
+  });
+
+  it("gives a row with no window no rail at all", () => {
+    // A ratio between two windows has no single window to be complete over.
+    // Drawing any rail there — full or empty — would answer a question the
+    // number does not ask.
+    const html = renderPage(base);
+    const ratio = /<tr [^>]*><td>Terhelési arány<\/td>.*?<\/tr>/.exec(html);
+    expect(ratio).not.toBeNull();
+    expect(ratio![0]).not.toContain("rail");
   });
 
   it("treats an empty brief as no brief at all", () => {

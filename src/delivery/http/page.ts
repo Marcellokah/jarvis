@@ -8,6 +8,15 @@ export interface MetricRow {
   /** Already formatted for a person — "nincs mérés" where there is none. */
   value: string;
   detail: string;
+  /**
+   * 0..1 of the window that was actually measured, or null where the row has
+   * no window to be measured over (a ratio, a trend, a monthly total).
+   *
+   * Carried as a number rather than left inside `detail`, because the page
+   * draws it: a rail that fills to a figure parsed back out of prose would be
+   * decoration, and this one has to be true.
+   */
+  coverage: number | null;
 }
 
 export interface PageData {
@@ -19,31 +28,140 @@ export interface PageData {
   chatAvailable: boolean;
 }
 
+/**
+ * The page is an instrument, and it shows its own signal quality.
+ *
+ * Every hard bug this project has had was a number that looked real and was
+ * not, so the one thing the design must carry is the line between measured and
+ * unmeasured. That line is drawn with HUE: a value the system actually
+ * measured is lit in the signal colour and its coverage rail fills; a value
+ * nobody measured has no hue at all, its rail is a dashed void, and — this is
+ * the part that does the work — it never animates. On load every live rail
+ * fills and every dead channel just sits there. The absence is what you see.
+ *
+ * Two families on purpose: the mono carries structure and numbers, because
+ * that is the instrument's voice and digits must line up; the system humanist
+ * carries prose, because the brief is read half awake and has to be easy.
+ * Both ship with the OS — there is no build step here and a webfont that fails
+ * to load would take the page's personality with it.
+ */
 const STYLE = `
-:root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fbfbfa; --muted: #6b6b6b; --line: #e3e3e0; --accent: #2f6f4f; }
-@media (prefers-color-scheme: dark) { :root { --fg: #e8e8e6; --bg: #16181a; --muted: #9a9a97; --line: #2c2f33; --accent: #7fb99a; } }
+/* Dark is the design; light is the honest variant for anyone reading at a
+   bright window. Roles swap, meanings do not. */
+:root {
+  color-scheme: dark light;
+  --void: #0A0D12; --panel: #10141C; --rule: #1C2431;
+  --ink: #E4E9F1; --dim: #6E7A8C;
+  --signal: #FF9E4A; --signal-dim: rgba(255,158,74,.20);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --text: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --void: #EDEFF3; --panel: #FFFFFF; --rule: #D6DAE2;
+    --ink: #131721; --dim: #6B7484;
+    --signal: #B85C00; --signal-dim: rgba(184,92,0,.16);
+  }
+}
 * { box-sizing: border-box; }
-body { margin: 0 auto; padding: 2rem 1.25rem 6rem; max-width: 46rem; background: var(--bg); color: var(--fg);
-  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-h2 { font-size: 1.15rem; margin: 2.5rem 0 .5rem; padding-bottom: .3rem; border-bottom: 1px solid var(--line); }
-h3 { font-size: 1rem; margin: 1.5rem 0 .4rem; }
-.date { color: var(--muted); margin: 0 0 2rem; }
-ul { padding-left: 1.2rem; } li { margin: .2rem 0; } li.task { list-style: none; margin-left: -1.2rem; }
-table { border-collapse: collapse; width: 100%; font-size: .95rem; }
-td { padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-td.value { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-td.detail { color: var(--muted); font-size: .85rem; }
-.turn { margin: .75rem 0; padding: .6rem .8rem; border-radius: .5rem; border: 1px solid var(--line); }
-.turn.user { border-color: var(--accent); }
-.who { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.muted { color: var(--muted); }
-form { display: flex; gap: .5rem; margin-top: 1rem; }
-input[type=text] { flex: 1; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: .5rem;
-  background: var(--bg); color: var(--fg); font: inherit; }
-button { padding: .6rem 1rem; border: 0; border-radius: .5rem; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
-button[disabled], input[disabled] { opacity: .5; cursor: not-allowed; }
+body {
+  margin: 0; padding: 0 1.25rem 6rem; background: var(--void); color: var(--ink);
+  font: 16px/1.65 var(--text); -webkit-font-smoothing: antialiased;
+}
+.sheet { max-width: 48rem; margin: 0 auto; }
+
+/* ---- header: a thin instrument bar, not a hero card ---- */
+.head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap;
+  padding: 2.25rem 0 1.5rem; border-bottom: 1px solid var(--rule); }
+.mark { font: 600 .78rem/1 var(--mono); letter-spacing: .34em; text-transform: uppercase;
+  color: var(--signal); }
+.stamp { font: .78rem/1 var(--mono); letter-spacing: .06em; color: var(--dim); }
+
+/* ---- bands: eyebrow in the gutter, content in the column ---- */
+.band { display: grid; gap: .35rem 1.75rem; padding: 2.25rem 0;
+  border-bottom: 1px solid var(--rule); }
+@media (min-width: 46rem) { .band { grid-template-columns: 7.5rem 1fr; } }
+.eyebrow { font: .7rem/1.9 var(--mono); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--dim); }
+.band:last-of-type { border-bottom: 0; }
+
+/* ---- prose ---- */
+.body > :first-child { margin-top: 0; }
+.body > :last-child { margin-bottom: 0; }
+h1, h2 { font: 500 1.35rem/1.3 var(--text); letter-spacing: -.01em; margin: 1.6rem 0 .5rem; }
+/* The band eyebrow in the gutter is the page's spine; an analysis heading is a
+   divider inside one band. They were the same dim mono uppercase and read as
+   two competing spines, so this one keeps the voice but takes the ink and a
+   rule of its own. */
+h3 { font: 600 .72rem/1.8 var(--mono); letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink); margin: 2.4rem 0 .6rem; padding-top: 1.1rem;
+  border-top: 1px solid var(--rule); }
+.body > h3:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+p { margin: .7rem 0; }
+ul { margin: .7rem 0; padding-left: 1.15rem; }
+li { margin: .25rem 0; }
+li.task { list-style: none; margin-left: -1.15rem; }
+li.task input { accent-color: var(--signal); margin-right: .45rem; }
+code { font: .88em var(--mono); background: var(--panel); padding: .12em .35em; border-radius: .2rem; }
+strong { font-weight: 600; color: var(--ink); }
+.quiet { color: var(--dim); }
+
+/* ---- readouts: the signature ---- */
+table { border-collapse: collapse; width: 100%; }
+tr { border-bottom: 1px solid var(--rule); }
+tr:last-child { border-bottom: 0; }
+td { padding: .7rem 0; vertical-align: baseline; }
+td:first-child { font: .8rem/1.4 var(--mono); letter-spacing: .02em; color: var(--dim);
+  padding-right: 1rem; }
+td.value { font: 500 1.05rem/1.4 var(--mono); font-variant-numeric: tabular-nums;
+  text-align: right; white-space: nowrap; color: var(--signal); padding-right: 1rem; }
+/* No hue is the whole point: an unmeasured value must not read as a reading. */
+tr.dead td.value { color: var(--dim); font-weight: 400; font-size: .82rem; letter-spacing: .02em; }
+td.ev { width: 9.5rem; }
+.rail { display: block; height: 2px; background: var(--rule); position: relative; overflow: hidden; }
+.rail::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--fill, 0%);
+  background: var(--signal); transform-origin: left center; }
+.rail.dead { background: none; height: 0; border-top: 1px dashed var(--rule); }
+.rail.dead::after { content: none; }
+.note { display: block; margin-top: .4rem; font: .68rem/1.4 var(--mono); color: var(--dim); }
+
+/* ---- conversation ---- */
+.turn { margin: 1rem 0; padding-left: .9rem; border-left: 2px solid var(--rule); }
+.turn.user { border-left-color: var(--signal-dim); }
+.who { font: .66rem/1.8 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+
+/* ---- ask ---- */
+form { display: flex; gap: .5rem; margin-top: 1.4rem; position: relative; }
+form input[type=text] { flex: 1; padding: .7rem .8rem; background: var(--panel);
+  border: 1px solid var(--rule); border-radius: .3rem; color: var(--ink); font: inherit; }
+form input[type=text]::placeholder { color: var(--dim); }
+form input[type=text]:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+form button { padding: .7rem 1.15rem; border: 1px solid var(--signal); border-radius: .3rem;
+  background: transparent; color: var(--signal); cursor: pointer;
+  font: 600 .72rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+form button:hover:not([disabled]) { background: var(--signal-dim); }
+form button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+form [disabled] { opacity: .45; cursor: not-allowed; }
+/* The waiting state reuses the rail rather than inventing a spinner: the page
+   has one vocabulary for "something is being measured". */
+form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -.6rem; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--signal), transparent);
+  background-size: 40% 100%; background-repeat: no-repeat;
+  animation: sweep 1.1s linear infinite; }
+
+/* ---- motion: one orchestrated moment, then nothing ---- */
+@keyframes settle { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes rail-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+.head, .band { animation: settle .5s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: calc(var(--i, 0) * 60ms); }
+.rail::after { animation: rail-in .7s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: calc(320ms + var(--i, 0) * 45ms); }
+@media (prefers-reduced-motion: reduce) {
+  .head, .band, .rail::after, form.busy::after { animation: none; }
+}
 `;
+
 
 // Kept inline: there is no build step and no asset pipeline, and a second
 // request for a few lines of script would need its own route and its own auth.
@@ -58,7 +176,8 @@ if (form) form.addEventListener("submit", async (e) => {
   if (!question) return;
   const button = form.querySelector("button");
   input.disabled = button.disabled = true;
-  button.textContent = "Kérdezek…";
+  form.classList.add("busy");
+  button.textContent = "Kérdezek";
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
@@ -68,11 +187,22 @@ if (form) form.addEventListener("submit", async (e) => {
     if (!res.ok) throw new Error("HTTP " + res.status);
     location.reload();
   } catch (err) {
-    button.textContent = "Nem sikerült: " + err.message;
+    form.classList.remove("busy");
+    button.textContent = "Újra";
+    // The failure says what happened next to the box it happened in, rather
+    // than overwriting the control's own name with an error.
+    let note = form.parentNode.querySelector(".ask-error");
+    if (!note) {
+      note = document.createElement("p");
+      note.className = "quiet ask-error";
+      form.parentNode.appendChild(note);
+    }
+    note.textContent = "A kérdés nem ment át (" + err.message + "). A fenti tartalom teljes.";
     input.disabled = button.disabled = false;
   }
 });
 `;
+
 
 const DOMAIN_TITLE: Record<string, string> = {
   physical: "Fizikai fejlődés",
@@ -83,11 +213,11 @@ const DOMAIN_TITLE: Record<string, string> = {
 
 function analysesBlock(data: PageData): string {
   if (data.analyses.length === 0) {
-    return `<p class="muted">Még nem futott mélyelemzés. Indítsd: <code>npm run analyze</code></p>`;
+    return `<p class="quiet">Még nem futott mélyelemzés. Indítsd: <code>npm run analyze</code></p>`;
   }
   return data.analyses.map((a) => [
     `<h3>${escapeHtml(DOMAIN_TITLE[a.domain] ?? a.domain)}`,
-    ` <span class="muted">· ${escapeHtml(a.createdAt.slice(0, 10))}</span></h3>`,
+    ` · ${escapeHtml(a.createdAt.slice(0, 10))}</h3>`,
     renderMarkdown(a.markdown),
   ].join("")).join("");
 }
@@ -103,7 +233,7 @@ function chatBlock(data: PageData): string {
   const disabled = data.chatAvailable ? "" : " disabled";
   const notice = data.chatAvailable
     ? ""
-    : `<p class="muted">A modell most nem érhető el, de a fenti tartalom teljes.</p>`;
+    : `<p class="quiet">A modell most nem érhető el. A fenti tartalom teljes.</p>`;
 
   return [
     turns,
@@ -113,37 +243,61 @@ function chatBlock(data: PageData): string {
   ].join("");
 }
 
-export function renderPage(data: PageData): string {
-  const metrics = data.metricsRows.map((r) => [
-    "<tr>",
+/**
+ * One readout row: label, value, and the rail that says how much of it is real.
+ *
+ * A row with no coverage figure gets no rail at all rather than an empty one —
+ * a ratio computed from two windows has no single window to be complete over,
+ * and drawing a 0% rail there would claim it was measured badly rather than
+ * not measured at all.
+ */
+function readout(r: MetricRow, i: number): string {
+  const measured = r.coverage !== null && r.coverage > 0;
+  const pct = r.coverage === null ? 0 : Math.min(100, Math.max(0, r.coverage * 100));
+  const rail = r.coverage === null
+    ? ""
+    : `<span class="rail${measured ? "" : " dead"}" style="--fill:${pct.toFixed(1)}%"></span>`;
+
+  return [
+    `<tr class="${measured || r.coverage === null ? "live" : "dead"}" style="--i:${i}">`,
     `<td>${escapeHtml(r.label)}</td>`,
     `<td class="value">${escapeHtml(r.value)}</td>`,
-    `<td class="detail">${escapeHtml(r.detail)}</td>`,
+    `<td class="ev">${rail}<span class="note">${escapeHtml(r.detail)}</span></td>`,
     "</tr>",
-  ].join("")).join("");
+  ].join("");
+}
+
+export function renderPage(data: PageData): string {
+  const metrics = data.metricsRows.map(readout).join("");
+
+  // `--i` orders the load sequence. It is set here rather than in CSS because
+  // the count is data, not style: the bands settle in the order they are read.
+  const band = (i: number, eyebrow: string, body: string) => [
+    `<section class="band" style="--i:${i}">`,
+    `<div class="eyebrow">${eyebrow}</div>`,
+    `<div class="body">${body}</div>`,
+    "</section>",
+  ].join("");
 
   return [
     "<!doctype html>",
     `<html lang="hu"><head><meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1">`,
+    `<meta name="color-scheme" content="dark light">`,
     "<title>Jarvis</title>",
-    `<style>${STYLE}</style></head><body>`,
-    "<h1>Jarvis</h1>",
-    `<p class="date">${escapeHtml(data.dateLabel)}</p>`,
-    "<h2>Briefing</h2>",
+    `<style>${STYLE}</style></head><body><div class="sheet">`,
+    `<header class="head" style="--i:0"><div class="mark">Jarvis</div>`,
+    `<div class="stamp">${escapeHtml(data.dateLabel)}</div></header>`,
     // Empty-after-trim counts as absent, not just null. An empty "Briefing"
     // heading with nothing under it is missing data that does not look
     // missing — the one failure this project exists to prevent.
-    data.briefMarkdown === null || data.briefMarkdown.trim() === ""
-      ? `<p class="muted">Ma még nem készült briefing.</p>`
-      : renderMarkdown(data.briefMarkdown),
-    "<h2>Elemzés</h2>",
-    analysesBlock(data),
-    "<h2>Számok</h2>",
-    `<table>${metrics}</table>`,
-    "<h2>Kérdés</h2>",
-    chatBlock(data),
-    `<script>${SCRIPT}</script>`,
+    band(1, "Briefing", data.briefMarkdown === null || data.briefMarkdown.trim() === ""
+      ? `<p class="quiet">Ma még nem készült briefing.</p>`
+      : renderMarkdown(data.briefMarkdown)),
+    band(2, "Elemzés", analysesBlock(data)),
+    band(3, "Számok", `<table>${metrics}</table>`),
+    band(4, "Kérdés", chatBlock(data)),
+    `</div><script>${SCRIPT}</script>`,
     "</body></html>",
   ].join("");
 }
@@ -167,6 +321,7 @@ function row(label: string, m: Metric, digits = 0, unit = ""): MetricRow {
     label,
     value: m.value === null ? "nincs mérés" : `${hu(m.value, digits)}${unit}`,
     detail: `${m.n} nap · ${pct}% lefedettség (${m.window})`,
+    coverage: m.coverage,
   };
 }
 
@@ -176,6 +331,8 @@ export function metricsRowsFrom(m: Metrics): MetricRow[] {
       label: "Terhelési arány",
       value: m.physical.loadRatio === null ? "nincs alap" : hu(m.physical.loadRatio, 2),
       detail: "28 napos napi átlag a 365 naposhoz mérve",
+      // Two windows compared, so there is no single one to be complete over.
+      coverage: null,
     },
     row("Lépés (7 nap)", m.physical.steps.d7),
     row("Lépés (365 nap)", m.physical.steps.d365),
@@ -192,6 +349,7 @@ export function metricsRowsFrom(m: Metrics): MetricRow[] {
       label: `${label} trendje`,
       value: `${slope > 0 ? "+" : ""}${hu(slope, 2)}${unit}`,
       detail: "30 naponta, 365 napos ablakon",
+      coverage: null,
     });
   };
   trend("VO2max", m.physical.vo2max.slopePer30d, "");
@@ -203,6 +361,8 @@ export function metricsRowsFrom(m: Metrics): MetricRow[] {
       ? "nincs adat"
       : `${hu(m.finance.months.at(-1)!.totalHuf)} Ft`,
     detail: `${m.finance.months.length} rögzített hónap`,
+    // Subscriptions are entered, not measured; a coverage rail would be a lie.
+    coverage: null,
   });
 
   return rows;
