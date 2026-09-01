@@ -127,20 +127,34 @@ export interface SampleResult {
 }
 
 /**
- * Runs the phone's raw samples through the import's own rollup.
+ * Runs the phone's raw SLEEP samples through the import's own rollup.
  *
- * One logic, two producers. The watch writes a sleep sample per stage, and a
- * Shortcut cannot sum them — Calculate Statistics works on sample values, and a
- * sleep sample's value is a stage name, not a duration. Taking the latest
- * sample instead would report 0.3 hours for a seven-hour night: not missing
- * data, but confidently wrong. Sending them raw also inherits the overlapping-
- * source resolution the phone could never do.
+ * One logic, two producers — for sleep, and for sleep only. The watch writes a
+ * sleep sample per stage, and a Shortcut cannot sum them: Calculate Statistics
+ * works on sample values, and a sleep sample's value is a stage name, not a
+ * duration. Taking the latest sample instead would report 0.3 hours for a
+ * seven-hour night: not missing data, but confidently wrong. Sending them raw
+ * also inherits the overlapping-source resolution the phone could never do.
+ *
+ * Every other type is refused here and named in `ignored`. Nothing needs to
+ * send them — a Shortcut sums or averages a quantity type perfectly well, and
+ * the direct `READING` fields exist for exactly that. Accepting them would be
+ * actively dangerous: this path has no source of its own to report, so it
+ * would have to invent one, and the rollup keeps accumulating types separated
+ * BY source precisely so it can pick one instead of adding them. Collapsing
+ * two sources into one fabricated name re-creates the 81,272-step days the
+ * rollup's own comment describes.
  */
 export async function readSamples(raw: unknown): Promise<SampleResult> {
   const ignored: { field: string; reason: string }[] = [];
   if (!Array.isArray(raw)) return { days: [], ignored };
 
   const entries: ExportEntry[] = [];
+  // Counted rather than reported one by one: a Shortcut that wires the wrong
+  // type in here sends hundreds of them, and hundreds of identical lines would
+  // bury the rest of the reply instead of naming the mistake.
+  const refusedTypes = new Map<string, number>();
+
   for (const [i, s] of (raw as PhoneSample[]).entries()) {
     const type = typeof s?.type === "string" ? s.type : null;
     const start = typeof s?.startDate === "string" ? toAppleDate(s.startDate) : null;
@@ -150,21 +164,33 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
       continue;
     }
 
-    let value = typeof s.value === "string" ? s.value : String(s.value ?? "");
-    if (type === "SleepAnalysis") {
-      const stage = normaliseSleepValue(value);
-      if (!stage) {
-        ignored.push({ field: `samples[${i}]`, reason: `ismeretlen alvás-fázis: ${value}` });
-        continue;
-      }
-      value = stage;
+    if (type !== "SleepAnalysis") {
+      refusedTypes.set(type, (refusedTypes.get(type) ?? 0) + 1);
+      continue;
+    }
+
+    const rawValue = typeof s.value === "string" ? s.value : String(s.value ?? "");
+    const value = normaliseSleepValue(rawValue);
+    if (!value) {
+      ignored.push({ field: `samples[${i}]`, reason: `ismeretlen alvás-fázis: ${rawValue}` });
+      continue;
     }
 
     entries.push({
       kind: "record", type, value,
       unit: typeof s.unit === "string" ? s.unit : null,
       startDate: start, endDate: end,
+      // Sleep is an interval type: the rollup unions the spans and only uses
+      // the source name to mark the day as contested, so a stand-in name here
+      // cannot change a single stored minute.
       source: typeof s.source === "string" ? s.source : "iPhone",
+    });
+  }
+
+  for (const [type, n] of [...refusedTypes].sort(([a], [b]) => a.localeCompare(b))) {
+    ignored.push({
+      field: "samples",
+      reason: `csak alvás-minta küldhető nyersen: ${type} (${n}) — közvetlen mezőként küldd`,
     });
   }
 
@@ -195,6 +221,34 @@ export function registerIngestRoutes(
     const now = deps.clock.now();
     const parsedDate = dateField.safeParse(fields.date);
     const date = parsedDate.success ? parsedDate.data : isoDate(now, TZ);
+
+    // The samples path runs BEFORE the upsert, because its verdict on sleep has
+    // to be in hand before the upsert freezes the phone's number.
+    //
+    // The two writes have opposite precedence on purpose — `upsert` is
+    // incoming-wins, `fillGaps` is existing-wins — and sleep samples land on
+    // the wake-up day, the very date this request writes. A request carrying
+    // both would therefore keep `sleepH` and silently drop the rollup's value,
+    // with nothing to show for it. So when the raw samples produced sleep for
+    // this date, the direct field steps aside and says so.
+    //
+    // `sleepH` is not removed from `READING`: until the Shortcut is rebuilt it
+    // is the only sleep the system gets, and with iPhone-only tracking a single
+    // sample covers the whole night, so it is correct today. Samples are simply
+    // the better source whenever they exist.
+    const samples = await readSamples(fields.samples);
+    const sleepFromSamples = samples.days.some(
+      (day) => day.date === date && day.values.sleep_h !== undefined,
+    );
+    if (sleepFromSamples && values.sleepH !== undefined) {
+      delete values.sleepH;
+      const at = accepted.indexOf("sleepH");
+      if (at !== -1) accepted.splice(at, 1);
+      ignored.push({
+        field: "sleepH",
+        reason: "a nyers alvás-mintákból számolt érték került be helyette",
+      });
+    }
 
     if (ignored.length > 0) {
       // Visible on purpose: a Shortcut step that silently stopped producing a
@@ -246,7 +300,6 @@ export function registerIngestRoutes(
       now,
     );
 
-    const samples = await readSamples(fields.samples);
     for (const day of samples.days) {
       // fillGaps, not upsert: the phone's samples must not overwrite what the
       // import already established for an older day.

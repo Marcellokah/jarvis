@@ -162,13 +162,19 @@ Ezért a mezők aszerint válnak szét, hogy **mikor teljesek**:
 
 **A mai napra, a reggeli kéréssel** — pillanatnyi és éjszakai mérések, amiknek
 reggel már van végleges értékük: `hrv`, `rhr`, az alvás nyers mintái, `vo2max`,
-`hrRecovery`, `walkingHr`, és a járás-metrikák átlagai (`walkingSpeed`,
-`stepLengthCm`, `doubleSupportPct`, `asymmetryPct`, `steadinessPct`,
-`sixMinWalkM`, `stairUpMs`, `stairDownMs`).
+`hrRecovery`, `walkingHr`, `steadinessPct` és `sixMinWalkM`. Ez utóbbi kettő is
+periodikus becslés, amit az óra egészben számol ki — nem a nap során gyűlik.
 
 **A tegnapi napra, egy második kéréssel** — halmozódó összegek: `steps`,
 `distanceKm`, `moveKcal`, `basalKcal`, `exerciseMin`, `flights`, `standMin`,
-`dietKcal` és a makrók.
+`dietKcal` és a makrók — **valamint a járás-metrikák napi átlagai**
+(`walkingSpeed`, `stepLengthCm`, `doubleSupportPct`, `asymmetryPct`,
+`stairUpMs`, `stairDownMs`).
+
+Az átlag ugyanolyan részleges, mint az összeg: a `DAILY` ezt a hatot `agg:
+"avg"`-gel a nap **összes** mintájára számolja, tehát egy fél nyolckor küldött
+átlag pár száz lépésé — csak nem néz ki hiányosnak, mint egy részösszeg, hanem
+hihetőnek, és `upsert`-tel beírva ugyanúgy véglegesen rögzülne az import elől.
 
 A végpont **már most elfogad explicit `date` mezőt**, úgyhogy szerver-oldalon
 ehhez semmit nem kell átírni — csak a Shortcut küld kettőt.

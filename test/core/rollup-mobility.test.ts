@@ -46,12 +46,21 @@ describe("rollup — mobility", () => {
       record("StairAscentSpeed", "0.42", "m/s"),
       record("StairDescentSpeed", "0.55", "m/s"),
     ]));
-    const v = r.days[0]!.values;
-    expect(Object.keys(v).sort()).toEqual([
-      "asymmetry_pct", "distance_km", "double_support_pct", "six_min_walk_m",
-      "stair_down_ms", "stair_up_ms", "stand_min", "steadiness_pct",
-      "step_length_cm", "walking_speed",
-    ]);
+    // Values, not just keys: the fixture gives every type a distinct number on
+    // purpose, so a swapped pair in DAILY — stair_up_ms for stair_down_ms, say
+    // — fails here instead of passing a key-set check unnoticed.
+    expect(r.days[0]!.values).toEqual({
+      distance_km: 3,
+      stand_min: 12,
+      walking_speed: 4.4,
+      step_length_cm: 72,
+      double_support_pct: 27,
+      asymmetry_pct: 1.5,
+      steadiness_pct: 88,
+      six_min_walk_m: 540,
+      stair_up_ms: 0.42,
+      stair_down_ms: 0.55,
+    });
   });
 
   it("drops a type whose unit does not match, and says so", async () => {

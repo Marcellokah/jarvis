@@ -77,6 +77,66 @@ describe("ingest — raw samples", () => {
     expect(row.asleepMin).toBeCloseTo(430, 3);
   });
 
+  it("prefers the samples over the phone's own sleepH, and says so", async () => {
+    // The branch's whole point. `upsert` is incoming-wins and `fillGaps` is
+    // existing-wins, and sleep lands on the wake-up day — the same date the
+    // upsert just wrote. Without this precedence the phone's number freezes,
+    // the rollup's is dropped silently, and the import can never correct it.
+    const a = await boot();
+    const res = await post(a, { sleepH: 0.3, samples: NIGHT });
+    const body = res.json() as { accepted: string[]; ignored: { field: string }[] };
+
+    const row = a.health.forDate("2026-09-02")!;
+    expect(row.asleepMin).toBeCloseTo(430, 3);
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1); // 7.2, not 0.3
+
+    expect(body.ignored.map((i) => i.field)).toContain("sleepH");
+    expect(body.accepted).not.toContain("sleepH");
+  });
+
+  it("accepts sleepH exactly as before when no samples came", async () => {
+    // Until the Shortcut is rebuilt this is the only sleep the system gets, and
+    // with iPhone-only tracking one sample covers the night, so it is correct.
+    const a = await boot();
+    const res = await post(a, { sleepH: 7.4 });
+    const body = res.json() as { accepted: string[]; ignored: { field: string }[] };
+
+    expect(a.health.forDate("2026-09-02")!.sleepH).toBeCloseTo(7.4, 6);
+    expect(body.accepted).toContain("sleepH");
+    expect(body.ignored.map((i) => i.field)).not.toContain("sleepH");
+  });
+
+  it("keeps sleepH when the samples are all unusable", async () => {
+    // "Samples were sent" is not the test — "samples produced a sleep value for
+    // this date" is. An unreadable batch must not blank the only sleep there is.
+    const a = await boot();
+    await post(a, {
+      sleepH: 7.4,
+      samples: [{ type: "SleepAnalysis", value: "Szendergés",
+                  startDate: "2026-09-01T23:00:00+02:00", endDate: "2026-09-02T07:00:00+02:00" }],
+    });
+    expect(a.health.forDate("2026-09-02")!.sleepH).toBeCloseTo(7.4, 6);
+  });
+
+  it("refuses a non-sleep sample type and names it", async () => {
+    // The rollup separates accumulating types BY source so it can pick one
+    // instead of adding them. This path has no real source to report, so
+    // accepting steps here would collapse every source into one fabricated
+    // name — the 81,272-step day all over again.
+    const a = await boot();
+    const res = await post(a, {
+      samples: [
+        { type: "StepCount", value: "500", unit: "count",
+          startDate: "2026-09-02T07:00:00+02:00", endDate: "2026-09-02T07:10:00+02:00" },
+        { type: "StepCount", value: "500", unit: "count",
+          startDate: "2026-09-02T07:10:00+02:00", endDate: "2026-09-02T07:20:00+02:00" },
+      ],
+    });
+    const body = res.json() as { ignored: { field: string; reason: string }[] };
+    expect(JSON.stringify(body.ignored)).toContain("StepCount (2)");
+    expect(a.health.forDate("2026-09-02")?.steps ?? null).toBeNull();
+  });
+
   it("still works with no samples at all", async () => {
     const a = await boot();
     const res = await post(a, { hrv: 68 });
