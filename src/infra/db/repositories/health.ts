@@ -58,6 +58,8 @@ export interface HealthRepo {
   forDate(date: string): HealthSnapshot | undefined;
   /** Most recent `days` snapshots strictly before `date`, for baselines. */
   baseline(date: string, days: number): HealthSnapshot[];
+  /** Every snapshot in an inclusive date range, oldest first. */
+  between(from: string, to: string): HealthSnapshot[];
   /**
    * Writes only the columns that are currently NULL.
    *
@@ -162,6 +164,15 @@ export function createHealthRepo(db: Db): HealthRepo {
           date, days,
         )
         .map(toSnapshot);
+    },
+
+    between(from, to) {
+      // The aggregation layer works over ranges; `baseline` answers "the last
+      // N days", which is a different question and cannot express a range.
+      return db.all<Row>(
+        "SELECT * FROM health_snapshots WHERE date >= ? AND date <= ? ORDER BY date",
+        from, to,
+      ).map(toSnapshot);
     },
 
     fillGaps(date, values, now) {
