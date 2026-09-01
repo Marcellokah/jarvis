@@ -10,7 +10,7 @@ import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
-import { bearerAuth } from "./auth.ts";
+import { bearerAuth, pageAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
 import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
@@ -45,11 +45,20 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     allowList: (request) => request.url === "/healthz",
   });
 
-  // Bearer auth guards /api/* only; /healthz stays open so a liveness probe
-  // never needs the token.
+  // Bearer auth guards /api/*; /healthz stays open so a liveness probe never
+  // needs the token.
+  //
+  // `GET /` is guarded too, by the same token: the page carries the brief,
+  // every analysis, the numbers and the whole thread in one response. The
+  // server binds to 127.0.0.1, but `deploy/README.md` documents a
+  // `tailscale serve` that proxies the whole origin — protection cannot depend
+  // on which of those happens to be switched on today.
   const auth = bearerAuth(deps.token);
+  const page = pageAuth(deps.token);
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.startsWith("/api/")) await auth(request, reply);
+    const route = request.url.split("?")[0] ?? request.url;
+    if (route.startsWith("/api/")) await auth(request, reply);
+    else if (route === "/") await page(request, reply);
   });
 
   /**
@@ -64,7 +73,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const route = request.url.split("?")[0] ?? request.url;
     const entry = {
       method: request.method,
-      url: request.url,
+      // The path only, never the full URL. `GET /?token=…` is how the page is
+      // first opened, and `deploy/README.md` tells the owner to tail this log
+      // — logging the query string would write the bearer token to disk in
+      // plaintext, in the one file most likely to be read out loud.
+      url: route,
       status: reply.statusCode,
       ms: Math.round(reply.elapsedTime),
     };

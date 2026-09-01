@@ -94,8 +94,18 @@ export const config = {
      */
     maxTokens: 1_500,
     chatMaxTokens: 800,
-    /** How many previous turns of a thread the model sees. Each costs budget. */
-    chatHistoryDepth: 6,
+    /**
+     * How many previous turns of a thread the model sees. Each costs budget.
+     *
+     * Four, not six, and measured rather than estimated: the design's original
+     * ~2,900-token figure left out jarvis.md (~2,300 tokens), which every chat
+     * call carries as its system prompt. Against the real data one question
+     * costs ~4,300 input tokens with an empty thread and 5,100–6,300 with a
+     * six-turn one — a warm thread alone could reach the 6,000 token/minute
+     * ceiling before the answer was written. Four turns keeps the worst case
+     * under it while still holding a follow-up's context.
+     */
+    chatHistoryDepth: 4,
     /** Low: the output contract is strict, and invention is the failure mode. */
     temperature: 0.3,
     timeoutMs: 60_000,
@@ -113,16 +123,6 @@ export const config = {
     memoryDepth: 3,
     /** Below this many paired days a correlation never reaches the prompt. */
     minCorrelationN: 30,
-  },
-
-  // Unused since app.ts switched Telegram follow-ups to groqChat (see
-  // config.groq.chatModel). `claudeChat` itself is gone from core/chat.ts —
-  // nothing calls it — so this block is dead and only documents the model
-  // name a future Claude-based chat path would reach for.
-  chat: {
-    /** Telegram follow-ups. Cheaper and faster than the brief model. */
-    model: "haiku",
-    timeoutMs: 60_000,
   },
 
   calendar: {

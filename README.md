@@ -48,10 +48,12 @@ npm run analyze                    # mélyelemzés a teljes történetből (~3 p
 
 A rendszer két helyen fogad kérdést, és mindkettő ugyanazt a magot használja:
 
-- **A helyi oldal** — `http://127.0.0.1:8787/?token=<JARVIS_TOKEN>`. A token
-  egyszer kell; a böngésző elteszi a munkamenetre. Az oldalon fent a mai
-  briefing, alatta a legutóbbi mélyelemzés területenként, a számok táblázatban,
-  legalul a kérdés-mező.
+- **A helyi oldal** — `http://127.0.0.1:8787/?token=<JARVIS_TOKEN>`. Az oldal
+  ugyanaz mögött a token mögött van, mint az API: rajta van a briefing, minden
+  elemzés, a számok és a teljes szál. A token egyszer kell — a szerver
+  `HttpOnly`, `SameSite=Strict` sütire cseréli, és a címsorból is kikerül. Az
+  oldalon fent a mai briefing, alatta a legutóbbi mélyelemzés területenként, a
+  számok táblázatban, legalul a kérdés-mező.
 - **Telegram** — bármilyen sima szöveges üzenet a botnak. A parancsok
   (`/brief`, `/uj`, `/modules`, `/undo`, `/used`) változatlanok.
 

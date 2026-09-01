@@ -146,6 +146,22 @@ Ez valódi HTTPS-t ad a stabil MagicDNS néven (`jarvis.<tailnet>.ts.net`),
 **nyitott port, router-beállítás és publikus IP nélkül**. A Fastify csak
 `127.0.0.1`-en figyel; a tailnet a határ, de a bearer token attól még kell.
 
+> **A `serve` a teljes origint kiajánlja, a nyitólapot is.** A `GET /` ezért
+> ugyanaz mögött a token mögött van, mint az `/api/*`: rajta van a briefing,
+> minden elemzés, a számok és a teljes beszélgetés — egyetlen válaszban több,
+> mint amennyit bármelyik API-végpont kiad. A védelem nem függhet attól, hogy
+> a `serve` épp be van-e kapcsolva.
+
+Az oldalt először a tokennel nyisd meg:
+
+```
+https://jarvis.<tailnet>.ts.net/?token=<JARVIS_TOKEN>
+```
+
+Ez egyszer fogadja el a query paramétert, és rögtön `HttpOnly`,
+`SameSite=Strict` sütire cseréli. A további megnyitásokhoz (könyvjelző, frissítés)
+nem kell újra a token, és nem is marad benne a címsorban.
+
 Az iPhone-on legyen fent a Tailscale app, **ugyanazzal a fiókkal** belépve
 (különben nem látja a gépet), always-on VPN profillal.
 
@@ -177,3 +193,7 @@ briefet.**
 
 Minden HTTP kérés bekerül a `data/jarvis.log`-ba (`msg: "request"`), a `/healthz`
 kivételével — az `debug` szinten megy, hogy ne temesse maga alá az API-hívásokat.
+
+A log **csak az útvonalat** írja ki, a query stringet nem. A `/?token=…` első
+megnyitás különben plaintextben tenné lemezre a bearer tokent, pont abban a
+fájlban, amit ez a leírás `tail -f`-fel néz.

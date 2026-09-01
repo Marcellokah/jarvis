@@ -25,6 +25,23 @@ describe("request log", () => {
     expect(request!.obj).toMatchObject({ method: "GET", status: 200 });
   });
 
+  it("logs the path only, never the query string", async () => {
+    // `GET /?token=…` is how the page is first opened, and deploy/README.md
+    // tells the owner to tail this log. The bearer token must not be written
+    // to disk in plaintext, in the one file most likely to be read out loud.
+    const logger = recordingLogger();
+    app = await buildTestApp({
+      modules: [stubModule({ name: "M" })], now: "2026-09-04T05:30:00Z", logger,
+    });
+
+    await app.server.inject({ method: "GET", url: `/?token=${TEST_TOKEN}` });
+
+    const request = logger.entries.find((e) => e.msg === "request" && e.level === "info");
+    expect(request).toBeDefined();
+    expect(request!.obj.url).toBe("/");
+    expect(JSON.stringify(logger.entries)).not.toContain(TEST_TOKEN);
+  });
+
   it("keeps the liveness probe out of the info log", async () => {
     const logger = recordingLogger();
     app = await buildTestApp({

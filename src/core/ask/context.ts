@@ -13,14 +13,12 @@ import { isoDate, TZ } from "../../shared/dates.ts";
 /** How many months of training history survive the trim. */
 const MONTHS_KEPT = 12;
 
-export type TrimmedMetrics = Metrics;
-
 export interface AskContext {
   today: string;
   /** Null when today's brief could not be produced — the question still stands. */
   briefMarkdown: string | null;
   analyses: { domain: string; summary: string; createdAt: string }[];
-  metrics: TrimmedMetrics;
+  metrics: Metrics;
   history: Turn[];
 }
 
@@ -67,7 +65,7 @@ function roundDeep<T>(value: T): T {
  * token/minute ceiling. The analysis still gets the whole picture; only the
  * question's view is trimmed.
  */
-export function trimMetrics(m: Metrics): TrimmedMetrics {
+export function trimMetrics(m: Metrics): Metrics {
   const trimmed: Metrics = {
     ...m,
     physical: { ...m.physical, byMonth: m.physical.byMonth.slice(-MONTHS_KEPT) },
@@ -85,9 +83,17 @@ export async function buildAskContext(
 
   // A brief that will not come must not cost the answer: the history alone
   // answers most questions, and the day is only one part of the context.
+  //
+  // `cached`, never `get`: a question must not trigger a brief generation.
+  // That would be a second Groq call in the same minute, against a 6,000
+  // token/minute ceiling, for something the question did not ask for.
+  //
+  // An empty brief is treated as no brief. Rendering the "there is a brief"
+  // branch around nothing would be missing data that does not look missing.
   let briefMarkdown: string | null = null;
   try {
-    briefMarkdown = (await deps.briefs.get(now, { wait: false })).markdown;
+    const brief = deps.briefs.cached(now);
+    briefMarkdown = brief && brief.markdown.trim() !== "" ? brief.markdown : null;
   } catch (err) {
     deps.logger.warn({ err: String(err) }, "no brief for the ask context");
   }

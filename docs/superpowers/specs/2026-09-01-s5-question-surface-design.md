@@ -49,14 +49,29 @@ senkinek nem hívja. A `groqChat` váltotta le; a régi maradt.
 
 | Rész | Honnan | Kb. token |
 |---|---|---|
+| A rendszerprompt | `jarvis.md`, minden hívásban | ~2 300 |
 | Területenként a legutóbbi elemzés összegzése | `analyses.latestPerDomain()` | ~600 |
-| A friss statisztikák, megnyirbálva | `aggregate()` a repókból | ~1 500 |
-| A mai briefing | `briefs.get()` | ~350 |
-| A szál utolsó fordulói | `conversations.recent()` | ~400 |
+| A friss statisztikák, megnyirbálva | `aggregate()` a repókból | ~1 100 |
+| A mai briefing | `briefs.cached()` | ~350 |
+| A szál utolsó fordulói (4 forduló) | `conversations.recent()` | ~300–1 300 |
 
-Összesen ~2 900 token bemenet, egy hívás. A Groq ingyenes szintje 6 000
-token/perc, tehát egy kérdés bőven belefér; kettő ugyanabban a percben nem
-biztos, és ezt a hibát ki kell mondani, nem elnyelni.
+**Javítva a záró review után.** Ez a táblázat korábban ~2 900 tokent mondott, és
+kihagyta belőle a `jarvis.md`-t — pedig azt a rendszerpromptot **minden** chat
+hívás viszi, önmagában ~2 300 token. A valós adaton mérve egy kérdés **~4 300
+token** üres szállal, és **5 100–6 300** egy hatfordulós szállal. A Groq ingyenes
+szintje 6 000 token/perc: a hatfordulós eset egyedül, egyetlen kérdéssel elérte
+volna a plafont.
+
+Ezért lett a `config.groq.chatHistoryDepth` **6 helyett 4**. Így a legrosszabb
+eset is a keret alatt marad, és egy követő kérdés kontextusa még megvan.
+
+Egy kérdés tehát belefér; kettő ugyanabban a percben nem biztos, és ezt a hibát
+ki kell mondani, nem elnyelni. Ugyanezért olvas a lap és a kérdés is
+`briefs.cached()`-et és nem `briefs.get()`-et: egy brief-generálás önmagában egy
+teljes Groq hívás lenne ugyanabban a percben, olyasmiért, amit senki nem kért.
+
+Egy alul-jelentett keret pontosan az a magabiztosan téves szöveg, ami ellen ez a
+projekt épült — a szám itt mérésből való, nem becslésből.
 
 Minden elemzés-összegzés mellé megy a keletkezése ideje. Egy három hónapja
 készült pénzügyi megállapítás nem ugyanaz, mint egy mai, és a modellnek látnia
@@ -134,8 +149,20 @@ A szerver a `127.0.0.1`-en figyel, tehát csak erről a gépről érhető el. A 
 token marad, mert a `tailscale serve` beállítás nem lett visszavonva, és a
 védelem nem függhet attól, hogy épp mi van bekapcsolva.
 
-`GET /` első látogatáskor `?token=` paramétert fogad, és `sessionStorage`-ba
-teszi; a `POST /api/chat` hívásokat ezzel a tokennel küldi. Süti nincs.
+`GET /` **ugyanaz mögött a token mögött van, mint az `/api/*`.** A záró review
+mondta ki, miért nem elég a `127.0.0.1`: a `deploy/README.md` dokumentál egy
+`tailscale serve`-et, ami a teljes origint kiajánlja, és a lapon rajta van a
+briefing, minden elemzés, a számok és a teljes szál — egyetlen válaszban több,
+mint amennyit bármelyik API-végpont kiad.
+
+Egy sima navigációra a böngésző nem tud `Authorization` fejlécet tenni, ezért az
+első látogatás `?token=`-nel jön. Azt a szerver egyszer fogadja el, és rögtön
+`HttpOnly`, `SameSite=Strict` sütire cseréli; onnantól a süti a bizonyíték.
+Hitelesítés nélkül 401. A `Secure` flag szándékosan marad le: a szerver
+`127.0.0.1`-en sima http-t is kiszolgál, ott egy Secure süti sosem jönne vissza.
+
+A böngészőoldali script a `?token=`-t továbbra is leszedi a címsorról, és
+`sessionStorage`-ba teszi a `POST /api/chat` bearer fejléchez.
 
 ### 6. Telegram
 

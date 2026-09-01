@@ -82,10 +82,32 @@ describe("renderPage", () => {
   it("keeps the page usable when the model is unreachable", () => {
     // The content never depends on the model: the brief, the analyses and the
     // numbers are all there, and only the question box is disabled.
+    //
+    // The form controls are named specifically. A bare `toContain("disabled")`
+    // passes on every path, because the fixture's `- [ ] Ebéd kivétele` renders
+    // `<input type="checkbox" disabled>` whatever `chatAvailable` says — an
+    // assertion that cannot fail.
     const html = renderPage({ ...base, chatAvailable: false });
+    expect(html).toContain(`<input type="text" placeholder="Kérdezz valamit…" disabled>`);
+    expect(html).toContain(`<button type="submit" disabled>`);
     expect(html).toContain("Terhelési arány");
     expect(html).toContain("nem érhető el");
-    expect(html).toContain("disabled");
+  });
+
+  it("leaves the question box usable when the model is reachable", () => {
+    // The other half of the pair: without this, disabling the form
+    // unconditionally would still pass the test above.
+    const html = renderPage({ ...base, chatAvailable: true });
+    expect(html).toContain(`<input type="text" placeholder="Kérdezz valamit…">`);
+    expect(html).toContain(`<button type="submit">`);
+    expect(html).not.toContain("nem érhető el");
+  });
+
+  it("treats an empty brief as no brief at all", () => {
+    // Missing data must look missing: an empty "Briefing" heading with nothing
+    // under it reads as a brief that said nothing, not as one that never ran.
+    expect(renderPage({ ...base, briefMarkdown: "" }))
+      .toContain("Ma még nem készült briefing");
   });
 });
 
@@ -139,7 +161,27 @@ describe("metricsRowsFrom", () => {
     const hrv = rows.find((r) => r.label === "HRV (7 nap)")!;
     expect(hrv.value).toContain("68,7");
     expect(hrv.detail).toContain("6 nap");
-    expect(hrv.detail).toContain("86%");
+    // 6/7 = 85.7%, shown as 85% — see the floor test below for why.
+    expect(hrv.detail).toContain("85%");
+  });
+
+  it("never rounds an incomplete year up to full coverage", () => {
+    // 364/365 = 0.99726…; ×100 = 99.726…, which Math.round turns into "100%".
+    // A year missing a day would then read as a complete one, in the single
+    // place this owner reads coverage. Math.floor gives 99.
+    const rows = metricsRowsFrom(metricsFixture({
+      hrv7: { value: 61.2, n: 364, coverage: 364 / 365, window: "365d" },
+    }));
+    const hrv = rows.find((r) => r.label === "HRV (7 nap)")!;
+    expect(hrv.detail).toContain("99%");
+    expect(hrv.detail).not.toContain("100%");
+  });
+
+  it("still says 100% when the coverage really is complete", () => {
+    const rows = metricsRowsFrom(metricsFixture({
+      hrv7: { value: 61.2, n: 365, coverage: 1, window: "365d" },
+    }));
+    expect(rows.find((r) => r.label === "HRV (7 nap)")!.detail).toContain("100%");
   });
 });
 
@@ -150,12 +192,53 @@ describe("metricsRowsFrom", () => {
 describe("page routes", () => {
   const boot = () => buildTestApp({ modules: [stubModule({ name: "Teszt" })], now: "2026-09-01T08:00:00.000Z" });
 
-  it("serves the page as HTML without a token", async () => {
-    // `/` is not under `/api/`, and the server binds to 127.0.0.1 only.
+  it("refuses the page without any credential", async () => {
+    // The page carries the brief, every analysis, the numbers and the whole
+    // thread. 127.0.0.1 is not the guarantee: `deploy/README.md` documents a
+    // `tailscale serve` that would proxy this origin to the whole tailnet.
     const app = await boot();
     const res = await app.server.inject({ method: "GET", url: "/" });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("serves the page with the bearer header", async () => {
+    const app = await boot();
+    const res = await app.server.inject({
+      method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
+    await app.close();
+  });
+
+  it("accepts ?token= once and trades it for an HttpOnly cookie", async () => {
+    // A browser cannot put a header on a plain navigation, so the first visit
+    // carries the token in the URL. It is exchanged immediately: the cookie
+    // means no later navigation repeats it where history and logs can keep it.
+    const app = await boot();
+    const res = await app.server.inject({ method: "GET", url: `/?token=${TEST_TOKEN}` });
+    expect(res.statusCode).toBe(200);
+    const cookie = String(res.headers["set-cookie"]);
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Strict");
+    await app.close();
+  });
+
+  it("accepts the cookie alone on the next navigation", async () => {
+    const app = await boot();
+    const first = await app.server.inject({ method: "GET", url: `/?token=${TEST_TOKEN}` });
+    const cookie = String(cookieFrom(first));
+    const second = await app.server.inject({ method: "GET", url: "/", headers: { cookie } });
+    expect(second.statusCode).toBe(200);
+    expect(second.headers["content-type"]).toContain("text/html");
+    await app.close();
+  });
+
+  it("refuses a wrong token in the query string", async () => {
+    const app = await boot();
+    const res = await app.server.inject({ method: "GET", url: "/?token=nem-ez-az" });
+    expect(res.statusCode).toBe(401);
     await app.close();
   });
 
@@ -179,3 +262,10 @@ describe("page routes", () => {
     await app.close();
   });
 });
+
+/** The name=value pair from a Set-Cookie header, ready to send back as `cookie`. */
+function cookieFrom(res: { headers: Record<string, unknown> }): string {
+  const raw = res.headers["set-cookie"];
+  const header = Array.isArray(raw) ? String(raw[0]) : String(raw);
+  return header.split(";")[0]!;
+}

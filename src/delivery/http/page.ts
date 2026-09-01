@@ -131,7 +131,10 @@ export function renderPage(data: PageData): string {
     "<h1>Jarvis</h1>",
     `<p class="date">${escapeHtml(data.dateLabel)}</p>`,
     "<h2>Briefing</h2>",
-    data.briefMarkdown === null
+    // Empty-after-trim counts as absent, not just null. An empty "Briefing"
+    // heading with nothing under it is missing data that does not look
+    // missing — the one failure this project exists to prevent.
+    data.briefMarkdown === null || data.briefMarkdown.trim() === ""
       ? `<p class="muted">Ma még nem készült briefing.</p>`
       : renderMarkdown(data.briefMarkdown),
     "<h2>Elemzés</h2>",
@@ -156,7 +159,10 @@ const hu = (n: number, digits = 0) =>
  * The detail column always carries the evidence: how many days, what coverage.
  */
 function row(label: string, m: Metric, digits = 0, unit = ""): MetricRow {
-  const pct = Math.round(m.coverage * 100);
+  // Floor, not round: 364 days out of 365 rounds up to "100%", and this table
+  // is the one place the owner reads coverage. Only genuine completeness may
+  // claim it — incomplete data must never look complete.
+  const pct = Math.floor(m.coverage * 100);
   return {
     label,
     value: m.value === null ? "nincs mérés" : `${hu(m.value, digits)}${unit}`,

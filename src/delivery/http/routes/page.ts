@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { BriefService } from "../../../core/brief-service.ts";
-import type { ChatService } from "../../../core/chat.ts";
+import { MAX_QUESTION_CHARS, type ChatService } from "../../../core/chat.ts";
 import type { AnalysisRepo } from "../../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../../infra/db/repositories/conversations.ts";
 import type { Clock } from "../../../infra/clock.ts";
@@ -22,28 +22,52 @@ export interface PageDeps {
   logger: Logger;
 }
 
-const body = z.object({ question: z.string().trim().min(1).max(2000) });
+const body = z.object({ question: z.string().trim().min(1).max(MAX_QUESTION_CHARS) });
 
 export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
   app.get("/", async (_request, reply) => {
     const now = deps.clock.now();
 
     // Each piece fails on its own. The page's job is to show what exists, and
-    // a missing brief must not take the analyses and the numbers with it.
+    // a missing brief must not take the analyses and the numbers with it —
+    // nor a failing seven-year `aggregate()` take the brief.
+
+    // `cached`, never `get`: opening the page must not start a brief
+    // generation. Every module plus a Groq synthesis, up to 45 seconds, for a
+    // page the owner only wanted to read — and one more call against a 6,000
+    // token/minute ceiling that the next question then has to share.
+    //
+    // Empty-after-trim counts as absent: an empty "Briefing" heading is
+    // missing data that does not look missing.
     let briefMarkdown: string | null = null;
     try {
-      briefMarkdown = (await deps.briefs.get(now, { wait: false })).markdown;
+      const brief = deps.briefs.cached(now);
+      briefMarkdown = brief && brief.markdown.trim() !== "" ? brief.markdown : null;
     } catch (err) {
       deps.logger.warn({ err: String(err) }, "page rendered without a brief");
+    }
+
+    let analyses: PageData["analyses"] = [];
+    try {
+      analyses = deps.analyses.latestPerDomain().map((a) => ({
+        domain: a.domain, markdown: a.markdown, createdAt: a.createdAt,
+      }));
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without the analyses");
+    }
+
+    let metricsRows: MetricRow[] = [];
+    try {
+      metricsRows = deps.metricsRows();
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without the numbers");
     }
 
     const data: PageData = {
       dateLabel: huLongDate(now, TZ),
       briefMarkdown,
-      analyses: deps.analyses.latestPerDomain().map((a) => ({
-        domain: a.domain, markdown: a.markdown, createdAt: a.createdAt,
-      })),
-      metricsRows: deps.metricsRows(),
+      analyses,
+      metricsRows,
       history: deps.conversations.recent(WEB_CHAT_ID, 20),
       chatAvailable: await deps.chat.available(),
     };

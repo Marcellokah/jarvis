@@ -7,6 +7,16 @@ import { withTimeout } from "../infra/abort.ts";
 import type { ConversationRepo } from "../infra/db/repositories/conversations.ts";
 import { renderAskPrompt, type AskContext } from "./ask/context.ts";
 
+/**
+ * The longest question either door accepts.
+ *
+ * One cap, shared: the web form and the Telegram thread reach the same prompt
+ * and the same `conversations` table, so they must agree on what fits. Telegram
+ * would otherwise hand 4,096 characters straight into a prompt already close
+ * to the 6,000 token/minute ceiling.
+ */
+export const MAX_QUESTION_CHARS = 2_000;
+
 export interface ChatService {
   available(): Promise<boolean>;
   /**

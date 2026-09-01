@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { trimMetrics, renderAskPrompt, type AskContext } from "../../src/core/ask/context.ts";
+import { describe, it, expect, afterEach } from "vitest";
+import { trimMetrics, renderAskPrompt, buildAskContext, type AskContext } from "../../src/core/ask/context.ts";
+import { createWorkoutRepo } from "../../src/infra/db/repositories/workouts.ts";
+import { createSubscriptionMonthRepo } from "../../src/infra/db/repositories/subscription-months.ts";
+import { createBriefRepo } from "../../src/infra/db/repositories/briefs.ts";
+import { silentLogger } from "../../src/infra/logger.ts";
+import { buildTestApp, stubModule, type TestApp } from "../helpers.ts";
 import type { Metrics } from "../../src/core/analysis/aggregate.ts";
 
 const EMPTY = { value: null, n: 0, coverage: 0, window: "365d" };
@@ -115,5 +120,82 @@ describe("renderAskPrompt", () => {
   it("ends with the question", () => {
     const prompt = renderAskPrompt(base, "EZ_A_KERDES");
     expect(prompt.trimEnd().endsWith("EZ_A_KERDES")).toBe(true);
+  });
+});
+
+/**
+ * The assembler itself, over real (empty-unless-seeded) repositories.
+ *
+ * The brief is the part that mattered: `get(now, { wait: false })` would fall
+ * through to a full generation on any day with no stored brief — which, with
+ * no scheduled brief in this system, is most days. A question must never pay
+ * for a brief nobody asked for.
+ */
+describe("buildAskContext", () => {
+  const NOW = "2026-09-01T08:00:00.000Z";
+  let app: TestApp | undefined;
+  afterEach(async () => { await app?.close(); app = undefined; });
+
+  async function deps(runs: { count: number }) {
+    app = await buildTestApp({
+      modules: [stubModule({
+        name: "Számláló",
+        execute: async () => { runs.count += 1; return { data: {}, actions: [], priority: "normal" as const }; },
+      })],
+      now: NOW,
+    });
+    return {
+      app,
+      ctxDeps: {
+        health: app.health,
+        workouts: createWorkoutRepo(app.db),
+        subscriptionMonths: createSubscriptionMonthRepo(app.db),
+        analyses: app.analyses,
+        conversations: app.conversations,
+        briefs: app.briefs,
+        clock: { now: () => new Date(NOW) },
+        logger: silentLogger(),
+        historyDepth: 4,
+      },
+    };
+  }
+
+  it("asks for no brief that does not already exist", async () => {
+    const runs = { count: 0 };
+    const { ctxDeps } = await deps(runs);
+
+    const ctx = await buildAskContext(ctxDeps, "web", new AbortController().signal);
+
+    expect(ctx.briefMarkdown).toBeNull();
+    // The proof: not one module ran, so no Groq synthesis could have fired.
+    expect(runs.count).toBe(0);
+  });
+
+  it("uses the brief that is already stored", async () => {
+    const runs = { count: 0 };
+    const { app: a, ctxDeps } = await deps(runs);
+    await a.briefs.generate(new Date(NOW));
+
+    const ctx = await buildAskContext(ctxDeps, "web", new AbortController().signal);
+
+    expect(ctx.briefMarkdown).not.toBeNull();
+    expect(runs.count).toBe(1); // the explicit generate, and nothing more
+  });
+
+  it("treats a stored-but-empty brief as no brief", async () => {
+    // Missing data must look missing. An empty markdown would otherwise reach
+    // the prompt under "A mai briefing:", telling the model a brief exists.
+    const runs = { count: 0 };
+    const { app: a, ctxDeps } = await deps(runs);
+    createBriefRepo(a.db).save({
+      date: "2026-09-01", generatedAt: NOW, synthesizer: "template",
+      markdown: "   \n  ", durationMs: 1,
+    });
+
+    const ctx = await buildAskContext(ctxDeps, "web", new AbortController().signal);
+
+    expect(ctx.briefMarkdown).toBeNull();
+    expect(renderAskPrompt(ctx, "Mi újság?")).toContain("Ma nem készült briefing");
+    expect(runs.count).toBe(0);
   });
 });

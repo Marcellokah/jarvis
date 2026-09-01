@@ -1,4 +1,5 @@
 import type { BriefService } from "../../core/brief-service.ts";
+import { MAX_QUESTION_CHARS } from "../../core/chat.ts";
 import type { ProposalService } from "../../core/proposals.ts";
 import { ProposalError } from "../../core/proposals.ts";
 import type { ActionRepo } from "../../infra/db/repositories/actions.ts";
@@ -26,6 +27,23 @@ export interface TelegramDeps {
  * plus optional buttons. That keeps every command testable without a bot token
  * or a network connection.
  */
+
+/**
+ * The reply for a question that is too long, or null when it fits.
+ *
+ * Extracted rather than inlined in the bot: `POST /api/chat` rejects anything
+ * over `MAX_QUESTION_CHARS`, and Telegram allows 4,096 characters per message.
+ * Two doors onto the same prompt and the same `conversations` table must agree
+ * on what fits, and the only way to keep them agreeing is to make this
+ * testable on its own.
+ */
+export function questionTooLong(question: string): BotReply | null {
+  if (question.length <= MAX_QUESTION_CHARS) return null;
+  return {
+    text: `A kérdés túl hosszú: ${question.length} karakter, a határ ${MAX_QUESTION_CHARS}.\n`
+        + "Bontsd rövidebbre — a modell keretébe így sem férne bele.",
+  };
+}
 
 export async function handleBrief(deps: TelegramDeps, now: Date, force: boolean): Promise<BotReply> {
   const brief = await deps.briefs.get(now, { force });
