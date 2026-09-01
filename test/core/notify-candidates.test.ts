@@ -96,11 +96,17 @@ describe("candidates — health", () => {
     expect(found).toEqual([]);
   });
 
-  it("ignores a large deviation resting on too few samples", () => {
-    // Not a weak candidate — no candidate. Three nights cannot establish that
-    // a fortnight is unusual.
+  it("ignores a deviation whose recent window is too thin", () => {
     const found = candidates(input({
-      metrics: metrics({ hrvDeviation: { sigma: -3, n7: 2, n90: 8 } }),
+      metrics: metrics({ hrvDeviation: { sigma: -3, n7: 2, n90: 60 } }),
+    }));
+    expect(found).toEqual([]);
+  });
+
+  it("ignores a deviation whose baseline is too thin", () => {
+    // Three nights cannot establish that a fortnight is unusual.
+    const found = candidates(input({
+      metrics: metrics({ hrvDeviation: { sigma: -3, n7: 5, n90: 8 } }),
     }));
     expect(found).toEqual([]);
   });
@@ -142,10 +148,16 @@ describe("candidates — analyses", () => {
 
 describe("candidates — ordering", () => {
   it("puts the urgent first", () => {
+    // Both are deadlines, so both are built in array order before anything else
+    // is appended. The non-urgent one comes first, which means only the sort can
+    // put the urgent one at the front.
     const found = candidates(input({
-      deadlines: [{ label: "most", dueAt: "2026-09-01T09:00:00.000Z", overdue: true }],
-      newAnalyses: [{ domain: "physical", summary: "ráér", createdAt: "2026-09-01T09:00:00.000Z" }],
+      deadlines: [
+        { label: "ráér", dueAt: "2026-09-01T13:00:00.000Z", overdue: false },
+        { label: "most", dueAt: "2026-09-01T09:00:00.000Z", overdue: true },
+      ],
     }));
-    expect(found[0]!.urgency).toBe("now");
+    expect(found[0]!.text).toContain("most");
+    expect(found[1]!.text).toContain("ráér");
   });
 });

@@ -1,5 +1,5 @@
 import type { Metrics } from "../analysis/aggregate.ts";
-import { isoDate, type Tz } from "../../shared/dates.ts";
+import type { Tz } from "../../shared/dates.ts";
 
 export type CandidateKind = "deadline" | "health" | "analysis";
 
@@ -119,9 +119,4 @@ export function candidates(input: CandidateInput): Candidate[] {
 
   // Urgent first; within a group, the order they were produced in.
   return [...out].sort((a, b) => Number(b.urgency === "now") - Number(a.urgency === "now"));
-}
-
-/** Exported for the tick's logging: today's date in the configured zone. */
-export function candidateDay(input: CandidateInput): string {
-  return isoDate(input.now, input.tz);
 }
