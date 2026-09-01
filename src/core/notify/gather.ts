@@ -42,15 +42,22 @@ function defrostDeadlines(data: unknown): DeadlineItem[] {
  * `src/modules/finance-subs/index.ts`) — confirmed by reading the module
  * rather than guessed, since the plan was written without that.
  */
-function renewalDeadlines(data: unknown): DeadlineItem[] {
+function renewalDeadlines(data: unknown, now: Date): DeadlineItem[] {
   const list = (data as { alerts?: unknown } | null)?.alerts;
   if (!Array.isArray(list)) return [];
   const out: DeadlineItem[] = [];
   for (const raw of list as RenewalShape[]) {
     if (typeof raw.name !== "string" || typeof raw.renewsOn !== "string") continue;
-    // A renewal has a day, not a moment; 09:00 local is when it is worth
-    // hearing about, and the horizon check does the rest.
-    out.push({ label: `${raw.name} megújul`, dueAt: `${raw.renewsOn}T07:00:00.000Z`, overdue: false });
+    // A renewal has a day, not a moment. The fixed 07:00Z instant is 09:00
+    // Budapest in summer and 08:00 in winter — pinned in UTC rather than
+    // computed with real tz math, which is more than a single per-day
+    // instant warrants. `overdue` is derived from that instant instead of
+    // assumed false: `nextOccurrence()` in finance-subs only guarantees
+    // `renewsOn >= today` at the moment the module runs, not at the moment
+    // this notification path checks it, so a renewal read well after its
+    // instant has already happened and must not be reported as still ahead.
+    const dueAt = `${raw.renewsOn}T07:00:00.000Z`;
+    out.push({ label: `${raw.name} megújul`, dueAt, overdue: Date.parse(dueAt) <= now.getTime() });
   }
   return out;
 }
@@ -77,7 +84,7 @@ export async function gatherCandidates(
 
   try {
     const finance = await deps.runModule("FinanceAndSubs", now);
-    deadlines.push(...renewalDeadlines(finance));
+    deadlines.push(...renewalDeadlines(finance, now));
   } catch (err) {
     deps.logger.warn({ err: String(err) }, "subscription renewals unavailable for the notification");
   }

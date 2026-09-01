@@ -21,6 +21,20 @@ function deps(db: Db, over: Partial<GatherDeps> = {}): GatherDeps {
   };
 }
 
+// The full RenewalAlert shape from src/modules/finance-subs/index.ts, so the
+// reader in gather.ts is shown picking `name`/`renewsOn` out of a realistic
+// object rather than a fixture minimal enough to hide a wrong field name.
+function renewalAlert(over: Partial<{
+  name: string; amountHuf: number; cycle: string; renewsOn: string;
+  daysUntil: number; cancelUrl: string | null; unused: boolean; daysSinceUse: number | null;
+}> = {}) {
+  return {
+    name: "Netflix", amountHuf: 4990, cycle: "monthly", renewsOn: "2026-09-01",
+    daysUntil: 0, cancelUrl: null, unused: false, daysSinceUse: null,
+    ...over,
+  };
+}
+
 describe("gatherCandidates", () => {
   it("turns a defrost task into a deadline candidate", async () => {
     const db = memoryDb();
@@ -33,6 +47,56 @@ describe("gatherCandidates", () => {
     const found = await gatherCandidates(d, NOW, signal());
     expect(found.map((c) => c.kind)).toEqual(["deadline"]);
     expect(found[0]!.text).toContain("csirkemell");
+    db.close();
+  });
+
+  it("turns a subscription renewal into a deadline candidate", async () => {
+    const db = memoryDb();
+    // Before the fixed 07:00Z instant and within the 4h horizon, so this
+    // exercises the ordinary "still ahead" path rather than the overdue one.
+    const now = new Date("2026-09-01T04:30:00.000Z");
+    const d = deps(db, {
+      runModule: async (name) => name !== "FinanceAndSubs" ? null : {
+        alerts: [renewalAlert({ name: "Netflix", renewsOn: "2026-09-01" })],
+      },
+    });
+
+    const found = await gatherCandidates(d, now, signal());
+    expect(found.map((c) => c.kind)).toEqual(["deadline"]);
+    expect(found[0]!.text).toContain("Netflix");
+    db.close();
+  });
+
+  it("keeps the finance renewal when only the health module throws", async () => {
+    const db = memoryDb();
+    const now = new Date("2026-09-01T04:30:00.000Z");
+    const d = deps(db, {
+      runModule: async (name) => {
+        if (name === "HealthAndMealPrep") throw new Error("modul elszállt");
+        if (name === "FinanceAndSubs") return { alerts: [renewalAlert({ name: "Spotify" })] };
+        return null;
+      },
+    });
+
+    const found = await gatherCandidates(d, now, signal());
+    expect(found.some((c) => c.text.includes("Spotify"))).toBe(true);
+    db.close();
+  });
+
+  it("marks a renewal already past its fixed instant as overdue rather than dropping it", async () => {
+    const db = memoryDb();
+    // renewsOn is three days before `now` — well outside the 4h horizon. If
+    // `overdue` were still hardcoded false this candidate would be filtered
+    // out silently instead of surfacing as already-elapsed.
+    const now = new Date("2026-09-04T10:00:00.000Z");
+    const d = deps(db, {
+      runModule: async (name) => name !== "FinanceAndSubs" ? null : {
+        alerts: [renewalAlert({ name: "Spotify", renewsOn: "2026-09-01", daysUntil: -3 })],
+      },
+    });
+
+    const found = await gatherCandidates(d, now, signal());
+    expect(found.some((c) => c.text.includes("Spotify"))).toBe(true);
     db.close();
   });
 
@@ -90,13 +154,20 @@ describe("gatherCandidates", () => {
     db.close();
   });
 
-  it("records the failure rather than swallowing it", async () => {
+  it("records the specific failure rather than swallowing it", async () => {
     const db = memoryDb();
     const logger = recordingLogger();
     const d = deps(db, { logger, runModule: async () => { throw new Error("modul elszállt"); } });
 
     await gatherCandidates(d, NOW, signal());
-    expect(logger.entries.some((e) => e.level === "warn")).toBe(true);
+    // Both module calls fail here, so this asserts on the exact defrost
+    // warning rather than "any warn entry", which an unrelated warning
+    // elsewhere in the function could also satisfy.
+    expect(logger.entries).toContainEqual(expect.objectContaining({
+      level: "warn",
+      msg: "defrost deadlines unavailable for the notification",
+      obj: expect.objectContaining({ err: expect.stringContaining("modul elszállt") }),
+    }));
     db.close();
   });
 });
