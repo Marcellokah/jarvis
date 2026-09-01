@@ -94,6 +94,24 @@ describe("ingest — raw samples", () => {
     expect(body.accepted).not.toContain("sleepH");
   });
 
+  it("keeps the rollup's sleep when a later post sends sleepH alone", async () => {
+    // Where the defect actually lived: the guard has to be about the stored
+    // day, not the current request. `sleep_h` is the one sleep column the
+    // upsert does not force to null and the upsert is incoming-wins, so a
+    // second post the same morning would otherwise overwrite 7.2 with 0.3 and
+    // leave it sitting beside an asleep_min of 430.
+    const a = await boot();
+    await post(a, { samples: NIGHT });
+    const res = await post(a, { sleepH: 0.3 });
+    const body = res.json() as { accepted: string[]; ignored: { field: string }[] };
+
+    const row = a.health.forDate("2026-09-02")!;
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1); // still 7.2
+    expect(row.asleepMin).toBeCloseTo(430, 3);
+    expect(body.ignored.map((i) => i.field)).toContain("sleepH");
+    expect(body.accepted).not.toContain("sleepH");
+  });
+
   it("accepts sleepH exactly as before when no samples came", async () => {
     // Until the Shortcut is rebuilt this is the only sleep the system gets, and
     // with iPhone-only tracking one sample covers the night, so it is correct.

@@ -229,7 +229,7 @@ export function registerIngestRoutes(
     // incoming-wins, `fillGaps` is existing-wins — and sleep samples land on
     // the wake-up day, the very date this request writes. A request carrying
     // both would therefore keep `sleepH` and silently drop the rollup's value,
-    // with nothing to show for it. So when the raw samples produced sleep for
+    // with nothing to show for it. So wherever sample-derived sleep exists for
     // this date, the direct field steps aside and says so.
     //
     // `sleepH` is not removed from `READING`: until the Shortcut is rebuilt it
@@ -237,7 +237,20 @@ export function registerIngestRoutes(
     // sample covers the whole night, so it is correct today. Samples are simply
     // the better source whenever they exist.
     const samples = await readSamples(fields.samples);
-    const sleepFromSamples = samples.days.some(
+
+    // The question is about the stored DAY, not about this request. `sleep_h`
+    // is the one sleep column the upsert does not force to null, and the upsert
+    // is incoming-wins — so a second post the same morning carrying `sleepH`
+    // and no usable samples would overwrite the rollup's 7.2 and leave 0.3
+    // sitting beside an `asleep_min` of 430. Reversing the two writes does not
+    // help: `fillGaps` is existing-wins and would skip the value already there.
+    //
+    // `asleep_min` is the marker. It can only ever have come from the samples
+    // path — the upsert below writes it as null on purpose — so a row that has
+    // one already holds sample-derived sleep, whether it arrived earlier this
+    // morning or from a past import.
+    const stored = deps.health.forDate(date);
+    const sleepFromSamples = stored?.asleepMin != null || samples.days.some(
       (day) => day.date === date && day.values.sleep_h !== undefined,
     );
     if (sleepFromSamples && values.sleepH !== undefined) {

@@ -162,19 +162,22 @@ Ezért a mezők aszerint válnak szét, hogy **mikor teljesek**:
 
 **A mai napra, a reggeli kéréssel** — pillanatnyi és éjszakai mérések, amiknek
 reggel már van végleges értékük: `hrv`, `rhr`, az alvás nyers mintái, `vo2max`,
-`hrRecovery`, `walkingHr`, `steadinessPct` és `sixMinWalkM`. Ez utóbbi kettő is
-periodikus becslés, amit az óra egészben számol ki — nem a nap során gyűlik.
+`hrRecovery`, `steadinessPct` és `sixMinWalkM`. Ez a négy periodikus becslés:
+az óra egészben, egy méréssorozatból számolja ki őket, nem a nap folyamán
+gyűlnek.
 
 **A tegnapi napra, egy második kéréssel** — halmozódó összegek: `steps`,
 `distanceKm`, `moveKcal`, `basalKcal`, `exerciseMin`, `flights`, `standMin`,
-`dietKcal` és a makrók — **valamint a járás-metrikák napi átlagai**
-(`walkingSpeed`, `stepLengthCm`, `doubleSupportPct`, `asymmetryPct`,
-`stairUpMs`, `stairDownMs`).
+`dietKcal` és a makrók — **valamint a napi átlagok**: `walkingHr`,
+`walkingSpeed`, `stepLengthCm`, `doubleSupportPct`, `asymmetryPct`, `stairUpMs`
+és `stairDownMs`.
 
-Az átlag ugyanolyan részleges, mint az összeg: a `DAILY` ezt a hatot `agg:
+Az átlag ugyanolyan részleges, mint az összeg: a `DAILY` ezt a hetet `agg:
 "avg"`-gel a nap **összes** mintájára számolja, tehát egy fél nyolckor küldött
 átlag pár száz lépésé — csak nem néz ki hiányosnak, mint egy részösszeg, hanem
 hihetőnek, és `upsert`-tel beírva ugyanúgy véglegesen rögzülne az import elől.
+A `walkingHr` sem kivétel: az Apple egész napra vett séta-pulzus átlaga
+ugyanúgy a nap folyamán áll össze.
 
 A végpont **már most elfogad explicit `date` mezőt**, úgyhogy szerver-oldalon
 ehhez semmit nem kell átírni — csak a Shortcut küld kettőt.

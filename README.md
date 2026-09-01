@@ -126,13 +126,14 @@ A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat
 A Shortcut **két kérést** küld, mert a mérések nem egyszerre válnak teljessé.
 
 **A mai napra** — ami reggel már végleges: HRV, nyugalmi pulzus, az éjszaka
-**nyers alvás-mintái**, VO2max, pulzus-visszatérés, séta-pulzus, séta-stabilitás
-és a hatperces séta-teszt. Ezeket az óra egészben számolja ki, nem a nap során
-gyűlnek össze.
+**nyers alvás-mintái**, VO2max, pulzus-visszatérés, séta-stabilitás és a
+hatperces séta-teszt. Ezeket az óra egészben, egy méréssorozatból számolja ki,
+nem a nap során gyűlnek össze.
 
 **A tegnapi napra** — ami csak a nap végén teljes: lépésszám, távolság, aktív és
-alap kalória, edzésperc, emelet, állás-idő, az étkezés, és a járás-metrikák
-átlagai (sebesség, lépéshossz, kettős támasz, aszimmetria, lépcső fel és le).
+alap kalória, edzésperc, emelet, állás-idő, az étkezés, valamint a nap egészére
+vett átlagok: séta-pulzus, séta-sebesség, lépéshossz, kettős támasz,
+aszimmetria, lépcső fel és le.
 
 Az átlag ugyanúgy részleges, mint az összeg: egy fél nyolckor számolt
 séta-sebesség pár száz lépésre vonatkozik, csak nem látszik rajta — a részösszeg
