@@ -53,10 +53,14 @@ Havonta érdemes újrafuttatni. Biztonságos: a meglévő méréseket soha nem �
 felül, csak a hiányzó mezőket tölti ki, és ugyanaz a zip kétszer futtatva
 ugyanazt az állapotot adja.
 
-Ha fut a launchd agent, ne közben futtasd: az agent tartja nyitva az
-adatbázist, egy külön folyamat írásai emiatt nem maradnak meg, és az import
-ezt induláskor felismerve inkább hibával leáll, mint hogy csendben eldobja a
-beolvasott adatot. Állítsd le előtte, utána indítsd újra — a pontos
+Ha fut a launchd agent, ne közben futtasd. Amikor az agent nyitva tartotta az
+adatbázist, háromszor is előfordult, hogy a beolvasott értékek nem maradtak
+meg — hogy pontosan miért, azt nem sikerült kideríteni, a kézenfekvő
+magyarázat (hogy egy másik folyamat írásai elvesznének) mérésekkel nem
+igazolódott. Az ok tehát nyitott, a veszteség viszont valós volt, ezért az
+import induláskor inkább hibával leáll, ha mást is nyitva talál, és a végén
+egy friss kapcsolattal ellenőrzi, hogy tényleg megmaradt-e minden — az az
+ellenőrzés az igazi garancia. Állítsd le előtte, utána indítsd újra — a pontos
 parancssor: [`deploy/README.md`](deploy/README.md).
 
 A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.

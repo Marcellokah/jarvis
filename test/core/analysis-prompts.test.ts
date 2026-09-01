@@ -26,7 +26,7 @@ const metrics: Metrics = {
       d90: { value: 58, n: 80, coverage: 80 / 90, window: "90d" },
       d365: { value: 57, n: 230, coverage: 230 / 365, window: "365d" },
     },
-    hrvDeviationSigma: 0.4,
+    hrvDeviation: { sigma: 0.4, n7: 6, n90: 80 },
     asleepMin: {
       d28: { value: null, n: 0, coverage: 0, window: "28d" },
       d90: { value: 402, n: 12, coverage: 12 / 90, window: "90d" },
@@ -43,7 +43,7 @@ const metrics: Metrics = {
   finance: {
     months: [{ month: "2026-09", totalHuf: 24390, activeCount: 5 }],
     monthOverMonth: null,
-    annualisedHuf: 292680,
+    annualisedHuf: null,
   },
 };
 
@@ -79,6 +79,18 @@ describe("buildDomainPrompt", () => {
   it("orders the model to carry coverage into any claim", () => {
     const { system } = buildDomainPrompt("recovery", metrics, []);
     expect(system).toMatch(/lefedettség/i);
+  });
+
+  it("forbids inventing relationships on the domain calls too", () => {
+    // The closed-list rule used to live only in the synthesis prompt, while the
+    // raw material sits here: the physical pass alone carries months of training
+    // load next to VO2max and resting heart rate trends, and nothing told it not
+    // to link them by eye. The strictest rule has to reach the calls that could
+    // break it.
+    const { system } = buildDomainPrompt("physical", metrics, []);
+    expect(system).toContain("Ne találj ki összefüggést");
+    expect(system).toMatch(/mintaszám/i);
+    expect(system).toMatch(/ok-okozat/i);
   });
 });
 

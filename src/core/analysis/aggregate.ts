@@ -30,8 +30,8 @@ export interface PhysicalMetrics {
 
 export interface RecoveryMetrics {
   hrv: { d7: Metric; d28: Metric; d90: Metric; d365: Metric };
-  /** (7-day mean − 90-day mean) in units of the 90-day standard deviation. */
-  hrvDeviationSigma: number | null;
+  /** Recent HRV against its own 90-day baseline, in standard deviations. */
+  hrvDeviation: { sigma: number; n7: number; n90: number } | null;
   asleepMin: { d28: Metric; d90: Metric; d365: Metric };
   stages: { core: Metric; rem: Metric; deep: Metric };
   awakenings: Metric;
@@ -46,8 +46,25 @@ export interface FinanceMetrics {
     deltaHuf: number;
     changes: { name: string; fromHuf: number | null; toHuf: number | null }[];
   } | null;
+  /**
+   * The latest month multiplied by twelve. Null below
+   * `MIN_MONTHS_TO_ANNUALISE` recorded months.
+   */
   annualisedHuf: number | null;
 }
+
+/**
+ * How many recorded months an annual projection needs.
+ *
+ * The subscriptions table was created in S2 and earlier months are
+ * deliberately not reconstructed, so the history starts short. Multiplying a
+ * single observed month by twelve turns one number into a confident annual
+ * figure — a year of spending claimed from a month of evidence. Half a year
+ * is the point where the latest month is a sample of a pattern rather than
+ * the whole of what is known. Under it the honest answer is that there is
+ * not yet enough history to project from.
+ */
+const MIN_MONTHS_TO_ANNUALISE = 6;
 
 export interface Metrics {
   today: string;
@@ -141,8 +158,17 @@ export function aggregate(input: AggregateInput): Metrics {
   const sd90 = stdDev(
     hrv.filter((p) => p.date >= first90 && p.date <= today).map((p) => p.value),
   );
-  const hrvDeviationSigma = hrv7.value !== null && hrv90.value !== null && sd90 !== null && sd90 > 0
-    ? (hrv7.value - hrv90.value) / sd90
+  // A sigma figure is the loudest number in the recovery prompt, so it has to
+  // be the best-evidenced one. `stdDev` will return a spread from two samples
+  // and `windowed` a 7-day mean from one reading, which together could ship a
+  // headline "+3.4σ" resting on a single measurement against two. Below these
+  // thresholds there is no deviation to report — not a small one, not a
+  // caveated one. Above them it travels with both sample sizes, so the reader
+  // never sees the number without the evidence behind it.
+  const hrvDeviation = hrv7.value !== null && hrv90.value !== null
+    && hrv7.n >= 3 && hrv90.n >= 20
+    && sd90 !== null && sd90 > 0
+    ? { sigma: (hrv7.value - hrv90.value) / sd90, n7: hrv7.n, n90: hrv90.n }
     : null;
 
   const yearly = new Map<string, { days: number; withSleep: number }>();
@@ -193,7 +219,9 @@ export function aggregate(input: AggregateInput): Metrics {
     };
   }
 
-  const latestTotal = financeMonths.at(-1)?.totalHuf ?? null;
+  const latestTotal = financeMonths.length >= MIN_MONTHS_TO_ANNUALISE
+    ? financeMonths.at(-1)!.totalHuf
+    : null;
 
   return {
     today,
@@ -218,7 +246,7 @@ export function aggregate(input: AggregateInput): Metrics {
         d90: hrv90,
         d365: windowed(hrv, today, 365, "365d"),
       },
-      hrvDeviationSigma,
+      hrvDeviation,
       asleepMin: {
         d28: windowed(asleep, today, 28, "28d"),
         d90: windowed(asleep, today, 90, "90d"),

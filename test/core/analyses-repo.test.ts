@@ -27,15 +27,21 @@ describe("analysis repo", () => {
     db.close();
   });
 
-  it("returns every domain from the latest run", () => {
+  it("returns the newest row per domain, even when they are months apart", () => {
     const db = memoryDb();
     const repo = createAnalysisRepo(db);
     repo.save({ createdAt: "2026-07-01T08:00:00.000Z", domain: "physical", ...base, summary: "régi" });
     repo.save({ createdAt: "2026-08-01T09:00:00.000Z", domain: "physical", ...base, summary: "friss fizikai" });
     repo.save({ createdAt: "2026-08-01T09:01:00.000Z", domain: "recovery", ...base, summary: "friss regen" });
+    // Finance last succeeded in May and has failed since. It still comes back,
+    // which is why the name says "per domain" and not "the latest run" — the
+    // staleness is only visible in createdAt, and the caller has to look.
+    repo.save({ createdAt: "2026-05-01T08:00:00.000Z", domain: "finance", ...base, summary: "állott pénzügy" });
 
-    const run = repo.latestRun();
-    expect(run.map((r) => r.summary).sort()).toEqual(["friss fizikai", "friss regen"]);
+    const rows = repo.latestPerDomain();
+    expect(rows.map((r) => r.summary).sort())
+      .toEqual(["friss fizikai", "friss regen", "állott pénzügy"].sort());
+    expect(rows.find((r) => r.domain === "finance")!.createdAt).toBe("2026-05-01T08:00:00.000Z");
     db.close();
   });
 

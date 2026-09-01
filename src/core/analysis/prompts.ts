@@ -28,6 +28,13 @@ const BRIEF: Record<Exclude<Domain, "synthesis">, string> = {
  * The shared rules. Coverage is not decoration here: a 90-day sleep mean drawn
  * from twelve nights is a different claim from one drawn from ninety, and the
  * difference has to reach the reader.
+ *
+ * The closed-list rule belongs here rather than only on the synthesis call.
+ * The domain passes are where the raw material actually is — the physical
+ * prompt alone carries months of training load next to VO2max and resting
+ * heart rate trends — so that is where the temptation to link two series by
+ * eye lives. The synthesis pass gets the rule too, plus the extra wording
+ * that its list arrives pre-computed.
  */
 function systemFor(domain: Domain, extra: string): string {
   return [
@@ -40,6 +47,9 @@ function systemFor(domain: Domain, extra: string): string {
     + " kilencvenből.",
     "- A `null` azt jelenti, hogy nincs mérés. Nem nulla, és nem baj — mondd ki,"
     + " hogy erről nem tudsz nyilatkozni.",
+    "- Ne találj ki összefüggést. Két számsor kapcsolatáról csak akkor írhatsz,"
+    + " ha az kiszámolva, mintaszámmal együtt meg van adva — magadtól ne kapcsolj"
+    + " össze két idősort, és a korreláció akkor sem ok-okozat.",
     "- Írj magyarul, tömören, felsorolásokkal. Ne írj bevezetőt és lezárást.",
     extra,
     "",
@@ -87,10 +97,9 @@ export function buildSynthesisPrompt(
 ): { system: string; user: string } {
   const system = systemFor(
     "synthesis",
-    "- Csak a megadott összefüggésekről írhatsz. Nem kereshetsz továbbiakat, és"
-    + " nem állíthatsz olyan kapcsolatot, ami nincs a listán — a korrelációk"
-    + " kiszámolva érkeznek, mintaszámmal együtt, és a mintaszámot ki kell írnod."
-    + " A korreláció nem ok-okozat; ezt a szóhasználatod tükrözze.",
+    "- Csak a megadott összefüggésekről írhatsz. A korrelációk kiszámolva"
+    + " érkeznek, mintaszámmal együtt: ez a lista zárt, továbbiakat nem"
+    + " kereshetsz, és a mintaszámot mindegyik mellé ki kell írnod.",
   );
 
   const relationBlock = relations.length === 0

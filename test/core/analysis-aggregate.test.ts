@@ -104,15 +104,52 @@ describe("aggregate — physical", () => {
 
 describe("aggregate — recovery", () => {
   it("expresses the recent HRV deviation in standard deviations", () => {
-    // 90 days at 50 with a spread, then 7 days at 60.
+    // 83 older days alternating 45/55, then 7 days at 60 — all 90 inside the
+    // 90-day window. The exact value is asserted because "greater than zero"
+    // is satisfied by three different wrong implementations: forgetting to
+    // divide gives 9.28, dividing by the variance gives 0.30, and a 7-day
+    // rather than 90-day baseline gives 0.
+    //
+    //   90-day mean = (42*45 + 41*55 + 7*60) / 90 = 4565/90 = 50.7222…
+    //   7-day mean  = 60, so the numerator is 9.2777…
+    //   sample sd   = sqrt((883890/324) / 89) = 5.53645…
+    //   sigma       = 9.2777… / 5.53645… = 1.67576…
     const snapshots = [
       ...Array.from({ length: 83 }, (_, i) =>
         snap(shiftDay(TODAY, -(i + 7)), { hrv: i % 2 === 0 ? 45 : 55 })),
       ...Array.from({ length: 7 }, (_, i) => snap(shiftDay(TODAY, -i), { hrv: 60 })),
     ];
     const m = aggregate(input({ snapshots }));
-    expect(m.recovery.hrvDeviationSigma).not.toBeNull();
-    expect(m.recovery.hrvDeviationSigma!).toBeGreaterThan(0);
+    expect(m.recovery.hrvDeviation).not.toBeNull();
+    expect(m.recovery.hrvDeviation!.sigma).toBeCloseTo(1.6758, 4);
+    // The sample sizes travel with the number, so a reader never meets the
+    // sigma without the evidence under it.
+    expect(m.recovery.hrvDeviation!.n7).toBe(7);
+    expect(m.recovery.hrvDeviation!.n90).toBe(90);
+  });
+
+  it("has no HRV deviation when the recent window is one or two readings", () => {
+    // The failure this gates: `stdDev` returns a spread from two samples and a
+    // 7-day mean can come from a single reading, so a bare "+3.4σ" could rest
+    // on one measurement against two. Below the thresholds there is no
+    // deviation to report — not a small one, not a caveated one.
+    const snapshots = [
+      ...Array.from({ length: 83 }, (_, i) =>
+        snap(shiftDay(TODAY, -(i + 7)), { hrv: i % 2 === 0 ? 45 : 55 })),
+      snap(TODAY, { hrv: 60 }),
+      snap(shiftDay(TODAY, -1), { hrv: 60 }),
+    ];
+    expect(aggregate(input({ snapshots })).recovery.hrvDeviation).toBeNull();
+  });
+
+  it("has no HRV deviation when the 90-day baseline is too thin", () => {
+    // Nineteen baseline days: enough for arithmetic, not enough to call a
+    // baseline. Three of them are the recent window itself.
+    const snapshots = Array.from({ length: 19 }, (_, i) =>
+      snap(shiftDay(TODAY, -i), { hrv: i < 3 ? 60 : 45 + (i % 2) * 10 }));
+    const m = aggregate(input({ snapshots }));
+    expect(m.recovery.hrv.d90.n).toBe(19);
+    expect(m.recovery.hrvDeviation).toBeNull();
   });
 
   it("reports sleep coverage per year, because the sparsity is the finding", () => {
@@ -174,9 +211,25 @@ describe("aggregate — finance", () => {
     expect(m.finance.monthOverMonth).toBeNull();
   });
 
-  it("annualises the latest month's total spending", () => {
-    const m = aggregate(input({ months }));
-    // August total is 4990, so annualised is 4990 * 12.
-    expect(m.finance.annualisedHuf).toBe(59880);
+  /** `n` consecutive months from 2026-03, each a single 4990 HUF subscription. */
+  const runOfMonths = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      month: `2026-${String(i + 3).padStart(2, "0")}`,
+      subs: [{ name: "Netflix", amountHuf: 4990, cycle: "monthly", active: true }],
+    }));
+
+  it("does not project a year from too few recorded months", () => {
+    // The live table holds two months, because it was created in S2 and earlier
+    // months are deliberately not reconstructed. Multiplying one observed month
+    // by twelve would put a confident annual figure in the prompt on the
+    // strength of a single observation.
+    expect(aggregate(input({ months: runOfMonths(5) })).finance.annualisedHuf).toBeNull();
+    expect(aggregate(input({ months })).finance.annualisedHuf).toBeNull();
+  });
+
+  it("annualises the latest month once there are six months of history", () => {
+    const m = aggregate(input({ months: runOfMonths(6) }));
+    expect(m.finance.months).toHaveLength(6);
+    expect(m.finance.annualisedHuf).toBe(4990 * 12);
   });
 });

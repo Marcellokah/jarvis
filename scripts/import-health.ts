@@ -11,14 +11,19 @@
  *
  * The launchd agent (`local.jarvis.agent`, running `src/main.ts`) holds its
  * own long-lived connection to the same database. Running this import while
- * that agent is up has been observed, repeatedly, to lose every row: the
- * writes commit, are even briefly visible to an outside reader, and then
- * vanish once the agent's connection is eventually the one to close the
- * database and discard its WAL. So this script (a) refuses to start if
- * something else already holds the database, and (b) never reports success
- * from the connection that did the writing — only from a brand new
- * connection opened after that one has fully closed, because that is the
- * only view that matches what every later process will actually see.
+ * that agent was up has been observed, three times, to lose imported values.
+ * The cause was never established — an earlier version of this comment blamed
+ * a discarded WAL, and that explanation has since been contradicted directly
+ * (see `src/infra/db/holder.ts`). What survives is the observation, not the
+ * mechanism.
+ *
+ * The response is therefore belt and braces rather than a targeted fix. This
+ * script (a) refuses to start if something else already holds the database,
+ * which is cheap and rules out the conditions under which the losses were
+ * seen, and (b) never reports success from the connection that did the
+ * writing — only from a brand new connection opened after that one has fully
+ * closed. (b) is the actual guarantee: whatever the mechanism, a fresh
+ * connection's count is what every later process will see.
  */
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -47,9 +52,10 @@ const dbPath = fromRoot(env.JARVIS_DB);
  * launchd agent (`local.jarvis.agent`, running `src/main.ts`).
  *
  * This refuses to run rather than warn: seven years of health history is at
- * stake here, and losing it to a silently-dropped WAL is not recoverable by
- * re-running the import. Contrast `scripts/analyze.ts`, which only warns —
- * its worst case is a lost analysis, three minutes to redo.
+ * stake, imported values have been observed to go missing under exactly these
+ * conditions, and the mechanism behind that is still unknown — which is a
+ * reason to be more cautious, not less. Contrast `scripts/analyze.ts`, which
+ * only warns: its worst case is a lost analysis, three minutes to redo.
  */
 function assertDatabaseFree(): void {
   mkdirSync(dirname(dbPath), { recursive: true });
@@ -58,9 +64,10 @@ function assertDatabaseFree(): void {
   if (holders.length > 0) {
     console.error(
       `Az adatbázist másik folyamat tartja nyitva (pid ${holders.join(", ")}) — `
-      + "valószínűleg a launchd agent (local.jarvis.agent / src/main.ts fut). Amíg az "
-      + "fut, az import azt hiheti, hogy sikerült, de az adat nem marad meg: a "
-      + "WAL-ban landol, és eltűnik, amikor az agent zárja be utoljára a kapcsolatot. "
+      + "valószínűleg a launchd agent (local.jarvis.agent / src/main.ts fut). Pontosan "
+      + "ilyen helyzetben veszett már el háromszor a beolvasott adat: az import "
+      + "sikert jelentett, az értékek mégsem maradtak meg. Hogy miért, azt nem "
+      + "sikerült kideríteni, ezért az import inkább el sem indul. "
       + "Állítsd le, importálj, indítsd újra:\n\n"
       + agentFix("npm run import-health -- ~/Downloads/export.zip"),
     );
@@ -127,12 +134,12 @@ const intendedWorkouts = new Set(workouts.map((w) => `${w.startedAt} ${w.type}`)
 
 app.close();
 
-// The defect this guards against: the writing connection's own COUNT(*) kept
-// reporting success right up until the database was closed, because the
-// launchd agent's long-held connection silently discarded the WAL when IT
-// was eventually the last one to close. Nothing above this line is trusted
-// as evidence — only a fresh connection, opened after app.close(), can say
-// what actually landed on disk.
+// The observation this guards against: the writing connection's own COUNT(*)
+// reported success, and the values were gone afterwards anyway. Why is not
+// known — see `src/infra/db/holder.ts` for what was and was not established.
+// Not knowing the mechanism is precisely the reason to distrust the writer's
+// own view: nothing above this line is treated as evidence, and only a fresh
+// connection, opened after app.close(), can say what landed on disk.
 const verify = new DatabaseSync(dbPath, { readOnly: true });
 const stored =
   (verify.prepare("SELECT COUNT(*) AS n FROM health_snapshots").get() as { n: number }).n;
@@ -144,10 +151,10 @@ if (stored < intendedDays || totalWorkouts < intendedWorkouts) {
   console.error(
     `\nAz import nem maradt meg: egy friss kapcsolat csak ${stored} napot és `
     + `${totalWorkouts} edzést lát, pedig legalább ${intendedDays} napnak és `
-    + `${intendedWorkouts} edzésnek kellene lennie. Valami más folyamat — `
-    + "valószínűleg a launchd agent — tartotta nyitva az adatbázist import közben, "
-    + "és eldobta a WAL-t záráskor. Győződj meg róla, hogy semmi más nem éri el az "
-    + "adatbázist, majd futtasd újra:\n\n"
+    + `${intendedWorkouts} edzésnek kellene lennie. Valószínűleg valami más folyamat — `
+    + "jellemzően a launchd agent — tartotta nyitva az adatbázist import közben; "
+    + "hogy pontosan ettől vész-e el az adat, az máig nem tisztázott. Győződj meg "
+    + "róla, hogy semmi más nem éri el az adatbázist, majd futtasd újra:\n\n"
     + agentFix("npm run import-health -- ~/Downloads/export.zip"),
   );
   process.exit(1);

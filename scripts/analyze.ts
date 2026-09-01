@@ -23,10 +23,16 @@ import { loadEnv } from "../src/env.ts";
 
 process.env.LOG_LEVEL ??= "error";
 
+// One env read, threaded into createApp below, the way the import does it.
+// Reading it twice would let the path this warning names drift from the file
+// the app actually opens, and a warning about the wrong file is worse than
+// none.
+const env = loadEnv();
+
 // Same holder as the import, but a warning rather than a refusal: a lost
 // analysis write costs three minutes to redo, not seven years of history, so
 // there is nothing here worth stopping the run over.
-const dbPath = fromRoot(loadEnv().JARVIS_DB);
+const dbPath = fromRoot(env.JARVIS_DB);
 const holders = holdersOf(dbPath);
 if (holders.length > 0) {
   console.error(
@@ -37,7 +43,7 @@ if (holders.length > 0) {
   );
 }
 
-const app = createApp();
+const app = createApp({ env });
 const now = app.clock.now();
 const today = isoDate(now, TZ);
 

@@ -17,8 +17,13 @@ export interface AnalysisRepo {
   save(row: Omit<AnalysisRow, "id">): void;
   /** Newest first — the prompt wants the most recent context at the top. */
   recent(domain: Domain, n: number): AnalysisRow[];
-  /** Every domain written by the most recent run. */
-  latestRun(): AnalysisRow[];
+  /**
+   * The newest row for each domain, which is not the same as one run's output:
+   * the rows may come from different runs, and a domain that has failed for
+   * months still returns its last success here with nothing marking it stale.
+   * Callers that care about freshness must check `createdAt` themselves.
+   */
+  latestPerDomain(): AnalysisRow[];
 }
 
 interface Row {
@@ -48,9 +53,11 @@ export function createAnalysisRepo(db: Db): AnalysisRepo {
       ).map(toAnalysis);
     },
 
-    latestRun() {
-      // A run writes its domains seconds apart, so "the latest run" is the
-      // latest row per domain rather than everything sharing one timestamp.
+    latestPerDomain() {
+      // MAX(id) per domain, deliberately not "the rows of the last run": a run
+      // can fail one domain and write the other three, and this still returns
+      // four rows. It is named for what it does so the caller is forced to
+      // notice the mixed vintages rather than assume one run's snapshot.
       return db.all<Row>(
         `SELECT * FROM analyses WHERE id IN (
            SELECT MAX(id) FROM analyses GROUP BY domain

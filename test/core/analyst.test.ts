@@ -20,7 +20,7 @@ const metrics: Metrics = {
   },
   recovery: {
     hrv: { d7: EMPTY_METRIC, d28: EMPTY_METRIC, d90: EMPTY_METRIC, d365: EMPTY_METRIC },
-    hrvDeviationSigma: null,
+    hrvDeviation: null,
     asleepMin: { d28: EMPTY_METRIC, d90: EMPTY_METRIC, d365: EMPTY_METRIC },
     stages: { core: EMPTY_METRIC, rem: EMPTY_METRIC, deep: EMPTY_METRIC },
     awakenings: EMPTY_METRIC, sleepByYear: [],
