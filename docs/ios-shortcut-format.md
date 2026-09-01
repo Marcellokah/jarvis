@@ -155,6 +155,44 @@ a kezdet, mindkettő `WFTextTokenString` egy `￼` helyőrzővel és
    ]}}}
 ```
 
+### Ciklus a minták fölött
+
+`is.workflow.actions.repeat.each` — ugyanaz a nyit/zár szerkezet, mint az
+`If`-nél: `WFControlFlowMode` `0` nyit (`WFInput` a lista), `2` zár, és a kettőt
+egy közös `GroupingIdentifier` köti össze. **A ciklus törzse a kettő KÖZÉ kerül.**
+
+A törzsben az aktuális elemre hivatkozó token:
+
+```python
+{"WFSerializationType": "WFTextTokenAttachment",
+ "Value": {"Type": "Variable", "VariableName": "Repeat Item"}}
+```
+
+> Ha a törzs a záró akció UTÁN áll, a szerkesztő csak a `Repeat Results`-t
+> kínálja fel — a ciklus kimenetét. Ez fordítja meg csendben az egészet: a
+> ciklus üresen fut le, a törzs pedig egyszer, rossz bemenettel.
+
+### Dátum ISO 8601-re
+
+`is.workflow.actions.format.date`
+
+```python
+{"UUID": <uuid>, "WFDate": <WFTextTokenString a dátum-akció kimenetére>,
+ "WFDateFormatStyle": "ISO 8601", "WFISO8601IncludeTime": True}
+```
+
+`WFISO8601IncludeTime` alapból **hamis** — idő nélkül a szerver csak a napot
+kapja meg, és az alvás-szakaszokból nem marad semmi. Mindig ki kell írni.
+
+### Gyűjtés listaváltozóba
+
+`is.workflow.actions.appendvariable` — `WFVariableName` a változó neve,
+`WFInput` a hozzáfűzendő érték. A változóra később
+`{"Type": "Variable", "VariableName": "<név>"}` attachmenttel lehet hivatkozni.
+
+Tömb egy szótár-mezőben: `WFItemType: 2`, az érték pedig
+`{"WFSerializationType": "WFArrayParameterState", "Value": [<elemek>]}`.
+
 ### Vezérlés
 
 - `is.workflow.actions.conditional` — `WFControlFlowMode` `0` = If, `1` = Else, `2` = End If
@@ -172,6 +210,13 @@ io.tailscale.ipn.ios.DisconnectIntent
 
 Paraméter csak az `UUID` és egy `AppIntentDescriptor`
 (`BundleIdentifier: io.tailscale.ipn.ios`, `TeamIdentifier: W5364U7YZB`).
+
+**A várakozás a `Connect` UTÁN kell, nem előtte.** Az intent akkor tér vissza,
+amikor a kérést leadta, nem amikor az alagút és a MagicDNS feláll. Fordított
+sorrendben a POST a névfeloldáson bukik el — „A server with the specified
+hostname could not be found" —, és a hiba úgy néz ki, mintha a szerver lenne
+lekapcsolva. Hat másodperc bőven elég; kézzel előre felcsatlakozva a Shortcut
+azért ment, mert a várakozásnak akkor nem volt dolga.
 
 > **A macOS-en exportált fájlban `io.tailscale.ipn.macsys` szerepel.** Az a
 > változat iOS-en „nincs telepítve az app" hibát ad. Generáláskor mindig az
