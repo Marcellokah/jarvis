@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { memoryDb } from "../helpers.ts";
-import { createHealthRepo } from "../../src/infra/db/repositories/health.ts";
+import { createHealthRepo, type HealthSnapshot } from "../../src/infra/db/repositories/health.ts";
 
 const NOW = new Date("2026-08-31T10:00:00Z");
 
@@ -125,6 +125,80 @@ describe("fillGaps", () => {
     expect(row.deepMin).toBe(30);
     expect(row.vo2max).toBe(41.2);
     expect(row.dietProteinG).toBe(118);
+    db.close();
+  });
+});
+
+/** What the route posts: the readings Health had, and null for all the rest. */
+const phone = (
+  date: string, values: Partial<Omit<HealthSnapshot, "date" | "ingestedAt">>,
+): Omit<HealthSnapshot, "ingestedAt"> => ({
+  date,
+  sleepH: null, hrv: null, rhr: null, moveKcal: null, exerciseMin: null, steps: null,
+  asleepMin: null, inBedMin: null, coreMin: null, remMin: null, deepMin: null,
+  awakenings: null, vo2max: null, hrRecovery: null, walkingHr: null, basalKcal: null,
+  flights: null, dietKcal: null, dietProteinG: null, dietCarbsG: null, dietFatG: null,
+  distanceKm: null, standMin: null, walkingSpeed: null, stepLengthCm: null,
+  doubleSupportPct: null, asymmetryPct: null, steadinessPct: null, sixMinWalkM: null,
+  stairUpMs: null, stairDownMs: null,
+  ...values,
+});
+
+/**
+ * The one rule, pinned from both sides and in both orders.
+ *
+ * The Shortcut runs twice a day now, and the split is exactly the line the
+ * precedence should fall on: the morning run sends readings that are final the
+ * moment they are taken, the 23:55 run sends day totals that are still five
+ * minutes short. So the winner is decided by the KIND of measurement, never by
+ * which writer happened to arrive last — hence each pair below, run both ways.
+ */
+describe("precedence between the phone and the import", () => {
+  it("lets the import correct a day total the phone sent at 23:55", () => {
+    const db = memoryDb();
+    const repo = createHealthRepo(db);
+
+    repo.upsert(phone("2026-08-31", { steps: 9000 }), { steps: 9000 }, NOW);
+    repo.fillGaps("2026-08-31", { steps: 12_400 }, NOW);
+
+    // The export saw the whole day; the evening run could not have.
+    expect(repo.forDate("2026-08-31")!.steps).toBe(12_400);
+    db.close();
+  });
+
+  it("keeps the day total the import established when the phone posts later", () => {
+    const db = memoryDb();
+    const repo = createHealthRepo(db);
+
+    repo.fillGaps("2026-08-31", { steps: 12_400 }, NOW);
+    repo.upsert(phone("2026-08-31", { steps: 9000 }), { steps: 9000 }, NOW);
+
+    // Same verdict in the other order: arrival time decides nothing.
+    expect(repo.forDate("2026-08-31")!.steps).toBe(12_400);
+    db.close();
+  });
+
+  it("keeps the phone's morning HRV against the export's whole-day average", () => {
+    const db = memoryDb();
+    const repo = createHealthRepo(db);
+
+    repo.upsert(phone("2026-08-31", { hrv: 87 }), { hrv: 87 }, NOW);
+    repo.fillGaps("2026-08-31", { hrv: 61 }, NOW);
+
+    // 61 is not a worse copy of 87 — it is a different number, and not the one
+    // the brief asks about.
+    expect(repo.forDate("2026-08-31")!.hrv).toBe(87);
+    db.close();
+  });
+
+  it("still prefers the phone's HRV when the import got there first", () => {
+    const db = memoryDb();
+    const repo = createHealthRepo(db);
+
+    repo.fillGaps("2026-08-31", { hrv: 61 }, NOW);
+    repo.upsert(phone("2026-08-31", { hrv: 87 }), { hrv: 87 }, NOW);
+
+    expect(repo.forDate("2026-08-31")!.hrv).toBe(87);
     db.close();
   });
 });

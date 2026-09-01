@@ -60,6 +60,7 @@ describe("ingest — raw samples", () => {
   });
 
   it("does not overwrite a value that is already there", async () => {
+    // For a reading that is final when taken — every sleep column is one —
     // fillGaps only fills holes, which is what lets the monthly import run
     // without thought. A second post of the same night must not rewrite it.
     const a = await boot();
@@ -78,8 +79,8 @@ describe("ingest — raw samples", () => {
   });
 
   it("prefers the samples over the phone's own sleepH, and says so", async () => {
-    // The branch's whole point. `upsert` is incoming-wins and `fillGaps` is
-    // existing-wins, and sleep lands on the wake-up day — the same date the
+    // The branch's whole point. For sleep, `upsert` is incoming-wins and
+    // `fillGaps` is existing-wins, and sleep lands on the wake-up day — the same date the
     // upsert just wrote. Without this precedence the phone's number freezes,
     // the rollup's is dropped silently, and the import can never correct it.
     const a = await boot();
