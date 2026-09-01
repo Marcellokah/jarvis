@@ -223,16 +223,15 @@ export function registerIngestRoutes(
     const date = parsedDate.success ? parsedDate.data : isoDate(now, TZ);
 
     // The samples path runs BEFORE the upsert, because its verdict on sleep has
-    // to be in hand before the upsert freezes the phone's number.
+    // to be in hand before the upsert writes a sleep number of its own.
     //
-    // The two writes have opposite precedence on purpose. Sleep is a reading
-    // that is final when taken, so it sits outside `ACCUMULATES_OVER_DAY` and
-    // the phone owns it: `upsert` is incoming-wins for it, `fillGaps` is
-    // existing-wins. Sleep samples land on the wake-up day, the very date this
-    // request writes — so a request carrying both would keep `sleepH` and
-    // silently drop the rollup's value, with nothing to show for it. Wherever
-    // sample-derived sleep exists for this date, the direct field steps aside
-    // and says so.
+    // Both halves of one request can carry sleep for the same day: samples land
+    // on the wake-up day, which is the very date this request writes. The
+    // rollup's number is the better one — a Shortcut cannot sum sleep stages
+    // (see `readSamples`), so the direct field is at best one sample of the
+    // night, and taking the latest sample reports 0.3 hours for a seven-hour
+    // one. So wherever sample-derived sleep exists for this date, the direct
+    // field steps aside and says so.
     //
     // `sleepH` is not removed from `READING`: until the Shortcut is rebuilt it
     // is the only sleep the system gets, and with iPhone-only tracking a single
@@ -240,24 +239,24 @@ export function registerIngestRoutes(
     // the better source whenever they exist.
     const samples = await readSamples(fields.samples);
 
-    // The question is about the stored DAY, not about this request. `sleep_h`
-    // is the one sleep column the upsert does not force to null, and for a
-    // final-when-taken column the upsert is incoming-wins — so a second post
-    // the same morning carrying `sleepH` and no usable samples would overwrite
-    // the rollup's 7.2 and leave 0.3 sitting beside an `asleep_min` of 430.
-    // Reversing the two writes does not help: `fillGaps` is existing-wins for
-    // the same column and would skip the value already there. Neither half of
-    // that depends on how the day totals are settled — every column this path
-    // can produce is a sleep column, and none of them accumulate over a day.
+    // The question is about the stored DAY, not about this request alone: the
+    // samples may have arrived in an earlier post this morning. `sleep_h` is
+    // the one sleep column the upsert does not force to null, and the upsert is
+    // incoming-wins — so a second post carrying `sleepH` and no usable samples
+    // would otherwise overwrite the rollup's 7.2 and leave 0.3 sitting beside
+    // an `asleep_min` of 430.
     //
-    // `asleep_min` is the marker. It can only ever have come from the samples
-    // path — the upsert below writes it as null on purpose — so a row that has
-    // one already holds sample-derived sleep, whether it arrived earlier this
-    // morning or from a past import.
+    // `asleep_min` is the marker for that, and it needs no provenance column:
+    // it can only ever have come from the samples path — the upsert below
+    // writes it as null on purpose, and the rollup never produces `sleep_h`
+    // without it — so a row holding one holds a night some rollup resolved,
+    // whether that ran earlier this morning or during a past import. A row
+    // WITHOUT one holds, at most, a `sleep_h` a direct field left there.
     const stored = deps.health.forDate(date);
-    const sleepFromSamples = stored?.asleepMin != null || samples.days.some(
-      (day) => day.date === date && day.values.sleep_h !== undefined,
-    );
+    const storedFromSamples = stored?.asleepMin != null;
+    const sampleSleepH = samples.days
+      .find((day) => day.date === date)?.values.sleep_h;
+    const sleepFromSamples = storedFromSamples || sampleSleepH !== undefined;
     if (sleepFromSamples && values.sleepH !== undefined) {
       delete values.sleepH;
       const at = accepted.indexOf("sleepH");
@@ -268,6 +267,32 @@ export function registerIngestRoutes(
       });
     }
 
+    // The sleep this request establishes for its own date — and the reason the
+    // samples reach the row twice, as `sleep_h` here and as the whole night's
+    // columns in the fillGaps loop below.
+    //
+    // That looks redundant and is not. `fillGaps` is existing-wins for every
+    // column, so it cannot correct a `sleep_h` an earlier post left behind, and
+    // it must not be allowed to: the monthly import writes through that same
+    // method, and it must never rewrite a night the phone established. The
+    // distinction is the caller rather than the column — only the phone's own
+    // request runs an upsert, and the upsert is incoming-wins — so the samples
+    // path expresses "this night is mine" by putting its number there.
+    //
+    // Concretely, the case that was open: a 07:30 post carries `sleepH: 0.3`
+    // and its samples step failed, so the row gets 0.3. The 07:35 re-run
+    // carries good samples, so its own `sleepH` is dropped just above — and
+    // without this line `fillGaps` would skip the rollup's 7.2 and leave the
+    // 0.3 beside an `asleep_min` of 430.
+    //
+    // `storedFromSamples` keeps it narrow. A row that already holds
+    // `asleep_min` holds a coherent night: its hours and its stage minutes came
+    // out of one rollup run, and replacing only the hours would split the pair
+    // — so there this stands aside and the night that is there stays whole.
+    const sleepH = !storedFromSamples && sampleSleepH !== undefined
+      ? sampleSleepH
+      : values.sleepH ?? null;
+
     if (ignored.length > 0) {
       // Visible on purpose: a Shortcut step that silently stopped producing a
       // value looks identical to a quiet night otherwise.
@@ -277,7 +302,7 @@ export function registerIngestRoutes(
     deps.health.upsert(
       {
         date,
-        sleepH: values.sleepH ?? null,
+        sleepH,
         hrv: values.hrv ?? null,
         rhr: values.rhr ?? null,
         moveKcal: values.moveKcal ?? null,
