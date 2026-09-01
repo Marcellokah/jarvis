@@ -17,6 +17,81 @@ export const HISTORY_COLUMNS: ReadonlySet<string> = new Set([
   "stair_up_ms", "stair_down_ms",
 ]);
 
+/**
+ * Columns that count something up as the day runs: a step is added to today's
+ * total, an HRV reading is not. A counter is only whole at midnight, so a value
+ * read out of a day that is still running is a fraction of the real one.
+ *
+ * That fraction is all this set is for. `withoutPartialDayTotals` uses it to
+ * keep the import from writing the counters of the one day its export only saw
+ * part of. It decides nothing about precedence: both writers below treat every
+ * column alike, whatever kind it is.
+ *
+ * It was tried as a precedence rule and withdrawn, and the reason is worth
+ * keeping because the idea is a natural one to have twice. The rule said the
+ * import should OVERWRITE these columns, since a monthly export "saw the whole
+ * day" and the phone's 23:55 Shortcut did not. But the export's number is not
+ * the whole day. For an `agg: "sum"` type the rollup never adds the sources
+ * together — it keeps ONE source's raw sum, the largest single source, because
+ * the iPhone and the Watch record the same minutes and adding them produced
+ * 81,272-step days. Its own comment calls what it keeps "a real but partial
+ * count" (see rollup.ts). On any day both devices were worn, the import's
+ * figure is deliberately conservative and can sit well below the day's real
+ * total — while the phone's Shortcut sums Health's raw samples and may
+ * double-count those same sources in the other direction. Neither number is
+ * Health's own merged daily total, so overwriting either with the other is not
+ * an improvement but a coin flip, and the losing side of that flip destroys a
+ * true value and leaves a plausible smaller one in its place. Missing data
+ * beats confidently wrong data. Reviving the idea takes a rollup that can
+ * produce a merged daily total; the precedence direction was never the piece
+ * that was missing.
+ *
+ * Only genuine counters belong here. A day AVERAGE is not an accumulation, and
+ * this is not a matter of taste: `walking_hr`, `walking_speed`,
+ * `step_length_cm`, `double_support_pct`, `asymmetry_pct`, `stair_up_ms` and
+ * `stair_down_ms` all come out of the rollup's `agg: "avg"` path — the very
+ * same unweighted mean that produces `hrv`, `rhr` and `vo2max`, which nobody
+ * would put in this set. A mean of a half-finished day is not a half-finished
+ * number, it is a different number, so withholding it would hide a reading that
+ * is perfectly good. `walking_hr` is the plainest case of all:
+ * `WalkingHeartRateAverage` is one sample Apple has already computed for the
+ * day, so it does not change through the day at all.
+ */
+export const ACCUMULATES_OVER_DAY: ReadonlySet<string> = new Set([
+  "steps", "distance_km", "move_kcal", "basal_kcal", "exercise_min",
+  "flights", "stand_min",
+  "diet_kcal", "diet_protein_g", "diet_carbs_g", "diet_fat_g",
+]);
+
+const incomingWins = (c: string) => `${c} = COALESCE(excluded.${c}, health_snapshots.${c})`;
+const existingWins = (c: string) => `${c} = COALESCE(health_snapshots.${c}, excluded.${c})`;
+
+/**
+ * A phone post writes whatever it carries, over whatever is there.
+ *
+ * Not because later is better in general, but because the phone is one source
+ * talking about its own day: the two daily runs send disjoint fields, so the
+ * only thing a second post carrying the same field can be is that run saying it
+ * again — the 23:59 re-run of a failed 23:55 run. There is no second opinion to
+ * weigh, so there is nothing to protect the first value from.
+ */
+const upsertAssignment = incomingWins;
+
+/**
+ * The import fills holes and nothing else.
+ *
+ * Every column, without exception: where the row already holds a value, the
+ * export's is dropped unseen. For a reading that was final when taken that is
+ * plainly right — the export's whole-day mean of an HRV is a different number
+ * from the one the phone measured at 07:30, not a better one. For a day counter
+ * it is right for a less obvious reason, spelled out at `ACCUMULATES_OVER_DAY`:
+ * neither writer's total is Health's merged one, so neither can be trusted to
+ * correct the other. This is also why the import must not plant a half-day
+ * counter into an empty row — see `withoutPartialDayTotals`, since what is
+ * written here can never be taken back.
+ */
+const fillGapsAssignment = existingWins;
+
 export interface HealthSnapshot {
   date: string;
   sleepH: number | null;
@@ -61,10 +136,13 @@ export interface HealthRepo {
    *
    * The route accepts an explicit `date`, and the import fills the same rows —
    * so a post for a day the import already filled used to blank every column
-   * the Shortcut left out. COALESCE closes the other direction of the guard
-   * `fillGaps` provides. Nothing is lost by it: the route already separates
-   * "no sample" from "measured zero", so a null arriving here means the
-   * reading genuinely was not taken.
+   * the Shortcut left out. COALESCE closes that. Nothing is lost by it: the
+   * route already separates "no sample" from "measured zero", so a null
+   * arriving here means the reading genuinely was not taken.
+   *
+   * Where a value already exists, this post wins it — see `upsertAssignment`
+   * for why that is safe: the runs send disjoint fields, so the only post that
+   * can contend with an earlier one is that same run, re-run.
    */
   upsert(snapshot: Omit<HealthSnapshot, "ingestedAt">, raw: unknown, now: Date): void;
   latest(onOrBefore: string): HealthSnapshot | undefined;
@@ -79,7 +157,9 @@ export interface HealthRepo {
    * This is what lets a monthly re-import run without thought: today's row
    * already holds what the phone posted this morning, and the export must not
    * replace it. COALESCE says exactly that, declaratively — no provenance
-   * tracking needed.
+   * tracking needed. The other side of it is that a value written here is
+   * permanent as far as the import is concerned, which is what makes
+   * `withoutPartialDayTotals` necessary rather than merely tidy.
    */
   fillGaps(date: string, values: Record<string, number>, now: Date): void;
   /** The most recent day holding a value in `column`, or null. */
@@ -158,61 +238,67 @@ const toSnapshot = (r: Row): HealthSnapshot => ({
   ingestedAt: r.ingested_at,
 });
 
+/**
+ * Every snapshot column paired with the field that fills it, in bind order.
+ *
+ * The INSERT, its placeholders, the ON CONFLICT assignments and the bound
+ * values are all derived from this one list, so a column can no longer be
+ * written in one of the four places and forgotten in the others.
+ *
+ * Exported so the invariant test can hold it against `HISTORY_COLUMNS`:
+ * dropping a row here still typechecks, and would silently change that
+ * column's write behaviour rather than break anything visible.
+ */
+export const SNAPSHOT_FIELDS: readonly (readonly [string, Exclude<keyof HealthSnapshot, "date" | "ingestedAt">])[] = [
+  ["sleep_h", "sleepH"],
+  ["hrv", "hrv"],
+  ["rhr", "rhr"],
+  ["move_kcal", "moveKcal"],
+  ["exercise_min", "exerciseMin"],
+  ["steps", "steps"],
+  ["asleep_min", "asleepMin"],
+  ["in_bed_min", "inBedMin"],
+  ["core_min", "coreMin"],
+  ["rem_min", "remMin"],
+  ["deep_min", "deepMin"],
+  ["awakenings", "awakenings"],
+  ["vo2max", "vo2max"],
+  ["hr_recovery", "hrRecovery"],
+  ["walking_hr", "walkingHr"],
+  ["basal_kcal", "basalKcal"],
+  ["flights", "flights"],
+  ["diet_kcal", "dietKcal"],
+  ["diet_protein_g", "dietProteinG"],
+  ["diet_carbs_g", "dietCarbsG"],
+  ["diet_fat_g", "dietFatG"],
+  ["distance_km", "distanceKm"],
+  ["stand_min", "standMin"],
+  ["walking_speed", "walkingSpeed"],
+  ["step_length_cm", "stepLengthCm"],
+  ["double_support_pct", "doubleSupportPct"],
+  ["asymmetry_pct", "asymmetryPct"],
+  ["steadiness_pct", "steadinessPct"],
+  ["six_min_walk_m", "sixMinWalkM"],
+  ["stair_up_ms", "stairUpMs"],
+  ["stair_down_ms", "stairDownMs"],
+];
+
+// date + every snapshot column + raw_json + ingested_at.
+const UPSERT_SQL = `INSERT INTO health_snapshots
+           (date, ${SNAPSHOT_FIELDS.map(([c]) => c).join(", ")}, raw_json, ingested_at)
+         VALUES (${new Array(SNAPSHOT_FIELDS.length + 3).fill("?").join(", ")})
+         ON CONFLICT (date) DO UPDATE SET
+           ${SNAPSHOT_FIELDS.map(([c]) => upsertAssignment(c)).join(",\n           ")},
+           raw_json = excluded.raw_json,
+           ingested_at = excluded.ingested_at`;
+
 export function createHealthRepo(db: Db): HealthRepo {
   return {
     upsert(s, raw, now) {
       db.run(
-        `INSERT INTO health_snapshots
-           (date, sleep_h, hrv, rhr, move_kcal, exercise_min, steps,
-            asleep_min, in_bed_min, core_min, rem_min, deep_min, awakenings,
-            vo2max, hr_recovery, walking_hr, basal_kcal, flights,
-            diet_kcal, diet_protein_g, diet_carbs_g, diet_fat_g,
-            distance_km, stand_min, walking_speed, step_length_cm,
-            double_support_pct, asymmetry_pct, steadiness_pct, six_min_walk_m,
-            stair_up_ms, stair_down_ms,
-            raw_json, ingested_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (date) DO UPDATE SET
-           sleep_h            = COALESCE(excluded.sleep_h, health_snapshots.sleep_h),
-           hrv                = COALESCE(excluded.hrv, health_snapshots.hrv),
-           rhr                = COALESCE(excluded.rhr, health_snapshots.rhr),
-           move_kcal          = COALESCE(excluded.move_kcal, health_snapshots.move_kcal),
-           exercise_min       = COALESCE(excluded.exercise_min, health_snapshots.exercise_min),
-           steps              = COALESCE(excluded.steps, health_snapshots.steps),
-           asleep_min         = COALESCE(excluded.asleep_min, health_snapshots.asleep_min),
-           in_bed_min         = COALESCE(excluded.in_bed_min, health_snapshots.in_bed_min),
-           core_min           = COALESCE(excluded.core_min, health_snapshots.core_min),
-           rem_min            = COALESCE(excluded.rem_min, health_snapshots.rem_min),
-           deep_min           = COALESCE(excluded.deep_min, health_snapshots.deep_min),
-           awakenings         = COALESCE(excluded.awakenings, health_snapshots.awakenings),
-           vo2max             = COALESCE(excluded.vo2max, health_snapshots.vo2max),
-           hr_recovery        = COALESCE(excluded.hr_recovery, health_snapshots.hr_recovery),
-           walking_hr         = COALESCE(excluded.walking_hr, health_snapshots.walking_hr),
-           basal_kcal         = COALESCE(excluded.basal_kcal, health_snapshots.basal_kcal),
-           flights            = COALESCE(excluded.flights, health_snapshots.flights),
-           diet_kcal          = COALESCE(excluded.diet_kcal, health_snapshots.diet_kcal),
-           diet_protein_g     = COALESCE(excluded.diet_protein_g, health_snapshots.diet_protein_g),
-           diet_carbs_g       = COALESCE(excluded.diet_carbs_g, health_snapshots.diet_carbs_g),
-           diet_fat_g         = COALESCE(excluded.diet_fat_g, health_snapshots.diet_fat_g),
-           distance_km        = COALESCE(excluded.distance_km, health_snapshots.distance_km),
-           stand_min          = COALESCE(excluded.stand_min, health_snapshots.stand_min),
-           walking_speed      = COALESCE(excluded.walking_speed, health_snapshots.walking_speed),
-           step_length_cm     = COALESCE(excluded.step_length_cm, health_snapshots.step_length_cm),
-           double_support_pct = COALESCE(excluded.double_support_pct, health_snapshots.double_support_pct),
-           asymmetry_pct      = COALESCE(excluded.asymmetry_pct, health_snapshots.asymmetry_pct),
-           steadiness_pct     = COALESCE(excluded.steadiness_pct, health_snapshots.steadiness_pct),
-           six_min_walk_m     = COALESCE(excluded.six_min_walk_m, health_snapshots.six_min_walk_m),
-           stair_up_ms        = COALESCE(excluded.stair_up_ms, health_snapshots.stair_up_ms),
-           stair_down_ms      = COALESCE(excluded.stair_down_ms, health_snapshots.stair_down_ms),
-           raw_json           = excluded.raw_json,
-           ingested_at        = excluded.ingested_at`,
-        s.date, s.sleepH, s.hrv, s.rhr, s.moveKcal, s.exerciseMin, s.steps,
-        s.asleepMin, s.inBedMin, s.coreMin, s.remMin, s.deepMin, s.awakenings,
-        s.vo2max, s.hrRecovery, s.walkingHr, s.basalKcal, s.flights,
-        s.dietKcal, s.dietProteinG, s.dietCarbsG, s.dietFatG,
-        s.distanceKm, s.standMin, s.walkingSpeed, s.stepLengthCm,
-        s.doubleSupportPct, s.asymmetryPct, s.steadinessPct, s.sixMinWalkM,
-        s.stairUpMs, s.stairDownMs,
+        UPSERT_SQL,
+        s.date,
+        ...SNAPSHOT_FIELDS.map(([, field]) => s[field]),
         JSON.stringify(raw), now.toISOString(),
       );
     },
@@ -257,14 +343,12 @@ export function createHealthRepo(db: Db): HealthRepo {
       }
 
       const placeholders = columns.map(() => "?").join(", ");
-      const keep = columns
-        .map((c) => `${c} = COALESCE(health_snapshots.${c}, excluded.${c})`)
-        .join(", ");
+      const assignments = columns.map(fillGapsAssignment).join(", ");
 
       db.run(
         `INSERT INTO health_snapshots (date, ${columns.join(", ")}, ingested_at)
          VALUES (?, ${placeholders}, ?)
-         ON CONFLICT (date) DO UPDATE SET ${keep}`,
+         ON CONFLICT (date) DO UPDATE SET ${assignments}`,
         date, ...columns.map((c) => values[c]!), now.toISOString(),
       );
     },

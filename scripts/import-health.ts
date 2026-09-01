@@ -33,6 +33,7 @@ import { loadEnv } from "../src/env.ts";
 import { fromRoot } from "../src/shared/paths.ts";
 import { readExport } from "../src/infra/health-export/reader.ts";
 import { rollup } from "../src/infra/health-export/rollup.ts";
+import { withoutPartialDayTotals } from "../src/infra/health-export/partial-day.ts";
 import { agentFix, holdersOf } from "../src/infra/db/holder.ts";
 
 process.env.LOG_LEVEL ??= "error";
@@ -115,11 +116,30 @@ if (contested.length > 0) {
   if (contested.length > 3) console.log(`    … és további ${contested.length - 3} nap`);
 }
 
+// The export stops mid-day on the day it was made, so its counters for that
+// day are a fraction of the real total — and fillGaps only ever fills holes,
+// so writing that fraction would freeze it in the row for good. Said out loud
+// for the same reason as the block above: a day total that is deliberately
+// absent must not look like one that went missing.
+const writable = withoutPartialDayTotals(days);
+if (writable.partialDay) {
+  console.log(
+    `  A(z) ${writable.partialDay} nap még tartott, amikor az export készült — `
+    + `${writable.withheld.length} napi összeg kimaradt`
+    + `${writable.dayDropped ? ", és így ez a nap egészben kimaradt" : ""}:`,
+  );
+  console.log(`    ${writable.withheld.join(", ")}`);
+  console.log(
+    "    (az export csak a nap egy részét látta, ezért ezek az összegek "
+    + "üresen maradnak — nem fél napnyi értékkel)",
+  );
+}
+
 // One transaction for ~2,750 statements: without it each write would fsync on
 // its own and the import would take minutes instead of seconds.
 app.db.transaction(() => {
   const now = app.clock.now();
-  for (const day of days) app.health.fillGaps(day.date, day.values, now);
+  for (const day of writable.days) app.health.fillGaps(day.date, day.values, now);
 });
 const newWorkouts = app.workouts.save(workouts);
 
@@ -128,8 +148,10 @@ const newWorkouts = app.workouts.save(workouts);
 // connection whose view is about to become unreliable evidence. `days` is
 // already deduped by date (the rollup groups by date internally); workouts
 // are deduped here by their natural key, since INSERT OR IGNORE would legally
-// collapse duplicates within a single export.
-const intendedDays = days.length;
+// collapse duplicates within a single export. Counted from what was actually
+// handed to fillGaps, so a partial last day held back above cannot read as a
+// day that failed to land.
+const intendedDays = writable.days.length;
 const intendedWorkouts = new Set(workouts.map((w) => `${w.startedAt} ${w.type}`)).size;
 
 app.close();

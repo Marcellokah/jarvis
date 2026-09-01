@@ -59,14 +59,21 @@ describe("ingest — raw samples", () => {
     expect(a.health.forDate("2026-09-02")?.coreMin ?? null).toBeNull();
   });
 
-  it("does not overwrite a value that is already there", async () => {
+  it("does not overwrite a night that is already there", async () => {
     // fillGaps only fills holes, which is what lets the monthly import run
-    // without thought. A second post of the same night must not rewrite it.
+    // without thought. A second post of the same night must not rewrite it —
+    // and `sleep_h` goes the same way as the stage minutes here, even though
+    // the route writes it through the upsert: a row that already has
+    // `asleep_min` holds a night one rollup run resolved, and replacing only
+    // its hours would leave the pair disagreeing.
     const a = await boot();
     await post(a, { samples: NIGHT });
     await post(a, { samples: [{ type: "SleepAnalysis", value: "Deep",
       startDate: "2026-09-02T02:00:00+02:00", endDate: "2026-09-02T02:05:00+02:00" }] });
-    expect(a.health.forDate("2026-09-02")!.deepMin).toBeCloseTo(90, 3);
+
+    const row = a.health.forDate("2026-09-02")!;
+    expect(row.deepMin).toBeCloseTo(90, 3);
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1);
   });
 
   it("accepts samples and direct fields in one request", async () => {
@@ -78,10 +85,11 @@ describe("ingest — raw samples", () => {
   });
 
   it("prefers the samples over the phone's own sleepH, and says so", async () => {
-    // The branch's whole point. `upsert` is incoming-wins and `fillGaps` is
-    // existing-wins, and sleep lands on the wake-up day — the same date the
-    // upsert just wrote. Without this precedence the phone's number freezes,
-    // the rollup's is dropped silently, and the import can never correct it.
+    // Both arrive in one request and both are about the same date, so one of
+    // them has to give way. A Shortcut cannot sum sleep stages, so its `sleepH`
+    // is at best one sample of the night — 0.3 hours for a seven-hour one. The
+    // reply names the field it dropped, so a Shortcut that keeps sending a
+    // useless number is visible rather than silently ignored.
     const a = await boot();
     const res = await post(a, { sleepH: 0.3, samples: NIGHT });
     const body = res.json() as { accepted: string[]; ignored: { field: string }[] };
@@ -95,11 +103,11 @@ describe("ingest — raw samples", () => {
   });
 
   it("keeps the rollup's sleep when a later post sends sleepH alone", async () => {
-    // Where the defect actually lived: the guard has to be about the stored
-    // day, not the current request. `sleep_h` is the one sleep column the
-    // upsert does not force to null and the upsert is incoming-wins, so a
-    // second post the same morning would otherwise overwrite 7.2 with 0.3 and
-    // leave it sitting beside an asleep_min of 430.
+    // The guard has to ask about the stored day, not about the request in
+    // hand: this post carries no samples at all. `sleep_h` is the one sleep
+    // column the upsert does not force to null and the upsert is incoming-wins,
+    // so without that the second post would overwrite 7.2 with 0.3 and leave it
+    // sitting beside an asleep_min of 430.
     const a = await boot();
     await post(a, { samples: NIGHT });
     const res = await post(a, { sleepH: 0.3 });
@@ -110,6 +118,29 @@ describe("ingest — raw samples", () => {
     expect(row.asleepMin).toBeCloseTo(430, 3);
     expect(body.ignored.map((i) => i.field)).toContain("sleepH");
     expect(body.accepted).not.toContain("sleepH");
+  });
+
+  it("replaces a sleepH the direct field left behind when the samples arrive", async () => {
+    // The hole this closes. The 07:30 post's samples step failed, so the row
+    // took the direct field's 0.3. The 07:35 re-run has good samples, so its
+    // own `sleepH` is dropped as above — and the samples reach the row through
+    // fillGaps, which is existing-wins for `sleep_h` and would keep the 0.3
+    // beside an asleep_min of 430. The route writes the samples' own hours
+    // through the upsert for exactly this: a night the phone's samples resolved
+    // replaces a number the direct field guessed.
+    const a = await boot();
+    await post(a, {
+      sleepH: 0.3,
+      samples: [{ type: "SleepAnalysis", value: "Szendergés",
+                  startDate: "2026-09-01T23:00:00+02:00", endDate: "2026-09-02T07:00:00+02:00" }],
+    });
+    expect(a.health.forDate("2026-09-02")!.sleepH).toBeCloseTo(0.3, 6);
+
+    await post(a, { sleepH: 0.3, samples: NIGHT });
+
+    const row = a.health.forDate("2026-09-02")!;
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1); // 7.2, not the 0.3 left behind
+    expect(row.asleepMin).toBeCloseTo(430, 3);
   });
 
   it("accepts sleepH exactly as before when no samples came", async () => {
