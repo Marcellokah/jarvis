@@ -65,7 +65,7 @@ describe("composeNotification", () => {
     // A missed defrost deadline is worse than an ugly sentence.
     const result = await composeNotification(CS, opts(fetcherThat(new Error("429"))), signal());
     expect(result.source).toBe("template");
-    expect(result.text).toContain("csirkemell");
+    expect(result.text).toBe(renderNotifyTemplate(CS));
   });
 
   it("falls back to the template with no API key, without calling out", async () => {
@@ -82,5 +82,26 @@ describe("composeNotification", () => {
     const result = await composeNotification(CS, opts(fetcherThat("   ")), signal());
     expect(result.source).toBe("template");
     expect(result.text.trim()).not.toBe("");
+  });
+
+  it("rejects answers in brief format (markdown headings)", async () => {
+    // The persona's output contract should not leak into a short notification.
+    // If the model produces brief markdown, treat it as a failure.
+    const result = await composeNotification(
+      CS,
+      opts(fetcherThat("# 2026. szeptember 1.\n\n## Egészség\n- valami")),
+      signal(),
+    );
+    expect(result.source).toBe("template");
+    expect(result.text).toBe(renderNotifyTemplate(CS));
+  });
+
+  it("does not call the model for an empty candidate list", async () => {
+    // Nothing to say means no network call needed.
+    const fetcher = fetcherThat("nem hívódik");
+    const result = await composeNotification([], opts(fetcher), signal());
+    expect(fetcher.bodies).toHaveLength(0);
+    expect(result.source).toBe("template");
+    expect(result.text).toBe("");
   });
 });

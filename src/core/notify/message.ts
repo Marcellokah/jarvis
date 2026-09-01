@@ -22,6 +22,9 @@ export function buildNotifyPrompt(cs: readonly Candidate[]): { system: string; u
       "- Ne mérlegeld, hogy egy tétel fontos-e — ezt már eldöntötték helyetted.",
       "- Tartsd meg a tételekben szereplő számokat, mert azok a bizonyíték.",
       "- Magyarul, tömören. Legfeljebb néhány sor. Ne írj bevezetőt és lezárást.",
+      "",
+      "FONTOS: Ez nem napi összefoglalás. Ne használj markdown címsorokat (#, ##, stb.).",
+      "Csak folyamatos szöveget írj.",
     ].join("\n"),
     user: ["A tételek:", ...cs.map((c) => `- [${c.urgency}] ${c.text}`)].join("\n"),
   };
@@ -53,6 +56,11 @@ export async function composeNotification(
 ): Promise<{ text: string; source: "groq" | "template" }> {
   const fallback = renderNotifyTemplate(cs);
 
+  // Short-circuit for empty list: no request needed if there is nothing to say.
+  if (cs.length === 0) {
+    return { text: fallback, source: "template" };
+  }
+
   try {
     const apiKey = await opts.apiKey();
     if (!apiKey) throw new Error("GROQ_API_KEY is not set");
@@ -71,6 +79,11 @@ export async function composeNotification(
     });
 
     if (!answer.trim()) throw new Error("a modell üres választ adott");
+
+    // Reject answers that look like brief format (start with markdown heading).
+    // The persona's output contract should not leak into a short notification.
+    if (answer.trim().startsWith("#")) throw new Error("a modell rövid összefoglalót adott helyett");
+
     return { text: answer.trim(), source: "groq" };
   } catch (err) {
     opts.logger.warn({ err: String(err) }, "notification wording fell back to the template");
