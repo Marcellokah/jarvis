@@ -27,6 +27,15 @@ export function openDb(path: string, logger: Logger): Db {
   handle.exec("PRAGMA foreign_keys = ON");
   handle.exec("PRAGMA busy_timeout = 5000");
 
+  // node:sqlite refuses a second BEGIN on the same connection, but a caller
+  // that wants two repositories' writes atomic (e.g. a notification row and
+  // its dedupe keys) has no way to avoid calling into a repository that
+  // already wraps its own single write in a transaction. Depth tracking makes
+  // `transaction` reentrant: only the outermost call touches BEGIN/COMMIT: an
+  // inner failure still rolls back the whole thing, since its error
+  // propagates up to the outermost catch.
+  let txDepth = 0;
+
   const db: Db = {
     get<T>(sql: string, ...params: unknown[]): T | undefined {
       return handle.prepare(sql).get(...(params as never[])) as T | undefined;
@@ -38,13 +47,17 @@ export function openDb(path: string, logger: Logger): Db {
       handle.prepare(sql).run(...(params as never[]));
     },
     transaction<T>(fn: () => T): T {
-      handle.exec("BEGIN");
+      const outermost = txDepth === 0;
+      if (outermost) handle.exec("BEGIN");
+      txDepth++;
       try {
         const out = fn();
-        handle.exec("COMMIT");
+        txDepth--;
+        if (outermost) handle.exec("COMMIT");
         return out;
       } catch (err) {
-        handle.exec("ROLLBACK");
+        txDepth--;
+        if (outermost) handle.exec("ROLLBACK");
         throw err;
       }
     },

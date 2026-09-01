@@ -21,6 +21,11 @@ export interface SchedulerOptions {
    * anything older than this is safe to drop.
    */
   conversationRetentionDays: number;
+  /**
+   * The proactive check. Absent when there is no Telegram bot to speak
+   * through, in which case no tick is scheduled at all.
+   */
+  notify?: { cron: string; run: (now: Date) => Promise<void> };
 }
 
 export interface Scheduler {
@@ -81,7 +86,26 @@ export function startScheduler(opts: SchedulerOptions): Scheduler {
     runNightlyCleanup(opts, opts.clock.now());
   });
 
-  opts.logger.info({ cleanup: "0 4 * * *" }, "scheduler started");
+  const notify = opts.notify
+    ? new Cron(opts.notify.cron, { timezone, protect: true }, async () => {
+        try {
+          await opts.notify!.run(opts.clock.now());
+        } catch (err) {
+          // A failing tick must never take the scheduler down with it.
+          opts.logger.warn({ err: String(err) }, "proactive notification tick failed");
+        }
+      })
+    : null;
 
-  return { stop() { cleanup.stop(); } };
+  opts.logger.info(
+    { cleanup: "0 4 * * *", notify: opts.notify?.cron ?? null },
+    "scheduler started",
+  );
+
+  return {
+    stop() {
+      cleanup.stop();
+      notify?.stop();
+    },
+  };
 }

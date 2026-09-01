@@ -176,6 +176,20 @@ export const config = {
     /** Cap on how long GET /api/morning-brief will wait for a running generation. */
     maxWaitSeconds: 45,
   },
+
+  notify: {
+    /** How often the tick runs. The gates decide whether it does anything. */
+    cron: "*/15 * * * *",
+    /** Never speak twice inside this many hours. */
+    minHoursBetween: 4,
+    /** Quiet from this local hour (inclusive) until that one (exclusive). */
+    quietFromHour: 22,
+    quietToHour: 7,
+    model: "qwen/qwen3.8-27b",
+    maxTokens: 300,
+    temperature: 0.4,
+    timeoutMs: 30_000,
+  },
 } as const;
 
 export type Config = typeof config;

@@ -137,6 +137,19 @@ async function reply(ctx: Context, response: BotReply): Promise<void> {
   }
 }
 
+/**
+ * Sends a message nobody asked for.
+ *
+ * The bot otherwise only ever replies, so this is the one path that starts a
+ * conversation. It reuses the same chunking as `reply`, because Telegram's
+ * 4096-character cap does not care who started.
+ */
+export async function sendTo(bot: Bot, chatId: string, text: string): Promise<void> {
+  for (const chunk of chunkText(text, 4000)) {
+    await bot.api.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+  }
+}
+
 /** Splits on paragraph boundaries so a section is not cut mid-sentence. */
 export function chunkText(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
