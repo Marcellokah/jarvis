@@ -87,6 +87,42 @@ const DOMAIN_LABEL: Record<string, string> = {
   synthesis: "Összegzés",
 };
 
+/**
+ * How long an analysis lead may run, including the trailing `…` when one is
+ * added.
+ *
+ * `a.summary` is a one-paragraph write-up the deep analysis keeps for its own
+ * memory — the next run reads it back as context — not text meant for a push.
+ * Four full summaries is a report, not a notification. ~160 chars is roughly
+ * one short sentence: enough for a lead to read as a claim rather than a
+ * fragment, short enough that four of them still fit one Telegram message
+ * alongside deadlines and health candidates.
+ */
+export const ANALYSIS_LEAD_MAX_CHARS = 160;
+
+/**
+ * Shortens an analysis summary to a lead for a push.
+ *
+ * Prefers a word boundary for the cut, and falls back to a hard cut only
+ * when there is none to prefer — a single token longer than the limit has no
+ * space to cut at. Either way, `…` is appended whenever anything was cut, so
+ * a shortened finding is never mistaken for a complete one. The full summary
+ * these numbers come from still lives on the local page and in the
+ * `analyses` table; the ellipsis is what tells the reader there is more
+ * there. A summary already within the limit is returned untouched, with no
+ * ellipsis added.
+ */
+export function leadOf(summary: string, maxChars: number = ANALYSIS_LEAD_MAX_CHARS): string {
+  if (summary.length <= maxChars) return summary;
+
+  // Reserve one character for the ellipsis up front, so the marked-truncated
+  // result can never itself run past the limit.
+  const cut = summary.slice(0, maxChars - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  const atBoundary = lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
+  return `${atBoundary.trimEnd()}…`;
+}
+
 export function candidates(input: CandidateInput): Candidate[] {
   const out: Candidate[] = [];
   const horizonMs = DEADLINE_HORIZON_H * 3_600_000;
@@ -161,7 +197,7 @@ export function candidates(input: CandidateInput): Candidate[] {
       key: `analysis:${a.domain}:${a.createdAt.slice(0, 10)}`,
       kind: "analysis",
       urgency: "soon",
-      text: `${DOMAIN_LABEL[a.domain] ?? a.domain} — ${a.summary}`,
+      text: `${DOMAIN_LABEL[a.domain] ?? a.domain} — ${leadOf(a.summary)}`,
     });
   }
 
