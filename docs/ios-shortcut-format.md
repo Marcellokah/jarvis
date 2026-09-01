@@ -232,11 +232,55 @@ a `Calculate Statistics: Sum` pedig mindet összeadja.
 
 Ez pontosan az a probléma, amit az import már megold: a rollup forrásonként
 gyűjt, és a legnagyobb egyetlen forrást választja. A Shortcut ezt magától nem
-tudja, forrás-szűrés nélkül pedig a halmozódó típusokat **nem szabad** `Sum`-mal
-küldeni.
+tudja — de **forrásra tud szűrni**, és ezzel a szerver ugyanazt a szabályt
+alkalmazhatja rá, ami az importban már fut.
 
 Az átlagolt típusok (`Average`) érintetlenek: egy duplikált minta az átlagot alig
 mozdítja, nem sokszorozza.
+
+### A megoldás: forrásonként egy összeg
+
+A `Find Health Samples` szűrősora forrásra is állítható — valódi exportból mérve:
+
+```python
+{"Property": "Source", "Operator": 4, "Bounded": True, "Removable": True,
+ "Values": {"Enumeration": {"Value": "Marcell’s Apple Watch",
+                            "WFSerializationType": "WFStringSubstitutableState"}}}
+```
+
+Tehát a telefon **típusonként ÉS forrásonként külön** kérdez le, forráson belül
+összegez, és `(típus, forrás)` páronként egy sort küld a `samples` mezőben —
+ugyanabban a soronkénti JSON alakban, amiben az alvás-minták mennek:
+
+```
+{"type":"StepCount","source":"Marcell’s Apple Watch","unit":"count","value":4213,"startDate":"2026-09-01T23:55:00+02:00","endDate":"2026-09-01T23:55:00+02:00"}
+```
+
+- `type` a **rollup rövid kulcsa** (`StepCount`, `ActiveEnergyBurned`,
+  `DistanceWalkingRunning`) — nem a `HKQuantityTypeIdentifier…` alak, és nem a
+  Health app megjelenített neve. (A `Find Health Samples` szűrőjébe továbbra is
+  a megjelenített név megy; ez a mező csak a küldött JSON-é.)
+- `source` **kötelező és nem lehet üres.** Forrás nélküli napi összeg pontosan
+  az, ami a 21 401 lépést előállította, ezért a szerver megnevezve visszautasítja.
+- `unit` a szerver saját egysége az adott típusra (`count`, `kcal`, `km`, `min`,
+  `g`). A szerver **nem vált át**: eltérő egységet megnevezve elutasít. Egy
+  csendben átskálázott, még hihetőnek látszó szám a legrosszabb, ami ebből az
+  importból kijöhet.
+- `startDate` és `endDate` ugyanaz a pillanat (a futás ideje); csak a **helyi
+  nap** számít belőle, ugyanúgy, ahogy az alvás-mintáknál.
+
+A szerver ezeket a rollupnak adja át, ami a halmozódó típusokat forrásonként
+tartja külön, és **a legnagyobb egyetlen forrást** választja — nem adja össze
+őket. Így a telefon száma ugyanolyan *fajta* szám lesz, mint az importé.
+
+Csak `agg: "sum"` típus küldhető így. Az átlagoltak (`RestingHeartRate`,
+`WalkingSpeed`, …) továbbra is elutasítottak ezen az úton: nem hibásak, a
+közvetlen mezőkön már beérkeznek, és egy oszlophoz két út semmit sem nyerne.
+
+Az esti futás megismétlése esetén az **első** futás összege marad (a `fillGaps`
+csak lyukat tölt). Legfeljebb a két futás közti pár perccel kevesebb — vállalt
+csere: egyik futás száma sem a Health saját összefésült napi összege, tehát
+egyik sem javíthatja a másikat.
 
 ## Amit a Shortcut nem tud, és ezért a szerver dolga
 

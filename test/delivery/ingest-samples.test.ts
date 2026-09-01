@@ -220,22 +220,29 @@ describe("ingest — raw samples", () => {
     expect(a.health.forDate("2026-09-02")!.sleepH).toBeCloseTo(7.4, 6);
   });
 
-  it("refuses a non-sleep sample type and names it", async () => {
+  it("refuses a sourceless day total and names it", async () => {
     // The rollup separates accumulating types BY source so it can pick one
-    // instead of adding them. This path has no real source to report, so
-    // accepting steps here would collapse every source into one fabricated
-    // name — the 81,272-step day all over again.
+    // instead of adding them. An entry with no source to report would collapse
+    // every source into one fabricated name — the 81,272-step day all over
+    // again, and the sourceless total is exactly what sent 21,401 steps.
     const a = await boot();
     const res = await post(a, {
       samples: [
         { type: "StepCount", value: "500", unit: "count",
-          startDate: "2026-09-02T07:00:00+02:00", endDate: "2026-09-02T07:10:00+02:00" },
-        { type: "StepCount", value: "500", unit: "count",
-          startDate: "2026-09-02T07:10:00+02:00", endDate: "2026-09-02T07:20:00+02:00" },
+          startDate: "2026-09-02T07:00:00+02:00", endDate: "2026-09-02T07:00:00+02:00" },
+        { type: "StepCount", value: "500", unit: "count", source: "   ",
+          startDate: "2026-09-02T07:10:00+02:00", endDate: "2026-09-02T07:10:00+02:00" },
       ],
     });
     const body = res.json() as { ignored: { field: string; reason: string }[] };
-    expect(JSON.stringify(body.ignored)).toContain("StepCount (2)");
+
+    // Both refused, each by its own index — a whitespace-only source is no
+    // source, because it would be its own grouping key in the rollup.
+    expect(body.ignored.filter((i) => i.reason.includes("forrás nélküli"))).toHaveLength(2);
+    expect(body.ignored.map((i) => i.field)).toEqual(
+      expect.arrayContaining(["samples[0]", "samples[1]"]),
+    );
+    expect(JSON.stringify(body.ignored)).toContain("StepCount");
     expect(a.health.forDate("2026-09-02")?.steps ?? null).toBeNull();
   });
 
@@ -244,5 +251,185 @@ describe("ingest — raw samples", () => {
     const res = await post(a, { hrv: 68 });
     expect(res.statusCode).toBe(202);
     expect(a.health.forDate("2026-09-02")!.hrv).toBe(68);
+  });
+});
+
+/**
+ * The counters, one aggregate per (type, source) pair.
+ *
+ * The phone can filter `Find Health Samples` by Source, so it sums within a
+ * source and sends the totals separately. Everything below is about the server
+ * doing nothing clever with them: it hands them to the rollup, which already
+ * keeps `agg: "sum"` types separated by source and picks the largest single one
+ * rather than adding them. That rule is the entire fix — the 21,401-step day
+ * came from the phone adding the Watch's and the iPhone's raw samples together.
+ */
+describe("ingest — per-source day counters", () => {
+  const counter = (p: {
+    type: string; source?: string; unit: string; value: number; at?: string;
+  }) => ({
+    type: p.type, unit: p.unit, value: p.value,
+    ...(p.source === undefined ? {} : { source: p.source }),
+    // One instant: the moment of the evening run. Only the local day matters.
+    startDate: p.at ?? "2026-09-01T23:55:00+02:00",
+    endDate: p.at ?? "2026-09-01T23:55:00+02:00",
+  });
+
+  const WATCH = "Marcell’s Apple Watch";
+  const PHONE = "Marcell’s iPhone";
+
+  it("keeps the largest single source and does not add the other to it", async () => {
+    // The measured bug, in miniature: 6645 real steps and a 4213-step partial
+    // view of the same walk. The answer is 6645 — never 10858.
+    const { days, ignored } = await readSamples([
+      counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 }),
+      counter({ type: "StepCount", source: PHONE, unit: "count", value: 4213 }),
+    ]);
+
+    expect(ignored).toEqual([]);
+    expect(days).toHaveLength(1);
+    expect(days[0]!.date).toBe("2026-09-01");
+    expect(days[0]!.values.steps).toBe(6645);
+    expect(days[0]!.values.steps).not.toBe(6645 + 4213);
+  });
+
+  it("picks per type, not once for the whole payload", async () => {
+    // Steps and calories can be won by different devices on the same day, so a
+    // single global "best source" would be wrong for one of them.
+    const { days } = await readSamples([
+      counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 }),
+      counter({ type: "StepCount", source: PHONE, unit: "count", value: 4213 }),
+      counter({ type: "ActiveEnergyBurned", source: WATCH, unit: "kcal", value: 300 }),
+      counter({ type: "ActiveEnergyBurned", source: PHONE, unit: "kcal", value: 856 }),
+    ]);
+
+    expect(days[0]!.values.steps).toBe(6645);       // the watch won steps
+    expect(days[0]!.values.move_kcal).toBe(856);    // the phone won calories
+  });
+
+  it("refuses a declared unit that is not ours, and names both units", async () => {
+    // The rollup refuses a record whose unit is not its own because a silently
+    // rescaled number that still looks plausible is the worst thing this import
+    // can produce. This path must not be the hole in that rule — and it must
+    // not convert either, only refuse.
+    const { days, ignored } = await readSamples([
+      counter({ type: "DistanceWalkingRunning", source: WATCH, unit: "mi", value: 4.1 }),
+    ]);
+
+    expect(days).toEqual([]);
+    expect(ignored).toHaveLength(1);
+    expect(ignored[0]!.field).toBe("samples[0]");
+    expect(ignored[0]!.reason).toContain("DistanceWalkingRunning");
+    expect(ignored[0]!.reason).toContain("mi");   // what arrived
+    expect(ignored[0]!.reason).toContain("km");   // what was expected
+  });
+
+  it("names a missing unit rather than assuming ours", async () => {
+    const { days, ignored } = await readSamples([
+      { type: "StepCount", source: WATCH, value: 6645,
+        startDate: "2026-09-01T23:55:00+02:00", endDate: "2026-09-01T23:55:00+02:00" },
+    ]);
+
+    expect(days).toEqual([]);
+    expect(JSON.stringify(ignored)).toContain("hiányzik");
+  });
+
+  it("refuses a sourceless total by name and stores nothing", async () => {
+    const { days, ignored } = await readSamples([
+      counter({ type: "StepCount", unit: "count", value: 21401 }),
+    ]);
+
+    expect(days).toEqual([]);
+    expect(ignored).toEqual([
+      { field: "samples[0]", reason: "StepCount: forrás nélküli napi összeg nem fogadható el" },
+    ]);
+  });
+
+  it("still refuses an avg type, source and unit notwithstanding", async () => {
+    // Not because it is dangerous, but because `rhr` already arrives as a
+    // direct READING field. Two routes to one column buys nothing.
+    const { days, ignored } = await readSamples([
+      counter({ type: "RestingHeartRate", source: WATCH, unit: "count/min", value: 54 }),
+    ]);
+
+    expect(days).toEqual([]);
+    expect(JSON.stringify(ignored)).toContain("RestingHeartRate (1)");
+  });
+
+  it("reads a counter's local day exactly as it reads a sleep sample's", async () => {
+    // Both timestamps are the same instant, in an offset where the local day
+    // and the UTC day disagree: 23:55 on the 1st at -05:00 is 04:55 UTC on the
+    // 2nd. The rollup takes the local day the owner actually lived, and the
+    // counter must not be filed by any other rule than the one sleep uses —
+    // otherwise the evening run's steps land on tomorrow.
+    const { days, ignored } = await readSamples([
+      counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645,
+                at: "2026-09-01T23:55:00-05:00" }),
+      { type: "SleepAnalysis", value: "In Bed",
+        startDate: "2026-09-01T22:55:00-05:00", endDate: "2026-09-01T23:55:00-05:00",
+        source: WATCH },
+    ]);
+
+    expect(ignored).toEqual([]);
+    // One day, not two: the counter did not drift onto the UTC date.
+    expect(days).toHaveLength(1);
+    expect(days[0]!.date).toBe("2026-09-01");
+    expect(days[0]!.values.steps).toBe(6645);
+    expect(days[0]!.values.in_bed_min).toBe(60);
+  });
+
+  it("handles sleep and counters in one request, end to end", async () => {
+    const a = await boot();
+    const res = await post(a, {
+      hrv: 68,
+      samples: [
+        ...NIGHT,
+        counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 }),
+        counter({ type: "StepCount", source: PHONE, unit: "count", value: 4213 }),
+        counter({ type: "ActiveEnergyBurned", source: WATCH, unit: "kcal", value: 856 }),
+      ],
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.json().ignored).toEqual([]);
+
+    // The night lands on the day it ended, the counters on the day they were
+    // counted — two different rows out of one request.
+    const night = a.health.forDate("2026-09-02")!;
+    expect(night.asleepMin).toBeCloseTo(430, 3);
+    expect(night.hrv).toBe(68);
+
+    const counted = a.health.forDate("2026-09-01")!;
+    expect(counted.steps).toBe(6645);
+    expect(counted.moveKcal).toBe(856);
+  });
+
+  it("keeps the first evening run's counter when the run repeats", async () => {
+    // fillGaps is existing-wins and the counters get no precedence rule of
+    // their own, so a 23:59 re-run of the 23:55 run keeps the first total —
+    // at most those four minutes short. Deliberate: neither run's number is
+    // Health's merged daily total, so neither may overwrite the other.
+    const a = await boot();
+    await post(a, { samples: [counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 })] });
+    await post(a, {
+      samples: [counter({ type: "StepCount", source: WATCH, unit: "count", value: 6700,
+                          at: "2026-09-01T23:59:00+02:00" })],
+    });
+
+    expect(a.health.forDate("2026-09-01")!.steps).toBe(6645);
+  });
+
+  it("refuses one bad counter without losing the good ones beside it", async () => {
+    // Same rule as the direct fields: the phone gets one attempt, and a wrong
+    // unit on distance must not cost the steps.
+    const { days, ignored } = await readSamples([
+      counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 }),
+      counter({ type: "DistanceWalkingRunning", source: WATCH, unit: "mi", value: 4.1 }),
+      counter({ type: "FlightsClimbed", source: WATCH, unit: "count", value: 12 }),
+    ]);
+
+    expect(days[0]!.values.steps).toBe(6645);
+    expect(days[0]!.values.flights).toBe(12);
+    expect(days[0]!.values.distance_km).toBeUndefined();
+    expect(ignored).toHaveLength(1);
   });
 });

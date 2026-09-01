@@ -5,7 +5,7 @@ import type { Clock } from "../../../infra/clock.ts";
 import type { HealthRepo } from "../../../infra/db/repositories/health.ts";
 import type { Logger } from "../../../infra/logger.ts";
 import { isoDate, TZ } from "../../../shared/dates.ts";
-import { rollup } from "../../../infra/health-export/rollup.ts";
+import { rollup, DAILY } from "../../../infra/health-export/rollup.ts";
 import type { ExportEntry } from "../../../infra/health-export/reader.ts";
 import { toAppleDate, normaliseSleepValue } from "../../../core/health/phone-samples.ts";
 
@@ -127,25 +127,6 @@ export interface SampleResult {
 }
 
 /**
- * Runs the phone's raw SLEEP samples through the import's own rollup.
- *
- * One logic, two producers — for sleep, and for sleep only. The watch writes a
- * sleep sample per stage, and a Shortcut cannot sum them: Calculate Statistics
- * works on sample values, and a sleep sample's value is a stage name, not a
- * duration. Taking the latest sample instead would report 0.3 hours for a
- * seven-hour night: not missing data, but confidently wrong. Sending them raw
- * also inherits the overlapping-source resolution the phone could never do.
- *
- * Every other type is refused here and named in `ignored`. Nothing needs to
- * send them — a Shortcut sums or averages a quantity type perfectly well, and
- * the direct `READING` fields exist for exactly that. Accepting them would be
- * actively dangerous: this path has no source of its own to report, so it
- * would have to invent one, and the rollup keeps accumulating types separated
- * BY source precisely so it can pick one instead of adding them. Collapsing
- * two sources into one fabricated name re-creates the 81,272-step days the
- * rollup's own comment describes.
- */
-/**
  * What a Shortcut actually puts in a JSON array field, unpacked.
  *
  * Shortcuts cannot splice a list variable into a JSON array. Asked to, it
@@ -183,6 +164,54 @@ function unpackSamples(
   });
 }
 
+/**
+ * Runs the phone's raw SLEEP samples — and its per-source day totals — through
+ * the import's own rollup.
+ *
+ * One logic, two producers. For sleep, because the watch writes a sample per
+ * stage and a Shortcut cannot sum them: Calculate Statistics works on sample
+ * values, and a sleep sample's value is a stage name, not a duration. Taking
+ * the latest sample instead would report 0.3 hours for a seven-hour night: not
+ * missing data, but confidently wrong. Sending them raw also inherits the
+ * overlapping-source resolution the phone could never do.
+ *
+ * For the accumulating counters, because `Find Health Samples` returns the RAW
+ * samples of EVERY source and `Calculate Statistics: Sum` adds them all
+ * together — the iPhone and the Watch both record the same walk. Measured on
+ * 2026-09-01: the evening run sent 21,401 steps against Health's 6,645, and
+ * 1,684 active kcal against 856. Every `Sum` field was inflated; the `Average`
+ * fields were fine, because averaging duplicates barely moves the number.
+ *
+ * The fix is not a new rule but the rollup's existing one. Shortcuts CAN filter
+ * `Find Health Samples` by `Source`, so the phone queries each counter type
+ * once per source and sends one aggregate per (type, source) pair. Fed to the
+ * rollup those land in its `accum` map, which keeps accumulating types
+ * separated BY source and picks the largest single source instead of adding
+ * them. The phone's number thereby becomes the same KIND of number as the
+ * import's, rather than a different one — which is the whole point, and the
+ * reason nothing is forked here.
+ *
+ * This is also why a real `source` is now REQUIRED rather than invented. The
+ * refusal that used to stand here — that this path has no source of its own to
+ * report, so it would have to make one up — remains exactly right for a caller
+ * that has none: collapsing several sources into one fabricated name re-creates
+ * the 81,272-step days the rollup's own comment describes, and a sourceless
+ * total is precisely what produced the 21,401. A real source name in the
+ * payload is what lifts the objection, so an entry without one is still
+ * refused, by name.
+ *
+ * `unit` must equal the type's own unit in `DAILY`, for the same reason the
+ * rollup skips a record whose unit is not its own: a silently rescaled number
+ * that still looks plausible is the worst thing this import can produce, and
+ * this path must not become the hole in that rule. The phone cannot report
+ * Health's display unit, so it declares what it believes it is sending and the
+ * server's job is to refuse a declared mismatch — never to convert.
+ *
+ * `agg: "avg"` types stay refused here. They are not broken: a Shortcut
+ * averages a quantity type perfectly well, and the direct `READING` fields
+ * already carry every one of them. Accepting them here would only open a second
+ * route to one column for no gain. Every other type is refused and named too.
+ */
 export async function readSamples(raw: unknown): Promise<SampleResult> {
   const ignored: { field: string; reason: string }[] = [];
   const unpacked = unpackSamples(raw, ignored);
@@ -205,7 +234,47 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
     }
 
     if (type !== "SleepAnalysis") {
-      refusedTypes.set(type, (refusedTypes.get(type) ?? 0) + 1);
+      const spec = DAILY[type];
+      // `avg` types are refused with everything else the rollup does not store.
+      // They already reach their column through the direct `READING` fields —
+      // a Shortcut averages a quantity type perfectly well, and duplicated
+      // samples barely move a mean — so a second route here would buy nothing
+      // and give one column two writers to reason about.
+      if (!spec || spec.agg !== "sum") {
+        refusedTypes.set(type, (refusedTypes.get(type) ?? 0) + 1);
+        continue;
+      }
+
+      // Trimmed, because the source name is the rollup's grouping key: a stray
+      // space would split one device into two and defeat the pick.
+      const source = typeof s.source === "string" ? s.source.trim() : "";
+      if (source === "") {
+        ignored.push({
+          field: `samples[${i}]`,
+          reason: `${type}: forrás nélküli napi összeg nem fogadható el`,
+        });
+        continue;
+      }
+
+      // The declared unit, checked against ours rather than converted. The
+      // rollup applies the same rule to the import's records; naming the
+      // expected unit here is what lets a half-built Shortcut be fixed.
+      const unit = typeof s.unit === "string" ? s.unit : null;
+      if (unit !== spec.unit) {
+        ignored.push({
+          field: `samples[${i}]`,
+          reason: `${type}: nem várt egység (${unit ?? "hiányzik"}), várt: ${spec.unit}`,
+        });
+        continue;
+      }
+
+      entries.push({
+        kind: "record", type,
+        // Left as text on purpose: the rollup parses and range-checks the value
+        // itself, and a number that is not finite is counted in its `skipped`.
+        value: typeof s.value === "string" ? s.value : String(s.value ?? ""),
+        unit, startDate: start, endDate: end, source,
+      });
       continue;
     }
 
@@ -230,7 +299,7 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
   for (const [type, n] of [...refusedTypes].sort(([a], [b]) => a.localeCompare(b))) {
     ignored.push({
       field: "samples",
-      reason: `csak alvás-minta küldhető nyersen: ${type} (${n}) — közvetlen mezőként küldd`,
+      reason: `nyersen csak alvás és napi számláló küldhető: ${type} (${n}) — közvetlen mezőként küldd`,
     });
   }
 
@@ -386,6 +455,13 @@ export function registerIngestRoutes(
     for (const day of samples.days) {
       // fillGaps, not upsert: the phone's samples must not overwrite what the
       // import already established for an older day.
+      //
+      // The per-source day counters ride the same loop, deliberately without a
+      // precedence rule of their own: a same-evening re-run therefore keeps the
+      // first run's total, which is at most the few minutes between the two
+      // runs short. That is the accepted trade — see `ACCUMULATES_OVER_DAY` in
+      // the health repo for why no writer here can be trusted to correct
+      // another's counter, only to fill a hole it left.
       deps.health.fillGaps(day.date, day.values, now);
     }
 
