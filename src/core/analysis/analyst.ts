@@ -18,7 +18,6 @@ export interface AnalystOptions {
   /** Wait between calls; two in one minute would breach the token ceiling. */
   paceMs: number;
   memoryDepth: number;
-  minCorrelationN: number;
   /** Resolved lazily so the key can live in the Keychain, not the environment. */
   apiKey: () => Promise<string | undefined>;
   analyses: AnalysisRepo;

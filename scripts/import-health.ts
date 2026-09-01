@@ -21,7 +21,6 @@
  * only view that matches what every later process will actually see.
  */
 import { DatabaseSync } from "node:sqlite";
-import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createApp } from "../src/app.ts";
@@ -29,6 +28,7 @@ import { loadEnv } from "../src/env.ts";
 import { fromRoot } from "../src/shared/paths.ts";
 import { readExport } from "../src/infra/health-export/reader.ts";
 import { rollup } from "../src/infra/health-export/rollup.ts";
+import { agentFix, holdersOf } from "../src/infra/db/holder.ts";
 
 process.env.LOG_LEVEL ??= "error";
 
@@ -41,48 +41,19 @@ if (!path) {
 const env = loadEnv();
 const dbPath = fromRoot(env.JARVIS_DB);
 
-const AGENT_FIX =
-  "  launchctl bootout gui/$(id -u)/local.jarvis.agent\n"
-  + "  npm run import-health -- ~/Downloads/export.zip\n"
-  + "  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.jarvis.agent.plist\n";
-
-/**
- * Which other processes, if any, currently have `dbPath` open.
- *
- * `BEGIN EXCLUSIVE` on a throwaway connection was the first thing tried here,
- * on the theory that it would fail immediately against another holder. It
- * doesn't: in WAL mode a connection that is merely open but not mid-statement
- * — exactly the launchd agent's steady state between requests — holds no
- * lock at all, so EXCLUSIVE is granted anyway (verified directly: with the
- * agent running, `BEGIN EXCLUSIVE` from a fresh connection still succeeds).
- * The actual hazard is the connection's mere existence, not a lock it might
- * transiently hold, so the check has to be file-level rather than SQLite-
- * level. `lsof -t` lists the pids with the file open; nothing here opens the
- * database itself, so there is nothing to disturb.
- */
-function holderPids(): string[] {
-  try {
-    return execFileSync("lsof", ["-t", dbPath], { encoding: "utf8" })
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  } catch {
-    // lsof exits 1 with no output when nobody holds the file — the same
-    // path execFileSync takes if lsof itself is missing. Either way there is
-    // nothing more to safely conclude here; Finding 1 (the post-close
-    // verification below) is the actual guarantee, this is only ergonomics.
-    return [];
-  }
-}
-
 /**
  * Fails fast, before the several-second read of a ~1 GB export, if the
  * database is already held open by another process — in practice, the
  * launchd agent (`local.jarvis.agent`, running `src/main.ts`).
+ *
+ * This refuses to run rather than warn: seven years of health history is at
+ * stake here, and losing it to a silently-dropped WAL is not recoverable by
+ * re-running the import. Contrast `scripts/analyze.ts`, which only warns —
+ * its worst case is a lost analysis, three minutes to redo.
  */
 function assertDatabaseFree(): void {
   mkdirSync(dirname(dbPath), { recursive: true });
-  const holders = holderPids();
+  const holders = holdersOf(dbPath);
 
   if (holders.length > 0) {
     console.error(
@@ -91,7 +62,7 @@ function assertDatabaseFree(): void {
       + "fut, az import azt hiheti, hogy sikerült, de az adat nem marad meg: a "
       + "WAL-ban landol, és eltűnik, amikor az agent zárja be utoljára a kapcsolatot. "
       + "Állítsd le, importálj, indítsd újra:\n\n"
-      + AGENT_FIX,
+      + agentFix("npm run import-health -- ~/Downloads/export.zip"),
     );
     process.exit(1);
   }
@@ -177,7 +148,7 @@ if (stored < intendedDays || totalWorkouts < intendedWorkouts) {
     + "valószínűleg a launchd agent — tartotta nyitva az adatbázist import közben, "
     + "és eldobta a WAL-t záráskor. Győződj meg róla, hogy semmi más nem éri el az "
     + "adatbázist, majd futtasd újra:\n\n"
-    + AGENT_FIX,
+    + agentFix("npm run import-health -- ~/Downloads/export.zip"),
   );
   process.exit(1);
 }

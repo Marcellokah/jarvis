@@ -56,7 +56,7 @@ function options(fetcher: Fetcher, over: Partial<AnalystOptions> = {}): AnalystO
   const db = memoryDb();
   return {
     fetcher, model: "test-model", maxTokens: 1200, temperature: 0.3,
-    timeoutMs: 5_000, paceMs: 60_000, memoryDepth: 3, minCorrelationN: 30,
+    timeoutMs: 5_000, paceMs: 60_000, memoryDepth: 3,
     apiKey: async () => "key",
     analyses: createAnalysisRepo(db),
     logger: recordingLogger(),

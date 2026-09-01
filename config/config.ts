@@ -99,6 +99,20 @@ export const config = {
     timeoutMs: 60_000,
   },
 
+  analysis: {
+    /** The same model the brief settled on after measurement. */
+    model: "qwen/qwen3.8-27b",
+    maxTokens: 1_200,
+    temperature: 0.3,
+    timeoutMs: 60_000,
+    /** Wait between calls: the free tier allows 6,000 tokens a minute. */
+    paceMs: 60_000,
+    /** How many previous summaries a domain sees. Each one costs budget. */
+    memoryDepth: 3,
+    /** Below this many paired days a correlation never reaches the prompt. */
+    minCorrelationN: 30,
+  },
+
   // Unused since app.ts switched Telegram follow-ups to groqChat (see
   // config.groq.chatModel). Kept, along with the still-exported claudeChat in
   // core/chat.ts, so reverting to the Claude Code subscription for chat is a

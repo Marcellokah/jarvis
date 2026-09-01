@@ -41,6 +41,7 @@ npm run smoke                      # minden hitelesítés, titkok kiírása nél
 npm test                           # a teljes csomag, hálózat nélkül
 npm run typecheck
 npm run import-health -- ~/Downloads/export.zip   # Apple Health export beolvasása
+npm run analyze                    # mélyelemzés a teljes történetből (~3 perc)
 ```
 
 ### Egészség-történet
@@ -59,6 +60,22 @@ beolvasott adatot. Állítsd le előtte, utána indítsd újra — a pontos
 parancssor: [`deploy/README.md`](deploy/README.md).
 
 A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.
+
+### Mélyelemzés
+
+`npm run analyze` végigmegy a teljes történeten, és területenként külön elemzést
+ad: fizikai fejlődés, regenerálódás, pénzügy, majd egy összegzés, ami a
+kiszámolt összefüggéseket nézi.
+
+A számokat kód számolja, nem a modell — gördülő átlagok, trendek, korrelációk,
+mindegyik mellett a lefedettséggel. A modell ezekre mond véleményt. Ha a Groq
+nem elérhető, a számok akkor is kiíródnak.
+
+Nagyjából három percig tart: hívásonként egy perc szünet, mert az ingyenes szint
+6 000 tokent enged percenként, és így minden terület a teljes keretet kapja.
+
+Minden lefutás elmentődik, és a következő elemzés területenként az utolsó három
+összegzést látja — ettől tud olyat mondani, hogy „harmadik hónapja jelzem".
 
 `GET /api/morning-brief` query paraméterei:
 
