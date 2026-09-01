@@ -12,6 +12,9 @@ export const HISTORY_COLUMNS: ReadonlySet<string> = new Set([
   "asleep_min", "in_bed_min", "core_min", "rem_min", "deep_min", "awakenings",
   "vo2max", "hr_recovery", "walking_hr", "basal_kcal", "flights",
   "diet_kcal", "diet_protein_g", "diet_carbs_g", "diet_fat_g",
+  "distance_km", "stand_min", "walking_speed", "step_length_cm",
+  "double_support_pct", "asymmetry_pct", "steadiness_pct", "six_min_walk_m",
+  "stair_up_ms", "stair_down_ms",
 ]);
 
 export interface HealthSnapshot {

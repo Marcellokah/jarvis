@@ -76,6 +76,16 @@ const DAILY: Record<string, { column: string; agg: "sum" | "avg"; unit: string }
   DietaryProtein: { column: "diet_protein_g", agg: "sum", unit: "g" },
   DietaryCarbohydrates: { column: "diet_carbs_g", agg: "sum", unit: "g" },
   DietaryFatTotal: { column: "diet_fat_g", agg: "sum", unit: "g" },
+  DistanceWalkingRunning: { column: "distance_km", agg: "sum", unit: "km" },
+  AppleStandTime: { column: "stand_min", agg: "sum", unit: "min" },
+  WalkingSpeed: { column: "walking_speed", agg: "avg", unit: "km/hr" },
+  WalkingStepLength: { column: "step_length_cm", agg: "avg", unit: "cm" },
+  WalkingDoubleSupportPercentage: { column: "double_support_pct", agg: "avg", unit: "%" },
+  WalkingAsymmetryPercentage: { column: "asymmetry_pct", agg: "avg", unit: "%" },
+  AppleWalkingSteadiness: { column: "steadiness_pct", agg: "avg", unit: "%" },
+  SixMinuteWalkTestDistance: { column: "six_min_walk_m", agg: "avg", unit: "m" },
+  StairAscentSpeed: { column: "stair_up_ms", agg: "avg", unit: "m/s" },
+  StairDescentSpeed: { column: "stair_down_ms", agg: "avg", unit: "m/s" },
 };
 
 const STAGE: Record<string, string> = {
