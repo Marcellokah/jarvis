@@ -175,18 +175,21 @@ describe("groqSynthesizer", () => {
     controller.abort();
     const started = Date.now();
 
-    // timeoutMs is short so a regression (the aborted-check missing, falling
-    // back to "wait for the timer") shows up as a slow test instead of an
-    // assertion that merely reads wrong.
+    // The budget below sits far under timeoutMs on purpose: a regression (the
+    // aborted-check missing, falling back to "wait for the timer") takes the
+    // full 2 seconds, while the correct path returns in about a millisecond.
+    // The two must not be within scheduler noise of each other — at 20ms
+    // against a 20ms timeout this test failed whenever the full suite loaded
+    // the machine, which is a flake, not a signal.
     await expect(
       groqSynthesizer({
         fetcher: stub(ok), model: "llama-3.3-70b-versatile",
         systemPromptFile: "./jarvis.md", maxTokens: 1500, temperature: 0.3,
-        timeoutMs: 20, logger: silentLogger(), apiKey: async () => "gsk-test",
+        timeoutMs: 2_000, logger: silentLogger(), apiKey: async () => "gsk-test",
       }).synthesize(ctx, controller.signal),
     ).rejects.toThrow();
 
-    expect(Date.now() - started).toBeLessThan(20);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 });
 
@@ -261,18 +264,21 @@ describe("groqChat", () => {
     controller.abort();
     const started = Date.now();
 
-    // timeoutMs is short so a regression (the aborted-check missing, falling
-    // back to "wait for the timer") shows up as a slow test instead of an
-    // assertion that merely reads wrong.
+    // The budget below sits far under timeoutMs on purpose: a regression (the
+    // aborted-check missing, falling back to "wait for the timer") takes the
+    // full 2 seconds, while the correct path returns in about a millisecond.
+    // The two must not be within scheduler noise of each other — at 20ms
+    // against a 20ms timeout this test failed whenever the full suite loaded
+    // the machine, which is a flake, not a signal.
     await expect(
       groqChat({
         fetcher: stub(answer), model: "llama-3.3-70b-versatile",
         systemPromptFile: "./jarvis.md", maxTokens: 800, temperature: 0.4,
-        timeoutMs: 20, logger: silentLogger(), apiKey: async () => "gsk-test",
+        timeoutMs: 2_000, logger: silentLogger(), apiKey: async () => "gsk-test",
         clock, conversations: createConversationRepo(memoryDb()), context: async () => CONTEXT,
       }).ask("web", "mi ez?", controller.signal),
     ).rejects.toThrow();
 
-    expect(Date.now() - started).toBeLessThan(20);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 });
