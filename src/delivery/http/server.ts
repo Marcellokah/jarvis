@@ -2,22 +2,32 @@ import Fastify, { type FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import type { BriefService } from "../../core/brief-service.ts";
 import type { ProposalService } from "../../core/proposals.ts";
+import type { ChatService } from "../../core/chat.ts";
 import type { JarvisModule } from "../../core/module.ts";
 import type { RunnerDeps } from "../../core/runner.ts";
 import type { Clock } from "../../infra/clock.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
+import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
+import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
-import { bearerAuth } from "./auth.ts";
+import { bearerAuth, chatAuth, pageAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
 import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
+import { registerPageRoutes } from "./routes/page.ts";
+import type { MetricRow } from "./page.ts";
 
 export interface ServerDeps {
   token: string;
   briefs: BriefService;
   proposals: ProposalService;
+  chat: ChatService;
   health: HealthRepo;
+  analyses: AnalysisRepo;
+  conversations: ConversationRepo;
+  /** Builds the numbers table's rows from the freshest `aggregate()` output. */
+  metricsRows: () => MetricRow[];
   modules: readonly JarvisModule[];
   runner: RunnerDeps;
   clock: Clock;
@@ -35,11 +45,27 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     allowList: (request) => request.url === "/healthz",
   });
 
-  // Bearer auth guards /api/* only; /healthz stays open so a liveness probe
-  // never needs the token.
+  // Bearer auth guards /api/*; /healthz stays open so a liveness probe never
+  // needs the token.
+  //
+  // `GET /` is guarded too, by the same token: the page carries the brief,
+  // every analysis, the numbers and the whole thread in one response. The
+  // server binds to 127.0.0.1, but `deploy/README.md` documents a
+  // `tailscale serve` that proxies the whole origin — protection cannot depend
+  // on which of those happens to be switched on today.
+  //
+  // `/api/chat` takes the cookie too: it is the page's own fetch, and the page
+  // is already proving itself with that cookie one request earlier. Every
+  // other `/api/*` route is called by a Shortcut or a script, which sends a
+  // header and never a cookie, so those stay bearer-only.
   const auth = bearerAuth(deps.token);
+  const chat = chatAuth(deps.token);
+  const page = pageAuth(deps.token);
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url.startsWith("/api/")) await auth(request, reply);
+    const route = request.url.split("?")[0] ?? request.url;
+    if (route === "/api/chat") await chat(request, reply);
+    else if (route.startsWith("/api/")) await auth(request, reply);
+    else if (route === "/") await page(request, reply);
   });
 
   /**
@@ -54,7 +80,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const route = request.url.split("?")[0] ?? request.url;
     const entry = {
       method: request.method,
-      url: request.url,
+      // The path only, never the full URL. `GET /?token=…` is how the page is
+      // first opened, and `deploy/README.md` tells the owner to tail this log
+      // — logging the query string would write the bearer token to disk in
+      // plaintext, in the one file most likely to be read out loud.
+      url: route,
       status: reply.statusCode,
       ms: Math.round(reply.elapsedTime),
     };
@@ -75,6 +105,11 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     health: deps.health, briefs: deps.briefs, clock: deps.clock, logger: deps.logger,
   });
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
+  registerPageRoutes(app, {
+    briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
+    conversations: deps.conversations, metricsRows: deps.metricsRows,
+    clock: deps.clock, logger: deps.logger,
+  });
 
   return app;
 }

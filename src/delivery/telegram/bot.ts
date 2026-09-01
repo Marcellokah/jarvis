@@ -4,7 +4,7 @@ import type { Logger } from "../../infra/logger.ts";
 import type { ChatService } from "../../core/chat.ts";
 import {
   handleBrief, handleCallback, handleModule, handleModules, handleSynth, handleUndo, handleUsed,
-  HELP, escapeHtml, type BotReply, type TelegramDeps,
+  questionTooLong, HELP, escapeHtml, type BotReply, type TelegramDeps,
 } from "./responses.ts";
 
 export interface TelegramOptions extends TelegramDeps {
@@ -81,6 +81,15 @@ export function buildBot(opts: TelegramOptions): Bot {
     const question = ctx.message.text.trim();
     if (!question || question.startsWith("/")) return;
 
+    // The same cap POST /api/chat enforces. Telegram allows 4,096 characters
+    // per message, and without this the two doors would disagree about what
+    // reaches the prompt and the conversations table.
+    const tooLong = questionTooLong(question);
+    if (tooLong) {
+      await reply(ctx, tooLong);
+      return;
+    }
+
     if (!(await opts.chat.available())) {
       await reply(ctx, {
         text: "A beszélgetés a Groq ingyenes tierjét használja, aminek most nincs beállítva a kulcsa.\n"
@@ -94,8 +103,7 @@ export function buildBot(opts: TelegramOptions): Bot {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90_000);
     try {
-      const brief = await opts.briefs.get(opts.clock.now(), { wait: false });
-      const answer = await opts.chat.ask(question, brief.markdown, controller.signal);
+      const answer = await opts.chat.ask(String(ctx.chat.id), question, controller.signal);
       await reply(ctx, { text: escapeHtml(answer) });
     } catch (err) {
       opts.logger.warn({ err: String(err) }, "follow-up failed");

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { buildTestApp, seedMeals, meal, TEST_TOKEN, type TestApp } from "../helpers.ts";
+import { buildTestApp, seedMeals, meal, stubModule, TEST_TOKEN, type TestApp } from "../helpers.ts";
 import { healthAndMealPrep } from "../../src/modules/health-mealprep/index.ts";
 import { createBriefRepo } from "../../src/infra/db/repositories/briefs.ts";
 import type { Synthesizer } from "../../src/core/synthesis/synthesizer.ts";
@@ -143,5 +143,63 @@ describe("an ingest must never cause another date's brief to be served as today'
       res.statusCode === 200 && res.headers["x-jarvis-cached"] === "true"
         && res.headers["x-jarvis-generated-at"] === "2026-09-04T04:20:00.000Z",
     ).toBe(false);
+  });
+});
+
+/**
+ * `cached()` is the read the page and the question use.
+ *
+ * `get(now, { wait: false })` looks like the same thing and is not: its fast
+ * path needs a stored row, and with no scheduled brief in this system most
+ * days have none — so it falls through to a full generation. Opening the page
+ * and then asking one question would be two Groq calls inside one minute,
+ * against a 6,000 token/minute ceiling, neither of them asked for.
+ */
+describe("BriefService.cached", () => {
+  /** Counts every module run, so "never generates" is an assertion and not a hope. */
+  function countingModule() {
+    let runs = 0;
+    return {
+      module: stubModule({
+        name: "Számláló",
+        execute: async () => { runs += 1; return { data: {}, actions: [], priority: "normal" as const }; },
+      }),
+      runs: () => runs,
+    };
+  }
+
+  it("returns null when nothing is stored, without generating anything", async () => {
+    const counter = countingModule();
+    app = await buildTestApp({ modules: [counter.module], now: MONDAY });
+
+    expect(app.briefs.cached(new Date(MONDAY))).toBeNull();
+    expect(counter.runs()).toBe(0);
+    expect(app.briefs.inFlight()).toBe(false);
+  });
+
+  it("returns the stored brief when there is one, still without generating", async () => {
+    const counter = countingModule();
+    app = await buildTestApp({ modules: [counter.module], now: MONDAY });
+
+    const generated = await app.briefs.generate(new Date(MONDAY));
+    expect(counter.runs()).toBe(1);
+
+    const cached = app.briefs.cached(new Date(MONDAY));
+    expect(cached).not.toBeNull();
+    expect(cached!.markdown).toBe(generated.markdown);
+    expect(cached!.fromCache).toBe(true);
+    // The module ran once, for the explicit generate — not again for the read.
+    expect(counter.runs()).toBe(1);
+  });
+
+  it("returns null for a day that has no brief, even when another day does", async () => {
+    // Reaching across to the most recent brief of any date is the bug this
+    // whole service guards against: yesterday's meal plan dressed as today's.
+    const counter = countingModule();
+    app = await buildTestApp({ modules: [counter.module], now: MONDAY });
+
+    await app.briefs.generate(new Date(MONDAY));
+    expect(app.briefs.cached(new Date("2026-09-05T06:20:00+02:00"))).toBeNull();
+    expect(counter.runs()).toBe(1);
   });
 });

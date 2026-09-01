@@ -24,6 +24,8 @@ import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
 import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
 import { createAnalysisRepo, type AnalysisRepo } from "./infra/db/repositories/analyses.ts";
+import { createConversationRepo, type ConversationRepo } from "./infra/db/repositories/conversations.ts";
+import { buildAskContext } from "./core/ask/context.ts";
 import { createFetcher } from "./infra/http-client.ts";
 import { createLogger, type Logger } from "./infra/logger.ts";
 import { keychainSecrets, type SecretResolver } from "./infra/secrets.ts";
@@ -49,6 +51,7 @@ export interface App {
   health: HealthRepo;
   workouts: WorkoutRepo;
   analyses: AnalysisRepo;
+  conversations: ConversationRepo;
   runner: RunnerDeps;
   modules: readonly typeof ALL_MODULES[number][];
   close(): void;
@@ -82,6 +85,9 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   const health = createHealthRepo(db);
   const workouts = createWorkoutRepo(db);
   const actions = createActionRepo(db);
+  const subscriptionMonths = createSubscriptionMonthRepo(db);
+  const analyses = createAnalysisRepo(db);
+  const conversations = createConversationRepo(db);
 
   const proposals = createProposalService({
     actions,
@@ -103,8 +109,8 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     maxWaitSeconds: config.brief.maxWaitSeconds,
   });
 
-  // Same provider that writes the brief. `claudeChat` stays in the codebase and
-  // is a one-line swap, but nothing routine should touch the work account.
+  // Same provider that writes the brief. Nothing routine should touch the
+  // work account.
   const chat = groqChat({
     fetcher: runner.http,
     model: config.groq.chatModel,
@@ -114,14 +120,23 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     timeoutMs: config.groq.timeoutMs,
     logger,
     apiKey: () => secrets.get(GROQ_KEY_VAR),
+    clock,
+    conversations,
+    context: (chatId, signal) => buildAskContext({
+      health, workouts,
+      subscriptionMonths,
+      analyses, conversations, briefs, clock, logger,
+      historyDepth: config.groq.chatHistoryDepth,
+    }, chatId, signal),
   });
 
   return {
     env, db, logger, clock, briefs, synthesizers, proposals, chat, health, workouts, runner,
     actions,
     subscriptions: createSubscriptionRepo(db),
-    subscriptionMonths: createSubscriptionMonthRepo(db),
-    analyses: createAnalysisRepo(db),
+    subscriptionMonths,
+    analyses,
+    conversations,
     modules: ALL_MODULES,
     close: () => db.close(),
   };

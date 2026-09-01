@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
-  handleBrief, handleCallback, handleModule, handleUsed, handleUndo,
+  handleBrief, handleCallback, handleModule, handleUsed, handleUndo, questionTooLong,
 } from "../../src/delivery/telegram/responses.ts";
 import { chunkText } from "../../src/delivery/telegram/bot.ts";
 import { acquireInstanceLock } from "../../src/infra/instance-lock.ts";
 import { createSubscriptionRepo } from "../../src/infra/db/repositories/subscriptions.ts";
 import { createActionRepo } from "../../src/infra/db/repositories/actions.ts";
 import { financeAndSubs } from "../../src/modules/finance-subs/index.ts";
+import { MAX_QUESTION_CHARS } from "../../src/core/chat.ts";
 import { buildTestApp, TEST_TOKEN, type TestApp } from "../helpers.ts";
 import { silentLogger } from "../../src/infra/logger.ts";
 import type { CalendarService } from "../../src/infra/calendar/service.ts";
@@ -205,5 +206,32 @@ describe("instance lock", () => {
       process.pid, MONDAY.toISOString(), MONDAY.toISOString(),
     );
     expect(acquireInstanceLock(app.db, silentLogger(), MONDAY)).toBeNull();
+  });
+});
+
+/**
+ * The two doors validate the same way.
+ *
+ * `POST /api/chat` has capped a question at `MAX_QUESTION_CHARS` from the
+ * start. Telegram allows 4,096 characters per message and passed all of them
+ * straight into the prompt and into the `conversations` table — the same
+ * question accepted at one door and refused at the other.
+ */
+describe("question length", () => {
+  it("lets a question at the cap through", () => {
+    expect(questionTooLong("a".repeat(MAX_QUESTION_CHARS))).toBeNull();
+  });
+
+  it("refuses a question over the cap, in Hungarian, with the numbers", () => {
+    const reply = questionTooLong("a".repeat(MAX_QUESTION_CHARS + 1));
+    expect(reply).not.toBeNull();
+    expect(reply!.text).toContain(String(MAX_QUESTION_CHARS + 1));
+    expect(reply!.text).toContain(String(MAX_QUESTION_CHARS));
+    expect(reply!.text).toContain("túl hosszú");
+  });
+
+  it("refuses what Telegram itself would still allow", () => {
+    // Telegram's own limit is 4,096 characters; ours is lower on purpose.
+    expect(questionTooLong("a".repeat(4_096))).not.toBeNull();
   });
 });

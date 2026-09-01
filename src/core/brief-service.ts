@@ -47,6 +47,16 @@ export interface BriefService {
   /** Runs a single module on demand, for `/finance`-style Telegram commands. */
   runOne(name: string, now: Date): Promise<ModuleOutcome | null>;
   get(now: Date, opts?: GetOptions): Promise<Brief>;
+  /**
+   * Today's brief if one is already stored, otherwise null. Never generates.
+   *
+   * `get(now, { wait: false })` looks like this but is not: its fast path needs
+   * a stored row, and with no scheduled brief in this system most days have
+   * none — so it falls through to a full generation, every module plus a Groq
+   * synthesis, against a 6,000 token/minute ceiling. The page and the question
+   * want *what exists*; a day with no brief yet is a page that says so.
+   */
+  cached(now: Date): Brief | null;
   /** Fire-and-forget regeneration, e.g. after a health snapshot arrives. */
   regenerate(now: Date): Promise<Brief>;
   inFlight(): boolean;
@@ -183,6 +193,11 @@ export function createBriefService(opts: BriefServiceOptions): BriefService {
     generate,
     regenerate,
     inFlight: () => pending !== null,
+
+    cached(now) {
+      const stored = opts.briefs.latestForDate(isoDate(now, opts.tz));
+      return stored ? fromStored(stored, now) : null;
+    },
 
     async runOne(name, now) {
       const module = opts.modules.find((m) => m.name.toLowerCase() === name.toLowerCase());

@@ -94,6 +94,41 @@ export const config = {
      */
     maxTokens: 1_500,
     chatMaxTokens: 800,
+    /**
+     * How many previous turns of a thread the model sees. A turn is one
+     * message, so 2 is the last exchange: the previous question and its answer.
+     *
+     * Measured, and the arithmetic has to close against 6,000 tokens per
+     * minute covering prompt AND completion — not prompt alone. The design's
+     * original ~2,900 left out jarvis.md entirely; the first correction put it
+     * back but still compared an input-only total against the ceiling, which
+     * is the same under-count one order smaller.
+     *
+     *   jarvis.md, the system prompt, every call   ~2,300
+     *   the per-domain analysis summaries          ~  600
+     *   the trimmed statistics                     ~1,100
+     *   today's brief                              ~  350
+     *   ------------------------------------------------
+     *   input with an empty thread                 ~4,350   (matches the ~4,300 measured)
+     *   2 turns, at 125–325 tokens each              250–650
+     *   ------------------------------------------------
+     *   input, worst case                          ~5,000
+     *   + chatMaxTokens                                800
+     *   ================================================
+     *   worst case, prompt + completion            ~5,800   under 6,000, by 200
+     *
+     * The per-turn range is measured across real threads (a six-turn thread
+     * cost 5,100–6,300 in total, so 750–1,950 for the thread itself). It is
+     * not a hard bound: a deliberately maximal turn — a question at the
+     * 2,000-character cap plus an answer at the full 800 tokens — is ~1,400
+     * tokens on its own, and no depth above 1 can bound that arithmetically.
+     * That case is a Groq 429, which both doors report rather than swallow;
+     * a visible failure, not a quietly truncated answer.
+     *
+     * Every step above six is what pushed this down: 4 turns is ~5,650 input
+     * and ~6,450 with the completion, over the ceiling. 3 is ~6,125, still over.
+     */
+    chatHistoryDepth: 2,
     /** Low: the output contract is strict, and invention is the failure mode. */
     temperature: 0.3,
     timeoutMs: 60_000,
@@ -113,16 +148,6 @@ export const config = {
     minCorrelationN: 30,
   },
 
-  // Unused since app.ts switched Telegram follow-ups to groqChat (see
-  // config.groq.chatModel). Kept, along with the still-exported claudeChat in
-  // core/chat.ts, so reverting to the Claude Code subscription for chat is a
-  // one-line swap in app.ts rather than a rebuild of this block.
-  chat: {
-    /** Telegram follow-ups. Cheaper and faster than the brief model. */
-    model: "haiku",
-    timeoutMs: 60_000,
-  },
-
   calendar: {
     /**
      * Jarvis writes ONLY here. Create this calendar in the Naptár app first —
@@ -137,6 +162,12 @@ export const config = {
   schedule: {
     /** After this, a previously reported item may resurface. */
     seenRetentionDays: 21,
+    /**
+     * A conversation thread is not durable memory — that is the `analyses`
+     * table's job — only the recent back-and-forth a follow-up question
+     * depends on. Nobody asks a follow-up to a turn from last month.
+     */
+    conversationRetentionDays: 30,
   },
 
   brief: {

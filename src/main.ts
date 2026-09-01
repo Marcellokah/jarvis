@@ -4,6 +4,9 @@ import { buildServer } from "./delivery/http/server.ts";
 import { buildBot } from "./delivery/telegram/bot.ts";
 import { acquireInstanceLock } from "./infra/instance-lock.ts";
 import { startScheduler } from "./infra/scheduler.ts";
+import { aggregate } from "./core/analysis/aggregate.ts";
+import { metricsRowsFrom } from "./delivery/http/page.ts";
+import { isoDate, TZ } from "./shared/dates.ts";
 import { config } from "../config/config.ts";
 
 const app = createApp();
@@ -24,7 +27,23 @@ const server = await buildServer({
   token: apiToken,
   briefs: app.briefs,
   proposals: app.proposals,
+  chat: app.chat,
   health: app.health,
+  analyses: app.analyses,
+  conversations: app.conversations,
+  // Rebuilt per request rather than cached: the page must show tonight's
+  // sleep the moment it is ingested, not the value at process start-up.
+  metricsRows: () => {
+    const today = isoDate(app.clock.now(), TZ);
+    return metricsRowsFrom(aggregate({
+      today,
+      snapshots: app.health.between("1970-01-01", today),
+      workouts: app.workouts.between("1970-01-01", today),
+      months: app.subscriptionMonths.months().map((month) => ({
+        month, subs: app.subscriptionMonths.forMonth(month),
+      })),
+    }));
+  },
   modules: app.modules,
   runner: app.runner,
   clock: app.clock,
@@ -81,6 +100,7 @@ const scheduler = startScheduler({
   clock: app.clock,
   logger: app.logger,
   seenRetentionDays: config.schedule.seenRetentionDays,
+  conversationRetentionDays: config.schedule.conversationRetentionDays,
 });
 
 let shuttingDown = false;

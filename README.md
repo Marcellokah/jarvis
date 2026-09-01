@@ -44,6 +44,27 @@ npm run import-health -- ~/Downloads/export.zip   # Apple Health export beolvas�
 npm run analyze                    # mélyelemzés a teljes történetből (~3 perc)
 ```
 
+### Kérdezni
+
+A rendszer két helyen fogad kérdést, és mindkettő ugyanazt a magot használja:
+
+- **A helyi oldal** — `http://127.0.0.1:8787/?token=<JARVIS_TOKEN>`. Az oldal
+  ugyanaz mögött a token mögött van, mint az API: rajta van a briefing, minden
+  elemzés, a számok és a teljes szál. A token egyszer kell — a szerver
+  `HttpOnly`, `SameSite=Strict` sütire cseréli, és a címsorból is kikerül. Az
+  oldalon fent a mai briefing, alatta a legutóbbi mélyelemzés területenként, a
+  számok táblázatban, legalul a kérdés-mező.
+- **Telegram** — bármilyen sima szöveges üzenet a botnak. A parancsok
+  (`/brief`, `/uj`, `/modules`, `/undo`, `/used`) változatlanok.
+
+A modell területenként a legutóbbi elemzés összegzését látja a keletkezés
+dátumával, a friss statisztikákat, a mai briefinget és a szál előző fordulóit.
+A két felület **külön szálat** visz: a telefonon és a gép előtt feltett kérdés
+más helyzet.
+
+A beszélgetéseket a 04:00-s takarítás 30 nap után nyesi. A tartós emlékezet nem
+ez, hanem az `analyses` tábla.
+
 ### Egészség-történet
 
 Az iPhone Health appjából (Profil → Összes egészségügyi adat exportálása) kapott
