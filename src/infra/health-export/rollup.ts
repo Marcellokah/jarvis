@@ -60,8 +60,10 @@ export interface RollupResult {
  * silently rescaled number that still looks plausible is the worst thing this
  * import can produce. A record whose unit is not ours is counted as skipped
  * instead, so the import's own output names it.
+ *
+ * Exported so the invariant test can verify HISTORY_COLUMNS stays in sync.
  */
-const DAILY: Record<string, { column: string; agg: "sum" | "avg"; unit: string }> = {
+export const DAILY: Record<string, { column: string; agg: "sum" | "avg"; unit: string }> = {
   RestingHeartRate: { column: "rhr", agg: "avg", unit: "count/min" },
   HeartRateVariabilitySDNN: { column: "hrv", agg: "avg", unit: "ms" },
   VO2Max: { column: "vo2max", agg: "avg", unit: "mL/min·kg" },

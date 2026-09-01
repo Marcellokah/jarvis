@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { rollup } from "../../src/infra/health-export/rollup.ts";
+import { rollup, DAILY } from "../../src/infra/health-export/rollup.ts";
+import { HISTORY_COLUMNS } from "../../src/infra/db/repositories/health.ts";
 import type { ExportEntry } from "../../src/infra/health-export/reader.ts";
 
 async function* stream(entries: ExportEntry[]): AsyncIterable<ExportEntry> {
@@ -59,5 +60,14 @@ describe("rollup — mobility", () => {
     const r = await rollup(stream([record("WalkingSpeed", "4.4", "mph")]));
     expect(r.days).toEqual([]);
     expect(Object.keys(r.skipped).join(" ")).toMatch(/WalkingSpeed.*egység/);
+  });
+
+  it("keeps every column the rollup can produce writable by fillGaps", () => {
+    // These two lists drift silently as measurements are added, and the failure
+    // is not local: fillGaps throws on an unknown column, so the whole monthly
+    // import dies on the first day carrying that measurement.
+    const produced = Object.values(DAILY).map((d) => d.column);
+    const missing = produced.filter((c) => !HISTORY_COLUMNS.has(c));
+    expect(missing).toEqual([]);
   });
 });
