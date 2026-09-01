@@ -293,6 +293,14 @@ ugyanabban a küldésben a táv és a két kalória-mező. Ezredes csoportosít�
 tesz bele (`1198,36299999997`), ezért egyértelmű a `\d+,\d+` alak; minden más,
 ami vesszőt tartalmaz, visszautasítva jobb, mint kitalálva.
 
+**Egy forráson belül is átfednek a minták.** 2026-09-01: a `Marcell’s Apple
+Watch`-ra szűrt összeg 12 727 lépés és 8,72 km, a Health saját napi összesítője
+6 645 és 4,19 km — kereken kétszeres, egyetlen forrásból. A két azonos nevű
+óra-bejegyzés mint magyarázat kiesett: nincs köztük időbeli átfedés. Marad,
+hogy a Health az összesítéskor feloldja a minták időbeli átfedését, a nyers
+összegzés viszont nem. **Napi összeget így nem lehet Shortcuttal előállítani**,
+és ugyanez a vakfolt megvan az importban is, ami forrásonként szintén összead.
+
 **Üres érték nulla helyett.** Ha egy típusra az adott forrásnál nincs minta, a
 mező üres sztringként megy el, nem marad ki. `Number("")` viszont `0` — ami
 valódi forrás-összegként versenyez, és nyer is, ha a másik forrás értéke épp
