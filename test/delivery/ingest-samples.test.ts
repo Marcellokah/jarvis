@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { buildTestApp, TEST_TOKEN, stubModule, type TestApp } from "../helpers.ts";
+import { readSamples } from "../../src/delivery/http/routes/ingest.ts";
 
 let app: TestApp | null = null;
 afterEach(async () => { await app?.close(); app = null; });
@@ -23,6 +24,58 @@ const NIGHT = [
   { type: "SleepAnalysis", value: "Awake",  startDate: "2026-09-02T03:30:00+02:00", endDate: "2026-09-02T03:40:00+02:00" },
   { type: "SleepAnalysis", value: "REM",    startDate: "2026-09-02T03:40:00+02:00", endDate: "2026-09-02T06:40:00+02:00" },
 ];
+
+/**
+ * Exactly what the first live run put in the database, trimmed to three stages.
+ *
+ * Kept verbatim rather than reconstructed: the point of this test is that the
+ * shape came off a real phone, and a hand-written approximation would only
+ * prove the parser agrees with my idea of what Shortcuts does.
+ */
+const SHORTCUT_NDJSON = [
+  '{"value":"Core","startDate":"2026-09-01T00:03:42+02:00","type":"SleepAnalysis",'
+  + '"endDate":"2026-09-01T00:24:12+02:00"}\n'
+  + '{"value":"Deep","startDate":"2026-09-01T00:24:12+02:00","type":"SleepAnalysis",'
+  + '"endDate":"2026-09-01T01:04:42+02:00"}\n'
+  + '{"value":"In Bed","startDate":"2026-09-01T00:03:42+02:00","type":"SleepAnalysis",'
+  + '"endDate":"2026-09-01T01:04:42+02:00"}',
+];
+
+describe("ingest — a Shortcut's own sample encoding", () => {
+  it("reads the night out of the one string Shortcuts sends", async () => {
+    const { days, ignored } = await readSamples(SHORTCUT_NDJSON);
+
+    // 61 minutes in bed, all of it asleep — the two stages abut, so the union
+    // is one span and not the sum of two overlapping ones.
+    expect(ignored).toEqual([]);
+    expect(days).toHaveLength(1);
+    expect(days[0]!.date).toBe("2026-09-01");
+    expect(days[0]!.values.asleep_min).toBe(61);
+    // 40m30s of deep sleep, rounded — the rollup stores whole minutes.
+    expect(days[0]!.values.deep_min).toBe(41);
+    expect(days[0]!.values.in_bed_min).toBe(61);
+  });
+
+  it("reads a real JSON array the same way", async () => {
+    // The unpacking must not become the only accepted shape: anything that can
+    // post proper JSON still should.
+    const asArray = SHORTCUT_NDJSON[0]!.split("\n").map((l) => JSON.parse(l) as unknown);
+    const { days, ignored } = await readSamples(asArray);
+
+    expect(ignored).toEqual([]);
+    expect(days[0]!.values.asleep_min).toBe(61);
+  });
+
+  it("drops an unreadable line by name instead of guessing at it", async () => {
+    const { days, ignored } = await readSamples([
+      SHORTCUT_NDJSON[0]! + "\n{ ez nem JSON",
+    ]);
+
+    // The night still lands; only the broken line is lost, and it is named.
+    expect(ignored).toEqual([{ field: "samples[0].3", reason: "értelmezhetetlen JSON sor" }]);
+    expect(days[0]!.values.asleep_min).toBe(61);
+  });
+});
 
 describe("ingest — raw samples", () => {
   it("computes the night the same way the import would", async () => {
