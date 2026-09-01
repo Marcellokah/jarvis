@@ -121,6 +121,30 @@ parancssor: [`deploy/README.md`](deploy/README.md).
 
 A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.
 
+### Mit küld a telefon, és mikor
+
+A Shortcut **két kérést** küld, mert a mérések nem egyszerre válnak teljessé.
+
+**A mai napra** — ami reggel már végleges: HRV, nyugalmi pulzus, az éjszaka
+**nyers alvás-mintái**, VO2max, pulzus-visszatérés, séta-pulzus, és a
+járás-metrikák napi átlagai.
+
+**A tegnapi napra** — ami csak a nap végén teljes: lépésszám, távolság, aktív és
+alap kalória, edzésperc, emelet, állás-idő, és az étkezés.
+
+Ez nem finomítás. A telefon írása felülírja a meglévőt, az importé nem — így egy
+reggel elküldött részösszeg (fél nyolckor kétezer lépés) **véglegesen rögzülne**,
+és a havi import soha nem tudná tizenegyezerre javítani.
+
+Az alvást a telefon **nem összegzi**: az óra fázisonként külön mintát ír, és
+Shortcutban nincs mód összeadni őket. A nyers mintákat küldi, és a szerver
+ugyanazzal a logikával számol belőlük, amivel az importot dolgozza fel —
+beleértve az átfedő források feloldását, amit a telefon sosem tudna.
+
+Amit a szerver nem ért — ismeretlen alvás-fázis, értelmezhetetlen dátum,
+váratlan mértékegység —, azt a válasz `ignored` tömbje **megnevezi**, ahelyett
+hogy elnyelné.
+
 ### Mélyelemzés
 
 `npm run analyze` végigmegy a teljes történeten, és területenként külön elemzést
