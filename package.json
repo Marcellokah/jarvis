@@ -15,6 +15,7 @@
     "smoke": "node --env-file-if-exists=.env scripts/smoke.ts",
     "eval-models": "node --env-file-if-exists=.env scripts/eval-models.ts",
     "import-health": "node --env-file-if-exists=.env scripts/import-health.ts",
+    "analyze": "node --env-file-if-exists=.env scripts/analyze.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

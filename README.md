@@ -41,6 +41,7 @@ npm run smoke                      # minden hitelesítés, titkok kiírása nél
 npm test                           # a teljes csomag, hálózat nélkül
 npm run typecheck
 npm run import-health -- ~/Downloads/export.zip   # Apple Health export beolvasása
+npm run analyze                    # mélyelemzés a teljes történetből (~3 perc)
 ```
 
 ### Egészség-történet
@@ -52,13 +53,33 @@ Havonta érdemes újrafuttatni. Biztonságos: a meglévő méréseket soha nem �
 felül, csak a hiányzó mezőket tölti ki, és ugyanaz a zip kétszer futtatva
 ugyanazt az állapotot adja.
 
-Ha fut a launchd agent, ne közben futtasd: az agent tartja nyitva az
-adatbázist, egy külön folyamat írásai emiatt nem maradnak meg, és az import
-ezt induláskor felismerve inkább hibával leáll, mint hogy csendben eldobja a
-beolvasott adatot. Állítsd le előtte, utána indítsd újra — a pontos
+Ha fut a launchd agent, ne közben futtasd. Amikor az agent nyitva tartotta az
+adatbázist, háromszor is előfordult, hogy a beolvasott értékek nem maradtak
+meg — hogy pontosan miért, azt nem sikerült kideríteni, a kézenfekvő
+magyarázat (hogy egy másik folyamat írásai elvesznének) mérésekkel nem
+igazolódott. Az ok tehát nyitott, a veszteség viszont valós volt, ezért az
+import induláskor inkább hibával leáll, ha mást is nyitva talál, és a végén
+egy friss kapcsolattal ellenőrzi, hogy tényleg megmaradt-e minden — az az
+ellenőrzés az igazi garancia. Állítsd le előtte, utána indítsd újra — a pontos
 parancssor: [`deploy/README.md`](deploy/README.md).
 
 A napi Shortcut ettől független — az a mai adatot hozza, az import a múltat.
+
+### Mélyelemzés
+
+`npm run analyze` végigmegy a teljes történeten, és területenként külön elemzést
+ad: fizikai fejlődés, regenerálódás, pénzügy, majd egy összegzés, ami a
+kiszámolt összefüggéseket nézi.
+
+A számokat kód számolja, nem a modell — gördülő átlagok, trendek, korrelációk,
+mindegyik mellett a lefedettséggel. A modell ezekre mond véleményt. Ha a Groq
+nem elérhető, a számok akkor is kiíródnak.
+
+Nagyjából három percig tart: hívásonként egy perc szünet, mert az ingyenes szint
+6 000 tokent enged percenként, és így minden terület a teljes keretet kapja.
+
+Minden lefutás elmentődik, és a következő elemzés területenként az utolsó három
+összegzést látja — ettől tud olyat mondani, hogy „harmadik hónapja jelzem".
 
 `GET /api/morning-brief` query paraméterei:
 
