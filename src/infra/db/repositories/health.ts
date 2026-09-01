@@ -18,37 +18,53 @@ export const HISTORY_COLUMNS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Columns whose value is only complete once the day is over.
+ * Columns that count something up as the day runs, and are only whole at
+ * midnight: a step is added to today's total, an HRV reading is not.
  *
- * These are the day totals and day averages: they keep changing until
- * midnight. The Shortcut's evening run fires at 23:55, so its number is always
- * five minutes short — and that near-miss used to freeze permanently, because
- * the import could never correct it. Everything absent from this set is the
- * opposite kind of reading: an HRV or an RHR taken at 07:30 is final the
- * moment it is taken, and the export's whole-day average of it is a different,
- * less useful number than the one the brief wants.
+ * This is the one distinction both writers below turn on, and the rule it
+ * expresses is: a measurement that is final when taken belongs to whoever took
+ * it; a measurement that accumulates over a day belongs to whoever wrote last,
+ * because they saw more of the day. For a counter, "later" and "more complete"
+ * are the same fact — the 23:59 re-run of a failed 23:55 post, and the monthly
+ * export, are both simply the last writer with the fullest view.
  *
- * Hence the single rule both writers below obey, inverted between them:
- * a measurement that is final when taken belongs to whoever took it;
- * a measurement that accumulates over a day belongs to whoever saw the
- * whole day.
+ * Only genuine counters belong here. A day AVERAGE is not an accumulation, and
+ * this is not a matter of taste: `walking_hr`, `walking_speed`,
+ * `step_length_cm`, `double_support_pct`, `asymmetry_pct`, `stair_up_ms` and
+ * `stair_down_ms` all come out of the rollup's `agg: "avg"` path — the very
+ * same unweighted mean that produces `hrv`, `rhr` and `vo2max`, which nobody
+ * would put in this set. Adding a sample to a mean does not make it more
+ * complete, it makes it a different number, and a whole-day mean is not the
+ * reading the brief asks about. `walking_hr` is the plainest case of all:
+ * `WalkingHeartRateAverage` is one sample Apple has already computed for the
+ * day, so it does not change through the day at all.
  */
 export const ACCUMULATES_OVER_DAY: ReadonlySet<string> = new Set([
   "steps", "distance_km", "move_kcal", "basal_kcal", "exercise_min",
   "flights", "stand_min",
   "diet_kcal", "diet_protein_g", "diet_carbs_g", "diet_fat_g",
-  "walking_hr", "walking_speed", "step_length_cm",
-  "double_support_pct", "asymmetry_pct", "stair_up_ms", "stair_down_ms",
 ]);
 
 const incomingWins = (c: string) => `${c} = COALESCE(excluded.${c}, health_snapshots.${c})`;
 const existingWins = (c: string) => `${c} = COALESCE(health_snapshots.${c}, excluded.${c})`;
 
-/** The phone took the reading, so it wins — unless the day was still running. */
-const upsertAssignment = (c: string) =>
-  ACCUMULATES_OVER_DAY.has(c) ? existingWins(c) : incomingWins(c);
+/**
+ * The phone's post always wins, whatever kind of column it is.
+ *
+ * Both halves of the rule point the same way here, which is why this needs no
+ * split: the phone took the final-when-taken readings itself, and for a day
+ * total a second post is a later look at the same counter — the 23:59 re-run
+ * of a failed 23:55 run saw four more minutes of the day, not fewer.
+ */
+const upsertAssignment = incomingWins;
 
-/** The import saw the whole day, so it wins exactly where that is what counts. */
+/**
+ * The import fills holes, and owns the counters — it wrote last and saw most.
+ *
+ * It must never touch a final-when-taken column that already has a value: the
+ * export's whole-day mean of an HRV is a different number from the one the
+ * phone measured at 07:30, not a better one.
+ */
 const fillGapsAssignment = (c: string) =>
   ACCUMULATES_OVER_DAY.has(c) ? incomingWins(c) : existingWins(c);
 
@@ -100,9 +116,12 @@ export interface HealthRepo {
    * route already separates "no sample" from "measured zero", so a null
    * arriving here means the reading genuinely was not taken.
    *
-   * Where a value already exists, `ACCUMULATES_OVER_DAY` decides who keeps it:
-   * the phone wins on its own morning readings, and yields on the day totals
-   * its 23:55 run could only ever have seen five minutes short.
+   * Where a value already exists, this post wins it. That holds for both kinds
+   * of column at once: the phone took the final-when-taken readings, and for a
+   * day total the newer post is simply the later look at a running counter.
+   * The two daily runs send disjoint fields, so in practice they do not even
+   * contend — but a re-run of a failed run does, and there the newer number is
+   * the fuller one.
    */
   upsert(snapshot: Omit<HealthSnapshot, "ingestedAt">, raw: unknown, now: Date): void;
   latest(onOrBefore: string): HealthSnapshot | undefined;
@@ -118,8 +137,12 @@ export interface HealthRepo {
    * that was final when taken, today's row already holds the better number —
    * the one the phone measured this morning — and the export must not replace
    * it, so only a NULL is filled. For a column in `ACCUMULATES_OVER_DAY` the
-   * export's month-end figure is by definition the more complete one, so it
-   * overwrites. Declarative either way — no provenance tracking needed.
+   * import is the last writer and saw the most of the day, so it overwrites.
+   * Declarative either way — no provenance tracking needed.
+   *
+   * That second half is only true of days the export saw whole. The export's
+   * own last day is partial by construction, so the import strips its counters
+   * before calling this — see `withoutPartialDayTotals`.
    */
   fillGaps(date: string, values: Record<string, number>, now: Date): void;
   /** The most recent day holding a value in `column`, or null. */
@@ -204,8 +227,12 @@ const toSnapshot = (r: Row): HealthSnapshot => ({
  * The INSERT, its placeholders, the ON CONFLICT assignments and the bound
  * values are all derived from this one list, so a column can no longer be
  * written in one of the four places and forgotten in the others.
+ *
+ * Exported so the invariant test can hold it against `HISTORY_COLUMNS`:
+ * dropping a row here still typechecks, and would silently change that
+ * column's write behaviour rather than break anything visible.
  */
-const SNAPSHOT_FIELDS: readonly (readonly [string, Exclude<keyof HealthSnapshot, "date" | "ingestedAt">])[] = [
+export const SNAPSHOT_FIELDS: readonly (readonly [string, Exclude<keyof HealthSnapshot, "date" | "ingestedAt">])[] = [
   ["sleep_h", "sleepH"],
   ["hrv", "hrv"],
   ["rhr", "rhr"],

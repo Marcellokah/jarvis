@@ -247,7 +247,7 @@ export function registerIngestRoutes(
     // the rollup's 7.2 and leave 0.3 sitting beside an `asleep_min` of 430.
     // Reversing the two writes does not help: `fillGaps` is existing-wins for
     // the same column and would skip the value already there. Neither half of
-    // that changed when the day totals were inverted — every column this path
+    // that depends on how the day totals are settled — every column this path
     // can produce is a sleep column, and none of them accumulate over a day.
     //
     // `asleep_min` is the marker. It can only ever have come from the samples
