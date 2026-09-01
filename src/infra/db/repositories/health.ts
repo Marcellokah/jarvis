@@ -18,24 +18,42 @@ export const HISTORY_COLUMNS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Columns that count something up as the day runs, and are only whole at
- * midnight: a step is added to today's total, an HRV reading is not.
+ * Columns that count something up as the day runs: a step is added to today's
+ * total, an HRV reading is not. A counter is only whole at midnight, so a value
+ * read out of a day that is still running is a fraction of the real one.
  *
- * This is the one distinction both writers below turn on, and the rule it
- * expresses is: a measurement that is final when taken belongs to whoever took
- * it; a measurement that accumulates over a day belongs to whoever wrote last,
- * because they saw more of the day. For a counter, "later" and "more complete"
- * are the same fact — the 23:59 re-run of a failed 23:55 post, and the monthly
- * export, are both simply the last writer with the fullest view.
+ * That fraction is all this set is for. `withoutPartialDayTotals` uses it to
+ * keep the import from writing the counters of the one day its export only saw
+ * part of. It decides nothing about precedence: both writers below treat every
+ * column alike, whatever kind it is.
+ *
+ * It was tried as a precedence rule and withdrawn, and the reason is worth
+ * keeping because the idea is a natural one to have twice. The rule said the
+ * import should OVERWRITE these columns, since a monthly export "saw the whole
+ * day" and the phone's 23:55 Shortcut did not. But the export's number is not
+ * the whole day. For an `agg: "sum"` type the rollup never adds the sources
+ * together — it keeps ONE source's raw sum, the largest single source, because
+ * the iPhone and the Watch record the same minutes and adding them produced
+ * 81,272-step days. Its own comment calls what it keeps "a real but partial
+ * count" (see rollup.ts). On any day both devices were worn, the import's
+ * figure is deliberately conservative and can sit well below the day's real
+ * total — while the phone's Shortcut sums Health's raw samples and may
+ * double-count those same sources in the other direction. Neither number is
+ * Health's own merged daily total, so overwriting either with the other is not
+ * an improvement but a coin flip, and the losing side of that flip destroys a
+ * true value and leaves a plausible smaller one in its place. Missing data
+ * beats confidently wrong data. Reviving the idea takes a rollup that can
+ * produce a merged daily total; the precedence direction was never the piece
+ * that was missing.
  *
  * Only genuine counters belong here. A day AVERAGE is not an accumulation, and
  * this is not a matter of taste: `walking_hr`, `walking_speed`,
  * `step_length_cm`, `double_support_pct`, `asymmetry_pct`, `stair_up_ms` and
  * `stair_down_ms` all come out of the rollup's `agg: "avg"` path — the very
  * same unweighted mean that produces `hrv`, `rhr` and `vo2max`, which nobody
- * would put in this set. Adding a sample to a mean does not make it more
- * complete, it makes it a different number, and a whole-day mean is not the
- * reading the brief asks about. `walking_hr` is the plainest case of all:
+ * would put in this set. A mean of a half-finished day is not a half-finished
+ * number, it is a different number, so withholding it would hide a reading that
+ * is perfectly good. `walking_hr` is the plainest case of all:
  * `WalkingHeartRateAverage` is one sample Apple has already computed for the
  * day, so it does not change through the day at all.
  */
@@ -49,24 +67,30 @@ const incomingWins = (c: string) => `${c} = COALESCE(excluded.${c}, health_snaps
 const existingWins = (c: string) => `${c} = COALESCE(health_snapshots.${c}, excluded.${c})`;
 
 /**
- * The phone's post always wins, whatever kind of column it is.
+ * A phone post writes whatever it carries, over whatever is there.
  *
- * Both halves of the rule point the same way here, which is why this needs no
- * split: the phone took the final-when-taken readings itself, and for a day
- * total a second post is a later look at the same counter — the 23:59 re-run
- * of a failed 23:55 run saw four more minutes of the day, not fewer.
+ * Not because later is better in general, but because the phone is one source
+ * talking about its own day: the two daily runs send disjoint fields, so the
+ * only thing a second post carrying the same field can be is that run saying it
+ * again — the 23:59 re-run of a failed 23:55 run. There is no second opinion to
+ * weigh, so there is nothing to protect the first value from.
  */
 const upsertAssignment = incomingWins;
 
 /**
- * The import fills holes, and owns the counters — it wrote last and saw most.
+ * The import fills holes and nothing else.
  *
- * It must never touch a final-when-taken column that already has a value: the
- * export's whole-day mean of an HRV is a different number from the one the
- * phone measured at 07:30, not a better one.
+ * Every column, without exception: where the row already holds a value, the
+ * export's is dropped unseen. For a reading that was final when taken that is
+ * plainly right — the export's whole-day mean of an HRV is a different number
+ * from the one the phone measured at 07:30, not a better one. For a day counter
+ * it is right for a less obvious reason, spelled out at `ACCUMULATES_OVER_DAY`:
+ * neither writer's total is Health's merged one, so neither can be trusted to
+ * correct the other. This is also why the import must not plant a half-day
+ * counter into an empty row — see `withoutPartialDayTotals`, since what is
+ * written here can never be taken back.
  */
-const fillGapsAssignment = (c: string) =>
-  ACCUMULATES_OVER_DAY.has(c) ? incomingWins(c) : existingWins(c);
+const fillGapsAssignment = existingWins;
 
 export interface HealthSnapshot {
   date: string;
@@ -116,12 +140,9 @@ export interface HealthRepo {
    * route already separates "no sample" from "measured zero", so a null
    * arriving here means the reading genuinely was not taken.
    *
-   * Where a value already exists, this post wins it. That holds for both kinds
-   * of column at once: the phone took the final-when-taken readings, and for a
-   * day total the newer post is simply the later look at a running counter.
-   * The two daily runs send disjoint fields, so in practice they do not even
-   * contend — but a re-run of a failed run does, and there the newer number is
-   * the fuller one.
+   * Where a value already exists, this post wins it — see `upsertAssignment`
+   * for why that is safe: the runs send disjoint fields, so the only post that
+   * can contend with an earlier one is that same run, re-run.
    */
   upsert(snapshot: Omit<HealthSnapshot, "ingestedAt">, raw: unknown, now: Date): void;
   latest(onOrBefore: string): HealthSnapshot | undefined;
@@ -131,18 +152,14 @@ export interface HealthRepo {
   /** Every snapshot in an inclusive date range, oldest first. */
   between(from: string, to: string): HealthSnapshot[];
   /**
-   * The import's write: it fills holes, and corrects the day totals.
+   * Writes only the columns that are currently NULL.
    *
-   * This is what lets a monthly re-import run without thought. For a reading
-   * that was final when taken, today's row already holds the better number —
-   * the one the phone measured this morning — and the export must not replace
-   * it, so only a NULL is filled. For a column in `ACCUMULATES_OVER_DAY` the
-   * import is the last writer and saw the most of the day, so it overwrites.
-   * Declarative either way — no provenance tracking needed.
-   *
-   * That second half is only true of days the export saw whole. The export's
-   * own last day is partial by construction, so the import strips its counters
-   * before calling this — see `withoutPartialDayTotals`.
+   * This is what lets a monthly re-import run without thought: today's row
+   * already holds what the phone posted this morning, and the export must not
+   * replace it. COALESCE says exactly that, declaratively — no provenance
+   * tracking needed. The other side of it is that a value written here is
+   * permanent as far as the import is concerned, which is what makes
+   * `withoutPartialDayTotals` necessary rather than merely tidy.
    */
   fillGaps(date: string, values: Record<string, number>, now: Date): void;
   /** The most recent day holding a value in `column`, or null. */

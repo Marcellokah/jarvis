@@ -117,12 +117,11 @@ if (contested.length > 0) {
 }
 
 // The export stops mid-day on the day it was made, so its counters for that
-// day are a fraction of the real total. The import owns those columns on every
-// other day — it is the last writer with the fullest view — and here it is the
-// opposite, so it stays out. Said out loud for the same reason as the block
-// above: a day total that is deliberately absent must not look like one that
-// went missing.
-const writable = withoutPartialDayTotals(days, range.to);
+// day are a fraction of the real total — and fillGaps only ever fills holes,
+// so writing that fraction would freeze it in the row for good. Said out loud
+// for the same reason as the block above: a day total that is deliberately
+// absent must not look like one that went missing.
+const writable = withoutPartialDayTotals(days);
 if (writable.partialDay) {
   console.log(
     `  A(z) ${writable.partialDay} nap még tartott, amikor az export készült — `
@@ -130,7 +129,10 @@ if (writable.partialDay) {
     + `${writable.dayDropped ? ", és így ez a nap egészben kimaradt" : ""}:`,
   );
   console.log(`    ${writable.withheld.join(", ")}`);
-  console.log("    (a telefon esti értéke a teljes, ezt nem írjuk felül egy fél nappal)");
+  console.log(
+    "    (az export csak a nap egy részét látta, ezért ezek az összegek "
+    + "üresen maradnak — nem fél napnyi értékkel)",
+  );
 }
 
 // One transaction for ~2,750 statements: without it each write would fsync on
