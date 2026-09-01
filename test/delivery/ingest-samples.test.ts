@@ -477,15 +477,48 @@ describe("ingest — the phone's own number format", () => {
     // The column that was stored as 0: the Watch's real 1198,36 kcal.
     expect(days[0]!.values.move_kcal).toBe(1198.363);
 
-    // The iPhone's empty ActiveEnergyBurned no longer becomes a zero: the strict
-    // parser refuses it. Noisily for now, one line per entry — turning that into
-    // one aggregate line is the next commit's job. The point here is only that
-    // nothing was invented.
-    expect(ignored).toHaveLength(1);
-    expect(ignored[0]!.reason).toContain("értelmezhetetlen szám");
+    // The iPhone's empty ActiveEnergyBurned is reported once, in aggregate.
+    expect(ignored).toEqual([
+      { field: "samples", reason: "üres napi összeg, mérés nélkül eldobva: 1 (nem nulla érték)" },
+    ]);
   });
 
+  it("does not let an empty aggregate outrank the source that measured something", async () => {
+    // The exact failure of 2026-09-01, isolated: the Watch burned 1198,36 kcal
+    // and the iPhone recorded no ActiveEnergyBurned at all. `""` is not a zero
+    // it is entitled to compete with, so it must not appear as a source of this
+    // column at all — the stored number is the Watch's, uncontested.
+    const { days, ignored } = await readSamples([
+      counter({ type: "ActiveEnergyBurned", source: WATCH, unit: "kcal", value: "1198,36299999997" }),
+      counter({ type: "ActiveEnergyBurned", source: PHONE, unit: "kcal", value: "" }),
+    ]);
 
+    expect(days[0]!.values.move_kcal).toBe(1198.363);
+    expect(days[0]!.values.move_kcal).not.toBe(0);
+    expect(ignored).toHaveLength(1);
+    expect(ignored[0]!.reason).toContain("üres napi összeg");
+  });
+
+  it("drops an empty aggregate instead of writing a zero nobody measured", async () => {
+    // Every entry here is empty, which is an ordinary night: the Shortcut asks
+    // all eleven counter types of both sources, and the iPhone records no
+    // energy, no stand time and no dietary data. Nothing may be stored — a 0
+    // here would be a measurement that was never taken, and it would then be
+    // fillGaps'd into the row as a real number.
+    const { days, ignored } = await readSamples([
+      counter({ type: "ActiveEnergyBurned", source: PHONE, unit: "kcal", value: "" }),
+      counter({ type: "AppleStandTime", source: PHONE, unit: "min", value: "" }),
+      counter({ type: "DietaryProtein", source: PHONE, unit: "g", value: "" }),
+    ]);
+
+    expect(days).toEqual([]);
+    // One line for all three, not three lines: most (type, source) pairs are
+    // legitimately empty every single night, and naming each would bury the
+    // reply the way the refusedTypes counter already avoids.
+    expect(ignored).toEqual([
+      { field: "samples", reason: "üres napi összeg, mérés nélkül eldobva: 3 (nem nulla érték)" },
+    ]);
+  });
 
   it("keeps a genuine zero, which is a measurement and not an absence", async () => {
     // A source that has samples and sums to zero said something. Only the empty
@@ -521,6 +554,19 @@ describe("ingest — the phone's own number format", () => {
     expect(ignored[1]!.reason).toContain("8,7 km");
   });
 
+  it("names a value the Shortcut never wired up, rather than counting it as empty", async () => {
+    // An absent `value` key is a half-built step somebody has to fix, not a
+    // source that recorded nothing — so it is named, not folded into the count.
+    const { days, ignored } = await readSamples([
+      { type: "StepCount", unit: "count", source: WATCH,
+        startDate: "2026-09-01T23:08:34+02:00", endDate: "2026-09-01T23:08:34+02:00" },
+    ]);
+
+    expect(days).toEqual([]);
+    expect(ignored).toEqual([
+      { field: "samples[0]", reason: "StepCount: hiányzó érték" },
+    ]);
+  });
 
   it("writes the real payload's columns to the row, end to end", async () => {
     const a = await boot();
