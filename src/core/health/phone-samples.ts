@@ -84,3 +84,51 @@ export function normaliseSleepValue(raw: string): string | null {
   if (trimmed.startsWith("HKCategoryValueSleepAnalysis")) return trimmed;
   return SLEEP_VALUES[trimmed.toLowerCase().replace(/[\s_-]/g, "")] ?? null;
 }
+
+/** A machine-formatted number: digits, optionally a dot fraction. */
+const PLAIN_NUMBER = /^-?\d+(?:\.\d+)?$/;
+
+/**
+ * The one comma shape the phone was observed to send: digits, one comma,
+ * digits, and nothing else anywhere in the string.
+ */
+const COMMA_DECIMAL = /^-?\d+,\d+$/;
+
+/**
+ * A counter aggregate's value as the phone writes it -> a string the rollup can
+ * read, or null.
+ *
+ * Shortcuts renders numbers in the phone's locale, and the owner's phone is
+ * Hungarian: measured on 2026-09-01, `8.71793477021344` km arrived as
+ * `8,71793477021344` and 1198.363 kcal as `1198,36299999997`. The rollup calls
+ * `Number()` on the value, which returns NaN for both — so `distance_km`
+ * vanished from that day entirely and the energy columns lost their only real
+ * source. Integers were unaffected, which is why steps and flights landed.
+ *
+ * WHY A DECIMAL COMMA IS UNAMBIGUOUS HERE, when `1,234` is not in general.
+ * `1198,36299999997` is the proof: a locale that grouped thousands would have
+ * written it `1.198,36299999997`. Shortcuts emits no grouping separator at all,
+ * so within this payload a comma can only be the decimal point. Crucially, that
+ * reading is not an assumption this function is free to be wrong about — every
+ * shape that would REVEAL grouping (a second comma, a dot beside a comma, a
+ * space between digit groups) fails both patterns and is refused by name. So if
+ * the phone ever starts grouping, this returns null and the reply says so; it
+ * cannot quietly turn 1234 into 1.234.
+ *
+ * What would have to change for the ambiguity to bite: Shortcuts (or another
+ * caller) beginning to emit grouped thousands with the group separator omitted
+ * for values under 10,000 — the one case that still looks like a bare decimal.
+ * Nothing observed does that, and the fix if it appears is not a cleverer
+ * heuristic but a locale declared in the payload, the same way `unit` is.
+ *
+ * Everything outside the two patterns is refused rather than coerced. `Number()`
+ * is far too generous for a boundary like this: it reads "", " ", "0x1f", "1e5"
+ * and "Infinity" as numbers, and an empty string as zero — which is the other
+ * half of the same bug this fix exists for.
+ */
+export function normalisePhoneNumber(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (PLAIN_NUMBER.test(trimmed)) return trimmed;
+  if (COMMA_DECIMAL.test(trimmed)) return trimmed.replace(",", ".");
+  return null;
+}

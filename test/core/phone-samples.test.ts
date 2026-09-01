@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { toAppleDate, normaliseSleepValue } from "../../src/core/health/phone-samples.ts";
+import {
+  toAppleDate, normaliseSleepValue, normalisePhoneNumber,
+} from "../../src/core/health/phone-samples.ts";
 
 describe("toAppleDate", () => {
   it("keeps the local wall clock and the offset", () => {
@@ -73,5 +75,62 @@ describe("normaliseSleepValue", () => {
     // data yet. So an unknown name must surface, not vanish.
     expect(normaliseSleepValue("Mély alvás")).toBeNull();
     expect(normaliseSleepValue("")).toBeNull();
+  });
+});
+
+describe("normalisePhoneNumber", () => {
+  it("reads the decimal comma the phone actually sent", () => {
+    // Both verbatim from the first live run on 2026-09-01. The owner's phone is
+    // Hungarian, so Shortcuts renders 8.71793477021344 with a comma — and the
+    // rollup's Number() call turned it into NaN, which is why distance_km
+    // vanished from that day and the energy columns lost their only source.
+    expect(normalisePhoneNumber("8,71793477021344")).toBe("8.71793477021344");
+    expect(normalisePhoneNumber("1198,36299999997")).toBe("1198.36299999997");
+    expect(Number(normalisePhoneNumber("8,71793477021344")!)).toBeCloseTo(8.71793477021344, 12);
+  });
+
+  it("passes machine-formatted numbers through untouched", () => {
+    // Integers were never broken — steps and flights landed on 2026-09-01 —
+    // and a caller that can send a dot must keep working.
+    expect(normalisePhoneNumber("12727")).toBe("12727");
+    expect(normalisePhoneNumber("0")).toBe("0");
+    expect(normalisePhoneNumber("8.717")).toBe("8.717");
+    expect(normalisePhoneNumber("-1.5")).toBe("-1.5");
+    expect(normalisePhoneNumber("  6645  ")).toBe("6645");
+  });
+
+  it("reads a short comma decimal as a decimal, because nothing here groups", () => {
+    // `1,234` is genuinely ambiguous in the abstract. It is not ambiguous in
+    // this payload: `1198,36299999997` proves Shortcuts writes no thousands
+    // separator, so a lone comma can only be the decimal point. The shapes that
+    // would reveal grouping are all refused below, so this reading cannot be
+    // silently wrong — it can only stop being accepted.
+    expect(normalisePhoneNumber("1,234")).toBe("1.234");
+  });
+
+  it("refuses a grouped number instead of guessing which comma means what", () => {
+    // The moment a separator pair appears, the decimal comma stops being the
+    // only reading — so this refuses rather than picking one. A refusal is
+    // named in the reply; a wrong pick would be a plausible-looking number.
+    expect(normalisePhoneNumber("1.198,363")).toBeNull();
+    expect(normalisePhoneNumber("1,198.363")).toBeNull();
+    expect(normalisePhoneNumber("1,198,363")).toBeNull();
+    expect(normalisePhoneNumber("1 234")).toBeNull();
+    expect(normalisePhoneNumber("1 234,5")).toBeNull();
+  });
+
+  it("refuses everything Number() would have been too generous about", () => {
+    // Number() reads all of these, and the empty string as zero. That is the
+    // generosity this boundary exists to remove: a refusal is visible, a
+    // silently rescaled or invented number is not.
+    expect(normalisePhoneNumber("")).toBeNull();
+    expect(normalisePhoneNumber("   ")).toBeNull();
+    expect(normalisePhoneNumber("0x1f")).toBeNull();
+    expect(normalisePhoneNumber("1e5")).toBeNull();
+    expect(normalisePhoneNumber("Infinity")).toBeNull();
+    expect(normalisePhoneNumber("12,")).toBeNull();
+    expect(normalisePhoneNumber(",5")).toBeNull();
+    expect(normalisePhoneNumber("8,7 km")).toBeNull();
+    expect(normalisePhoneNumber("nyolc")).toBeNull();
   });
 });

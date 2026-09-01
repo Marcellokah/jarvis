@@ -7,7 +7,7 @@ import type { Logger } from "../../../infra/logger.ts";
 import { isoDate, TZ } from "../../../shared/dates.ts";
 import { rollup, DAILY } from "../../../infra/health-export/rollup.ts";
 import type { ExportEntry } from "../../../infra/health-export/reader.ts";
-import { toAppleDate, normaliseSleepValue } from "../../../core/health/phone-samples.ts";
+import { toAppleDate, normaliseSleepValue, normalisePhoneNumber } from "../../../core/health/phone-samples.ts";
 
 /**
  * Apple Health has no server-side API, so the iOS Shortcut pushes a snapshot
@@ -207,6 +207,13 @@ function unpackSamples(
  * Health's display unit, so it declares what it believes it is sending and the
  * server's job is to refuse a declared mismatch — never to convert.
  *
+ * The value itself is normalised before the rollup sees it, and refused rather
+ * than coerced when it cannot be read: the phone writes decimals in its own
+ * locale (a comma), and an empty value means the source recorded nothing of
+ * that type rather than zero of it. Both are handled at this boundary because
+ * the rollup reads values with `Number()`, which turns the first into NaN and
+ * the second into a real 0 that then competes as a per-source total.
+ *
  * `agg: "avg"` types stay refused here. They are not broken: a Shortcut
  * averages a quantity type perfectly well, and the direct `READING` fields
  * already carry every one of them. Accepting them here would only open a second
@@ -223,6 +230,14 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
   // type in here sends hundreds of them, and hundreds of identical lines would
   // bury the rest of the reply instead of naming the mistake.
   const refusedTypes = new Map<string, number>();
+  // Counted, never named one by one. The Shortcut asks every counter type of
+  // every source, so most (type, source) pairs are legitimately empty EVERY
+  // night — the iPhone records no ActiveEnergyBurned, no AppleStandTime and no
+  // dietary data at all. Naming each would bury the rest of the reply exactly
+  // the way `refusedTypes` above describes, and would train the owner to stop
+  // reading it. One line saying how many is enough to notice the day the
+  // Shortcut goes quiet altogether.
+  let emptyAggregates = 0;
 
   for (const [i, s] of (raw as PhoneSample[]).entries()) {
     const type = typeof s?.type === "string" ? s.type : null;
@@ -268,11 +283,47 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
         continue;
       }
 
+      // A missing `value` key is a half-wired Shortcut step, not an empty
+      // aggregate — named, because it is a mistake somebody has to fix.
+      const rawValue = typeof s.value === "string" ? s.value.trim()
+        : typeof s.value === "number" ? String(s.value)
+        : null;
+      if (rawValue === null) {
+        ignored.push({ field: `samples[${i}]`, reason: `${type}: hiányzó érték` });
+        continue;
+      }
+
+      // An empty value means this source recorded nothing of this type, which
+      // is not a measurement and must never become one. `Number("")` is 0, and
+      // the rollup's `Number.isFinite` check waves that 0 through as a real
+      // per-source total — so on 2026-09-01 the iPhone's empty
+      // ActiveEnergyBurned entered the pick as a genuine zero, and with the
+      // Watch's comma-formatted 1198,36 lost to the parse above it was the only
+      // candidate left. The day was stored as move_kcal = 0.
+      //
+      // A source that has samples and genuinely sums to zero is a different
+      // thing and still arrives as "0", which is a real reading and is kept.
+      if (rawValue === "") { emptyAggregates += 1; continue; }
+
+      // The phone's locale renders decimals with a comma. Translated here at
+      // the boundary rather than in the rollup, whose correctness must not
+      // depend on the phone's path growing — and refused by name when the shape
+      // is not the unambiguous one, never guessed at.
+      const value = normalisePhoneNumber(rawValue);
+      if (value === null) {
+        ignored.push({
+          field: `samples[${i}]`,
+          reason: `${type}: értelmezhetetlen szám (${rawValue})`,
+        });
+        continue;
+      }
+
       entries.push({
         kind: "record", type,
-        // Left as text on purpose: the rollup parses and range-checks the value
-        // itself, and a number that is not finite is counted in its `skipped`.
-        value: typeof s.value === "string" ? s.value : String(s.value ?? ""),
+        // Still text: the rollup parses and range-checks the value itself. What
+        // changed is only that the text is now guaranteed to be a shape
+        // `Number()` reads the same way this boundary read it.
+        value,
         unit, startDate: start, endDate: end, source,
       });
       continue;
@@ -293,6 +344,13 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
       // the source name to mark the day as contested, so a stand-in name here
       // cannot change a single stored minute.
       source: typeof s.source === "string" ? s.source : "iPhone",
+    });
+  }
+
+  if (emptyAggregates > 0) {
+    ignored.push({
+      field: "samples",
+      reason: `üres napi összeg, mérés nélkül eldobva: ${emptyAggregates} (nem nulla érték)`,
     });
   }
 
