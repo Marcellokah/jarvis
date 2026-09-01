@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderPage, metricsRowsFrom, type PageData } from "../../src/delivery/http/page.ts";
 import type { Metric } from "../../src/core/analysis/stats.ts";
 import type { Metrics } from "../../src/core/analysis/aggregate.ts";
+import { buildTestApp, TEST_TOKEN, stubModule } from "../helpers.ts";
 
 const base: PageData = {
   dateLabel: "2026. szeptember 1., kedd",
@@ -139,5 +140,42 @@ describe("metricsRowsFrom", () => {
     expect(hrv.value).toContain("68,7");
     expect(hrv.detail).toContain("6 nap");
     expect(hrv.detail).toContain("86%");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routes, through the real in-process Fastify server.
+// ---------------------------------------------------------------------------
+
+describe("page routes", () => {
+  const boot = () => buildTestApp({ modules: [stubModule({ name: "Teszt" })], now: "2026-09-01T08:00:00.000Z" });
+
+  it("serves the page as HTML without a token", async () => {
+    // `/` is not under `/api/`, and the server binds to 127.0.0.1 only.
+    const app = await boot();
+    const res = await app.server.inject({ method: "GET", url: "/" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    await app.close();
+  });
+
+  it("refuses a question without the token", async () => {
+    const app = await boot();
+    const res = await app.server.inject({
+      method: "POST", url: "/api/chat", payload: { question: "Mi újság?" },
+    });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("rejects an empty question", async () => {
+    const app = await boot();
+    const res = await app.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "   " },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
   });
 });
