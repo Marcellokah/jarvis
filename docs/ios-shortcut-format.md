@@ -282,6 +282,23 @@ csak lyukat tölt). Legfeljebb a két futás közti pár perccel kevesebb — v�
 csere: egyik futás száma sem a Health saját összefésült napi összege, tehát
 egyik sem javíthatja a másikat.
 
+## Amit a Shortcut a számokkal csinál
+
+Két dolog, ami csak éles futásból derült ki, és mindkettő csendben rontott:
+
+**Tizedesvessző.** A `Calculate Statistics` eredménye a telefon területi
+beállítása szerint formázódik: magyar nyelvnél `8,71793477021344`, nem
+`8.717…`. Az egészeket ez nem érinti — ezért ment át a lépésszám, és tűnt el
+ugyanabban a küldésben a táv és a két kalória-mező. Ezredes csoportosítót nem
+tesz bele (`1198,36299999997`), ezért egyértelmű a `\d+,\d+` alak; minden más,
+ami vesszőt tartalmaz, visszautasítva jobb, mint kitalálva.
+
+**Üres érték nulla helyett.** Ha egy típusra az adott forrásnál nincs minta, a
+mező üres sztringként megy el, nem marad ki. `Number("")` viszont `0` — ami
+valódi forrás-összegként versenyez, és nyer is, ha a másik forrás értéke épp
+elveszett. Így került `0 kcal` egy 1198 kcal-os nap helyére. Az üres nem mérés,
+tehát el kell dobni, mielőtt bárhová eljutna.
+
 ## Amit a Shortcut nem tud, és ezért a szerver dolga
 
 **Az alvás összegzését.** Az óra fázisonként külön mintát ír, tehát egy éjszaka
