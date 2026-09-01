@@ -140,15 +140,46 @@ ilyen minta, nem azt, hogy hiányzik az adat.
 Az S5 óta érvényes szabály marad: **egy rossz mező nem viszi el a többit**, és a
 válasz megnevezi, mit dobott el.
 
-### 5. Az étkezés a tegnapi napra
+### 5. Két kérés: a mai pillanat és a tegnapi összeg
 
-Napközben naplózol, tehát reggel a tegnapi bevitel a teljes. A végpont **már most
-elfogad explicit `date` mezőt**, úgyhogy szerver-oldalon ehhez semmit nem kell
-átírni: a Shortcut küld egy második kérést tegnapi dátummal.
+Nem az étkezés a kivétel — **minden halmozódó napi összeg** csak a nap végén
+teljes. Reggel fél nyolckor a lépésszám nagyjából kétezer, a napi valóság pedig
+tizenegyezer.
+
+És ez nem csak pontatlan lenne, hanem **javíthatatlan**. A két írási útvonal
+ellentétes precedenciájú, szándékosan:
+
+```
+upsert   (telefon):  COALESCE(excluded.x,           health_snapshots.x)  → a beérkező nyer
+fillGaps (import):   COALESCE(health_snapshots.col, excluded.col)        → a meglévő nyer
+```
+
+A telefon reggel beírná a kétezret, és az import **soha nem tudná javítani**. A
+nap véglegesen kétezer lépéssel maradna rögzítve — magabiztosan rossz adat, amit
+mi magunk gyártanánk.
+
+Ezért a mezők aszerint válnak szét, hogy **mikor teljesek**:
+
+**A mai napra, a reggeli kéréssel** — pillanatnyi és éjszakai mérések, amiknek
+reggel már van végleges értékük: `hrv`, `rhr`, az alvás nyers mintái, `vo2max`,
+`hrRecovery`, `walkingHr`, és a járás-metrikák átlagai (`walkingSpeed`,
+`stepLengthCm`, `doubleSupportPct`, `asymmetryPct`, `steadinessPct`,
+`sixMinWalkM`, `stairUpMs`, `stairDownMs`).
+
+**A tegnapi napra, egy második kéréssel** — halmozódó összegek: `steps`,
+`distanceKm`, `moveKcal`, `basalKcal`, `exerciseMin`, `flights`, `standMin`,
+`dietKcal` és a makrók.
+
+A végpont **már most elfogad explicit `date` mezőt**, úgyhogy szerver-oldalon
+ehhez semmit nem kell átírni — csak a Shortcut küld kettőt.
+
+> A mai napi összegek így egy nappal késve érkeznek. Ez helyes csere: a brief a
+> mai *állapotról* beszél — alvás, regeneráció, készenlét —, amihez a pillanatnyi
+> mérések kellenek. A tegnapi teljes lépésszám többet ér, mint a mai fél.
 
 Ettől záródik be egy hurok, ami eddig nyitva volt: a rendszer kiszámolja a napi
 fehérje-célt az étrendtervből, ki is írja a briefbe — és **soha semmi nem mérte
-hozzá, mennyi lett belőle.**
+hozzá, mennyi lett belőle.** A tegnapi étkezés a tegnapi tervhez mérhető.
 
 ### 6. Szokás-őrzés az S6-ban
 
@@ -166,6 +197,10 @@ négy, az étkezés öt hónapja állt le, és soha semmi nem jelezte.
   kétszer fut egy nap, a második nem javítja felül az elsőt. Ez illeszkedik ahhoz,
   ahogy a rendszer mindenhol máshol viselkedik, és inkább ezt választjuk, mint
   egy kivételt.
+- **A halmozódó mezők a tegnapi napra mennek, és ez nem ízlés kérdése.** Egy
+  reggel elküldött részösszeg a `fillGaps` precedenciája miatt véglegesen
+  rögzülne, és az import nem tudná javítani. A szétválasztás nem finomítás,
+  hanem az egyetlen mód, hogy ne mi magunk gyártsunk hamis napokat.
 - **Egy fel nem ismert minta-típus vagy fázisnév nem hiba, hanem jelentés.** A
   válasz `ignored` tömbjébe kerül, és a kérés többi része feldolgozódik.
 - **A `rollup` hibája nem viszi el a mezők útvonalát**: a nyers minták és a
