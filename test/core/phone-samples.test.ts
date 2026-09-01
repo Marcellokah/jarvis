@@ -27,6 +27,23 @@ describe("toAppleDate", () => {
     expect(toAppleDate("tegnap este")).toBeNull();
     expect(toAppleDate("")).toBeNull();
   });
+
+  it("rejects invalid date components", () => {
+    // A month of 13, day of 45, or hour of 99 would silently file on a wrong day.
+    // Validate by round-tripping: the date arithmetic will roll invalid values.
+    expect(toAppleDate("2026-13-01T12:00:00+02:00")).toBeNull();
+    expect(toAppleDate("2026-09-45T12:00:00+02:00")).toBeNull();
+    expect(toAppleDate("2026-09-01T99:00:00+02:00")).toBeNull();
+    expect(toAppleDate("2026-09-01T12:61:00+02:00")).toBeNull();
+  });
+
+  it("accepts an offset written without a colon", () => {
+    expect(toAppleDate("2026-09-01T23:10:00+0200")).toBe("2026-09-01 23:10:00 +0200");
+  });
+
+  it("rejects a timestamp missing the offset entirely", () => {
+    expect(toAppleDate("2026-09-01T23:10:00")).toBeNull();
+  });
 });
 
 describe("normaliseSleepValue", () => {
@@ -47,6 +64,8 @@ describe("normaliseSleepValue", () => {
     expect(normaliseSleepValue("deep")).toBe("HKCategoryValueSleepAnalysisAsleepDeep");
     expect(normaliseSleepValue("in bed")).toBe("HKCategoryValueSleepAnalysisInBed");
     expect(normaliseSleepValue("  Asleep  ")).toBe("HKCategoryValueSleepAnalysisAsleepUnspecified");
+    expect(normaliseSleepValue("deep-sleep")).toBe("HKCategoryValueSleepAnalysisAsleepDeep");
+    expect(normaliseSleepValue("in_bed")).toBe("HKCategoryValueSleepAnalysisInBed");
   });
 
   it("returns null for a name it does not know", () => {
