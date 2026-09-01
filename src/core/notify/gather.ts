@@ -57,7 +57,13 @@ function renewalDeadlines(data: unknown, now: Date): DeadlineItem[] {
     // this notification path checks it, so a renewal read well after its
     // instant has already happened and must not be reported as still ahead.
     const dueAt = `${raw.renewsOn}T07:00:00.000Z`;
-    out.push({ label: `${raw.name} megújul`, dueAt, overdue: Date.parse(dueAt) <= now.getTime() });
+    out.push({
+      label: `${raw.name} megújul`,
+      dueAt,
+      overdue: Date.parse(dueAt) <= now.getTime(),
+      // A renewal happens; it is never "missed" the way a defrost deadline is.
+      sort: "event",
+    });
   }
   return out;
 }

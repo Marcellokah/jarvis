@@ -20,9 +20,15 @@ export interface Candidate {
 
 export interface DeadlineItem {
   label: string;
-  /** ISO instant by which it has to happen. */
+  /** ISO instant by which it has to happen, or at which it happens. */
   dueAt: string;
   overdue: boolean;
+  /**
+   * A deadline can be missed; an event merely arrives. Only the wording
+   * differs — the horizon and the urgency are judged the same way — but
+   * "the deadline has passed" is simply untrue of a renewal.
+   */
+  sort?: "deadline" | "event";
 }
 
 export interface CandidateInput {
@@ -68,15 +74,21 @@ export function candidates(input: CandidateInput): Candidate[] {
     const msLeft = new Date(d.dueAt).getTime() - input.now.getTime();
     if (!d.overdue && msLeft > horizonMs) continue;
 
+    const minutesLeft = Math.max(0, Math.round(msLeft / 60_000));
+    // A deadline you miss is a failure worth naming; an event that already
+    // arrived is not — it happened on schedule, so it gets no deadline
+    // vocabulary at all.
+    const text = (d.sort ?? "deadline") === "event"
+      ? (d.overdue || msLeft <= 0 ? `${d.label} — ma.` : `${d.label} — ${minutesLeft} perc múlva.`)
+      : (d.overdue ? `${d.label} — a határidő már lejárt.` : `${d.label} — ${minutesLeft} perc múlva jár le.`);
+
     out.push({
       // The due day, not the current time: the same task on the same day is
       // the same task however often we look at it.
       key: `deadline:${d.label}:${d.dueAt.slice(0, 10)}`,
       kind: "deadline",
       urgency: d.overdue || msLeft <= 0 ? "now" : "soon",
-      text: d.overdue
-        ? `${d.label} — a határidő már lejárt.`
-        : `${d.label} — ${Math.max(0, Math.round(msLeft / 60_000))} perc múlva jár le.`,
+      text,
     });
   }
 

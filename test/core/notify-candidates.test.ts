@@ -72,6 +72,46 @@ describe("candidates — deadlines", () => {
   });
 });
 
+describe("candidates — events", () => {
+  it("words a future event without deadline vocabulary", () => {
+    const found = candidates(input({
+      deadlines: [{
+        label: "Netflix megújul", dueAt: "2026-09-01T11:00:00.000Z",
+        overdue: false, sort: "event",
+      }],
+    }));
+    expect(found).toHaveLength(1);
+    expect(found[0]!.text).toBe("Netflix megújul — 60 perc múlva.");
+  });
+
+  it("words a past event as arrived, not missed", () => {
+    // overdue:true here mirrors gather.ts deriving it from the fixed renewal
+    // instant — the case that used to render as "a határidő már lejárt.",
+    // which is untrue of something that already happened on schedule.
+    const found = candidates(input({
+      deadlines: [{
+        label: "Netflix megújul", dueAt: "2026-08-29T07:00:00.000Z",
+        overdue: true, sort: "event",
+      }],
+    }));
+    expect(found).toHaveLength(1);
+    expect(found[0]!.text).toBe("Netflix megújul — ma.");
+    expect(found[0]!.text).not.toContain("lejárt");
+  });
+
+  it("still applies the deadline horizon and urgency to events", () => {
+    // Only the wording differs between the two sorts — an event far in the
+    // future is dropped exactly like a distant deadline would be.
+    const found = candidates(input({
+      deadlines: [{
+        label: "messze", dueAt: "2026-09-03T10:00:00.000Z",
+        overdue: false, sort: "event",
+      }],
+    }));
+    expect(found).toEqual([]);
+  });
+});
+
 describe("candidates — health", () => {
   it("takes an HRV deviation at the threshold with enough samples", () => {
     const found = candidates(input({

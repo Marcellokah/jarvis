@@ -63,7 +63,8 @@ describe("gatherCandidates", () => {
 
     const found = await gatherCandidates(d, now, signal());
     expect(found.map((c) => c.kind)).toEqual(["deadline"]);
-    expect(found[0]!.text).toContain("Netflix");
+    // Event wording, not deadline wording: the renewal is 2.5h ahead here.
+    expect(found[0]!.text).toBe("Netflix megújul — 150 perc múlva.");
     db.close();
   });
 
@@ -96,7 +97,10 @@ describe("gatherCandidates", () => {
     });
 
     const found = await gatherCandidates(d, now, signal());
-    expect(found.some((c) => c.text.includes("Spotify"))).toBe(true);
+    // "arrived", not "missed": a lapsed renewal must not read as a failed
+    // deadline (see candidates.ts — the "event" sort exists for this).
+    expect(found[0]!.text).toBe("Spotify megújul — ma.");
+    expect(found[0]!.text).not.toContain("lejárt");
     db.close();
   });
 
