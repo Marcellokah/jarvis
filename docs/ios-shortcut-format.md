@@ -293,13 +293,22 @@ ugyanabban a küldésben a táv és a két kalória-mező. Ezredes csoportosít�
 tesz bele (`1198,36299999997`), ezért egyértelmű a `\d+,\d+` alak; minden más,
 ami vesszőt tartalmaz, visszautasítva jobb, mint kitalálva.
 
-**Egy forráson belül is átfednek a minták.** 2026-09-01: a `Marcell’s Apple
-Watch`-ra szűrt összeg 12 727 lépés és 8,72 km, a Health saját napi összesítője
-6 645 és 4,19 km — kereken kétszeres, egyetlen forrásból. A két azonos nevű
-óra-bejegyzés mint magyarázat kiesett: nincs köztük időbeli átfedés. Marad,
-hogy a Health az összesítéskor feloldja a minták időbeli átfedését, a nyers
-összegzés viszont nem. **Napi összeget így nem lehet Shortcuttal előállítani**,
-és ugyanez a vakfolt megvan az importban is, ami forrásonként szintén összead.
+**Az „elmúlt 1 nap" nem az elmúlt 24 óra, hanem tegnap ÉS ma.** Ez az egyetlen
+hiba, ami a napi összegeket elrontotta, és sokáig másnak látszott. 2026-09-01-én
+az órára szűrt összeg 12 727 lépés volt, a Health 6 645-öt mutatott — a
+különbség pontosan aug. 31 (6 082) plusz szep. 1 (6 645). Ugyanez a telefonra:
+5 353 + 3 321 = 8 674, és a kettő együtt a 21 401, amit a szűrés nélküli `Sum`
+adott. Három egzakt egyezés, nem közelítés.
+
+Egy friss export ezt meg is erősítette: **nulla átfedés és nulla betű szerinti
+duplikátum** egy forráson belül, 2718 napon. A `Source` szerinti szűrés tehát
+helyes, a rollup forrásválasztása helyes — a napi összeg 2718 napból kettőn tért
+el, épp azon a kettőn, amelyikre a régi Shortcut posztolt.
+
+> A `device` attribútum is megnézve: a `Marcell's iPhone` néven három hardver
+> szerepel (13,1 / 17,3 / 9,3), de csak egy ír mostanában. Az órán egyetlen
+> eszköz van. Két azonos nevű eszköz tehát elvileg összeolvadhat egy kulcsba a
+> rollupban, gyakorlatilag ma nem okoz hibát.
 
 **Üres érték nulla helyett.** Ha egy típusra az adott forrásnál nincs minta, a
 mező üres sztringként megy el, nem marad ki. `Number("")` viszont `0` — ami
