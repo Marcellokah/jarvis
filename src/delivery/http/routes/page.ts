@@ -4,12 +4,14 @@ import type { BriefService } from "../../../core/brief-service.ts";
 import { MAX_QUESTION_CHARS, type ChatService } from "../../../core/chat.ts";
 import type { AnalysisRepo } from "../../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo, Turn } from "../../../infra/db/repositories/conversations.ts";
-import type { HealthRepo } from "../../../infra/db/repositories/health.ts";
+import type { HealthRepo, HealthSnapshot } from "../../../infra/db/repositories/health.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
 import { huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
-import { readChannels, summarise } from "../view/channels.ts";
-import { layout, type NavState } from "../view/shell.ts";
+import {
+  readChannels, summarise, type ChannelReading, type ChannelSummary,
+} from "../view/channels.ts";
+import { layout, type NavState, type Section } from "../view/shell.ts";
 import { todayBody } from "../view/today.ts";
 import { numbersBody, type MetricRow } from "../view/numbers.ts";
 import { analysesBody } from "../view/analyses.ts";
@@ -32,37 +34,97 @@ export interface PageDeps {
 
 const body = z.object({ question: z.string().trim().min(1).max(MAX_QUESTION_CHARS) });
 
-/** "2 órája" — a brief kora emberi szavakkal, vagy null, ha nincs brief. */
-function ageWords(from: string, now: Date): string {
-  const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(from)) / 60_000));
+/** "2 órája" — a brief kora emberi szavakkal, vagy null, ha nem olvasható. */
+function ageWords(from: string, now: Date): string | null {
+  const ms = now.getTime() - Date.parse(from);
+  // `Date.parse` answers NaN for anything it cannot read, and `Math.max(0,
+  // NaN)` is NaN — which rendered a confident "NaN napja" in the one place
+  // this project's whole principle points the other way. Missing data beats
+  // confidently wrong data, and it has to look missing: null drops the line
+  // rather than printing a number that was never a number.
+  if (Number.isNaN(ms)) return null;
+  const minutes = Math.max(0, Math.round(ms / 60_000));
   if (minutes < 60) return `${minutes} perce`;
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} órája`;
   return `${Math.round(hours / 24)} napja`;
 }
 
+/** "2026. augusztus 30., vasárnap" — egy naptári nap a keret hangján. */
+function dayWords(day: string): string | null {
+  // Noon UTC, not midnight: a midnight instant read back in Europe/Budapest
+  // lands on the neighbouring day, and the label would name the wrong date.
+  const at = new Date(`${day}T12:00:00Z`);
+  return Number.isNaN(at.getTime()) ? null : huLongDate(at, TZ);
+}
+
 /**
- * The nav lamps, assembled the same way on every page.
+ * Everything the shell shows, plus the reads the bodies share with it.
  *
- * `/` was the only route when this was written inline; `/szamok` makes it the
- * second, so it moves here rather than being copied. Each source keeps its
- * own try/catch, exactly as `/` originally wrote them: a failing analyses
- * repo must dim the "Elemzés" lamp, never take the whole page down.
+ * Four routes want the same status strip and the same nav lamps, and three of
+ * them spelled that out line for line; all four read the cached brief twice,
+ * once for the strip's age and once for the "Ma" lamp. The repetition and the
+ * double read are the same problem, so one function answers both — and each
+ * page's own body then only reads what is uniquely its own.
  */
-async function navState(deps: PageDeps, now: Date): Promise<NavState> {
-  let hasBrief = false;
+interface ShellInputs {
+  dateLabel: string;
+  briefAge: string | null;
+  channels: ChannelSummary;
+  nav: NavState;
+  /** The cached brief's text — null when absent, blank, or unreadable. */
+  briefMarkdown: string | null;
+  /** How old today's row is, already worded — null when there is none. */
+  writtenAge: string | null;
+  /** The most recent day that has any data, already worded, when today has none. */
+  lastSeen: string | null;
+  readings: readonly ChannelReading[];
+  /** The latest analysis per domain: one read for the lamp and the band alike. */
+  analyses: AnalysisRow[];
+}
+
+/**
+ * Each source keeps its own try/catch, exactly as the routes first wrote them.
+ * That isolation is the point of this function's shape, not an accident of
+ * it: a failing brief must not take today's readings with it, and a failing
+ * analyses repo must dim one lamp rather than 500 a page that has everything
+ * else to show.
+ */
+async function shellInputs(deps: PageDeps, now: Date): Promise<ShellInputs> {
+  const today = isoDate(now, TZ);
+
+  // `cached`, never `get`: opening a page must not start a brief generation —
+  // every module plus a Groq synthesis, up to 45 seconds, for a page the
+  // owner only wanted to read.
+  let briefMarkdown: string | null = null;
+  let briefAge: string | null = null;
   try {
     const brief = deps.briefs.cached(now);
-    hasBrief = brief !== null && brief.markdown.trim() !== "";
+    if (brief && brief.markdown.trim() !== "") {
+      briefMarkdown = brief.markdown;
+      briefAge = ageWords(brief.generatedAt, now);
+    }
   } catch (err) {
-    deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
+    deps.logger.warn({ err: String(err) }, "page rendered without a brief");
   }
 
-  let hasAnalysis = false;
+  let snapshot: HealthSnapshot | undefined = undefined;
+  let lastSeen: string | null = null;
   try {
-    hasAnalysis = deps.analyses.latestPerDomain().length > 0;
+    snapshot = deps.health.forDate(today);
+    if (snapshot === undefined) {
+      const previous = deps.health.latest(today)?.date;
+      lastSeen = previous === undefined ? null : dayWords(previous);
+    }
   } catch (err) {
-    deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
+    deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
+  }
+
+  let analyses: AnalysisRow[] = [];
+  try {
+    analyses = deps.analyses.latestPerDomain();
+  } catch (err) {
+    deps.logger.warn({ err: String(err) }, "page rendered without its analyses");
   }
 
   // `available()` is a `SecretResolver` read under the hood, and nothing
@@ -76,83 +138,50 @@ async function navState(deps: PageDeps, now: Date): Promise<NavState> {
     deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
   }
 
+  const readings = readChannels(snapshot, now);
+
   return {
-    ma: hasBrief,
-    elemzes: hasAnalysis,
-    kerdes: chatAvailable,
+    dateLabel: huLongDate(now, TZ),
+    briefAge,
+    channels: summarise(readings),
+    nav: {
+      ma: briefMarkdown !== null,
+      elemzes: analyses.length > 0,
+      kerdes: chatAvailable,
+    },
+    briefMarkdown,
+    writtenAge: snapshot ? ageWords(snapshot.ingestedAt, now) : null,
+    lastSeen,
+    readings,
+    analyses,
   };
+}
+
+/** The shell around one page's body, from inputs every page computes alike. */
+function render(section: Section, inputs: ShellInputs, body: string): string {
+  return layout({
+    section,
+    dateLabel: inputs.dateLabel,
+    briefAge: inputs.briefAge,
+    channels: inputs.channels,
+    nav: inputs.nav,
+    body,
+  });
 }
 
 export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
   app.get("/", async (_request, reply) => {
-    const now = deps.clock.now();
-    const today = isoDate(now, TZ);
-
-    // Each piece fails on its own. The page's job is to show what exists, and
-    // a missing brief must not take today's readings with it.
-
-    // `cached`, never `get`: opening the page must not start a brief
-    // generation — every module plus a Groq synthesis, up to 45 seconds, for a
-    // page the owner only wanted to read.
-    let briefMarkdown: string | null = null;
-    let briefAge: string | null = null;
-    try {
-      const brief = deps.briefs.cached(now);
-      if (brief && brief.markdown.trim() !== "") {
-        briefMarkdown = brief.markdown;
-        briefAge = ageWords(brief.generatedAt, now);
-      }
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without a brief");
-    }
-
-    let snapshot = undefined;
-    let lastSeen: string | null = null;
-    try {
-      snapshot = deps.health.forDate(today);
-      if (snapshot === undefined) lastSeen = deps.health.latest(today)?.date ?? null;
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
-    }
-
-    const readings = readChannels(snapshot, now);
-
-    return reply.type("text/html; charset=utf-8").send(layout({
-      section: "ma",
-      dateLabel: huLongDate(now, TZ),
-      briefAge,
-      channels: summarise(readings),
-      nav: await navState(deps, now),
-      body: todayBody({
-        briefMarkdown,
-        readings,
-        lastSeen,
-        writtenAge: snapshot ? ageWords(snapshot.ingestedAt, now) : null,
-      }),
-    }));
+    const inputs = await shellInputs(deps, deps.clock.now());
+    return reply.type("text/html; charset=utf-8").send(render("ma", inputs, todayBody({
+      briefMarkdown: inputs.briefMarkdown,
+      readings: inputs.readings,
+      lastSeen: inputs.lastSeen,
+      writtenAge: inputs.writtenAge,
+    })));
   });
 
   app.get("/szamok", async (_request, reply) => {
-    const now = deps.clock.now();
-    const today = isoDate(now, TZ);
-
-    // Same status-strip inputs as `/`: the brief's age and today's channel
-    // readings appear on every page, not just the one that shows the brief
-    // itself.
-    let briefAge: string | null = null;
-    try {
-      const brief = deps.briefs.cached(now);
-      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
-    }
-
-    let snapshot = undefined;
-    try {
-      snapshot = deps.health.forDate(today);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
-    }
+    const inputs = await shellInputs(deps, deps.clock.now());
 
     // The aggregate the rows are built from touches every table the app has;
     // a corrupt row or a bad query must dim the numbers, not the page.
@@ -163,81 +192,20 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without its metrics");
     }
 
-    return reply.type("text/html; charset=utf-8").send(layout({
-      section: "szamok",
-      dateLabel: huLongDate(now, TZ),
-      briefAge,
-      channels: summarise(readChannels(snapshot, now)),
-      nav: await navState(deps, now),
-      body: numbersBody(metricsRows),
-    }));
+    return reply.type("text/html; charset=utf-8")
+      .send(render("szamok", inputs, numbersBody(metricsRows)));
   });
 
   app.get("/elemzes", async (_request, reply) => {
-    const now = deps.clock.now();
-    const today = isoDate(now, TZ);
-
-    // Same status-strip inputs as every other page.
-    let briefAge: string | null = null;
-    try {
-      const brief = deps.briefs.cached(now);
-      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
-    }
-
-    let snapshot = undefined;
-    try {
-      snapshot = deps.health.forDate(today);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
-    }
-
-    // Its own try/catch, like every other piece of this page: a failing
-    // analyses repo must render the empty state, never take the page down.
-    let analyses: AnalysisRow[] = [];
-    try {
-      analyses = deps.analyses.latestPerDomain();
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without its analyses");
-    }
-
-    return reply.type("text/html; charset=utf-8").send(layout({
-      section: "elemzes",
-      dateLabel: huLongDate(now, TZ),
-      briefAge,
-      channels: summarise(readChannels(snapshot, now)),
-      nav: await navState(deps, now),
-      body: analysesBody(analyses),
-    }));
+    const inputs = await shellInputs(deps, deps.clock.now());
+    return reply.type("text/html; charset=utf-8")
+      .send(render("elemzes", inputs, analysesBody(inputs.analyses)));
   });
 
   app.get("/kerdes", async (_request, reply) => {
-    const now = deps.clock.now();
-    const today = isoDate(now, TZ);
+    const inputs = await shellInputs(deps, deps.clock.now());
 
-    // Same status-strip inputs as every other page.
-    let briefAge: string | null = null;
-    try {
-      const brief = deps.briefs.cached(now);
-      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
-    }
-
-    let snapshot = undefined;
-    try {
-      snapshot = deps.health.forDate(today);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
-    }
-
-    // `nav.kerdes` is exactly `chat.available()`, already computed with its
-    // own try/catch inside `navState` — reused here instead of calling
-    // `deps.chat.available()` a second time for the same answer.
-    const nav = await navState(deps, now);
-
-    // Its own try/catch, like every other piece of this page: a failing
+    // Its own try/catch, like every other piece of every page: a failing
     // conversation repo must render the empty thread, never take the page
     // down — the one thing worse than an empty "Kérdés" page is a 500 one.
     let history: Turn[] = [];
@@ -247,14 +215,10 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without its conversation thread");
     }
 
-    return reply.type("text/html; charset=utf-8").send(layout({
-      section: "kerdes",
-      dateLabel: huLongDate(now, TZ),
-      briefAge,
-      channels: summarise(readChannels(snapshot, now)),
-      nav,
-      body: askBody({ history, chatAvailable: nav.kerdes }),
-    }));
+    // `nav.kerdes` is exactly `chat.available()`, already computed with its
+    // own try/catch — reused here instead of asking a second time.
+    return reply.type("text/html; charset=utf-8")
+      .send(render("kerdes", inputs, askBody({ history, chatAvailable: inputs.nav.kerdes })));
   });
 
   app.post("/api/chat", async (request, reply) => {

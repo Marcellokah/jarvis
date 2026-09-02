@@ -20,6 +20,15 @@ describe("téma", () => {
     for (const name of declared) expect(root).toContain(`${name}:`);
   });
 
+  it("a lépcsőzetes beúszásnak van honnan indexet vennie", () => {
+    // A `--i` alapértéke 0, tehát ha semmi nem állítja be, a 60ms-os lépcső
+    // soha nem szólal meg — a szabály viszont úgy néz ki, mintha működne. Ez
+    // pontosan az a "magabiztosan hazudó" felület, amit ez az oldal kerül.
+    expect(STYLE).toContain("animation-delay: calc(var(--i, 0) * 60ms)");
+    expect(/\.lap\s*>\s*\*:nth-child\(2\)\s*\{\s*--i:\s*1/.test(STYLE)).toBe(true);
+    expect(/\.lap\s*>\s*\*:nth-child\(3\)\s*\{\s*--i:\s*2/.test(STYLE)).toBe(true);
+  });
+
   it("a body kifest egy hátteret", () => {
     // Átlátszó törzs a gazda hátterét kölcsönzi, és a másik séma szövegét
     // teszi a saját alapjára.

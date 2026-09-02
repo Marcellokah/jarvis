@@ -4,7 +4,11 @@ import type { ChannelReading } from "./channels.ts";
 export interface TodayData {
   briefMarkdown: string | null;
   readings: readonly ChannelReading[];
-  /** The most recent day that has any data, when today has none. */
+  /**
+   * The most recent day that has any data, already worded the way the status
+   * strip words today ("2026. augusztus 30., vasárnap"), when today has none.
+   * A bare ISO date here put two voices for the same date on one page.
+   */
   lastSeen: string | null;
   /** When today's row was last written, already worded — null when there is none. */
   writtenAge: string | null;

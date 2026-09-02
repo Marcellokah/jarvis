@@ -4,6 +4,33 @@ import type { ChannelSummary } from "./channels.ts";
 
 export type Section = "ma" | "elemzes" | "szamok" | "kerdes";
 
+/**
+ * Removes `?token=` from the address bar.
+ *
+ * This belongs to *arriving with a token*, not to any one page: the
+ * documented entry URL is `/?token=<TOKEN>` (`deploy/README.md`), and the
+ * shell is the only thing all four pages share. While this shipped with the
+ * question box alone, the token stayed in the address bar of the very page
+ * the owner is told to open, and from there in the history entry and in any
+ * bookmark made from it — the exact opposite of what `deploy/README.md` and
+ * `pageAuth` both promise.
+ *
+ * `pageAuth` has already traded the query token for an HttpOnly cookie by the
+ * time this runs, so cleaning the URL is the whole job; the page needs no
+ * copy of the token for anything else. Other query parameters are kept —
+ * only the token is a secret. The braces keep `u` out of the global scope
+ * shared with `view/ask.ts`'s script.
+ */
+export const SCRUB_SCRIPT = `
+{
+  const u = new URL(location.href);
+  if (u.searchParams.has("token")) {
+    u.searchParams.delete("token");
+    history.replaceState({}, "", u.pathname + u.search + u.hash);
+  }
+}
+`;
+
 /** Whether each section has anything live to show right now. */
 export interface NavState { ma: boolean; elemzes: boolean; kerdes: boolean }
 
@@ -64,7 +91,10 @@ export function layout(data: ShellData): string {
     `<meta name="viewport" content="width=device-width, initial-scale=1">`,
     `<meta name="color-scheme" content="dark light">`,
     "<title>Jarvis</title>",
-    `<style>${STYLE}</style></head><body>`,
+    `<style>${STYLE}</style>`,
+    // In the head, so the token leaves the address bar before the page has
+    // even drawn — there is no DOM for it to wait for.
+    `<script>${SCRUB_SCRIPT}</script></head><body>`,
     nav(data),
     `<main class="lap">`,
     statusStrip(data),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chatBlock, askBody, type AskData } from "../../src/delivery/http/view/ask.ts";
+import { chatBlock, askBody, SCRIPT, type AskData } from "../../src/delivery/http/view/ask.ts";
 import type { Turn } from "../../src/infra/db/repositories/conversations.ts";
 
 const base: AskData = { history: [], chatAvailable: true };
@@ -41,6 +41,23 @@ describe("chatBlock", () => {
     expect(html).toContain(`<input type="text" placeholder="Kérdezz valamit…">`);
     expect(html).toContain(`<button type="submit">`);
     expect(html).not.toContain("nem érhető el");
+  });
+});
+
+describe("a kérdés-script", () => {
+  it("nem tart a böngészőben másolatot a tokenből", () => {
+    // A süti `HttpOnly`, és a `chatAuth` elfogadja — a sessionStorage-másolat
+    // ezzel feleslegessé vált, közben viszont olvasható maradt bármelyik
+    // scriptnek, és a böngésző-munkamenettel együtt meg is halt.
+    expect(SCRIPT).not.toContain("sessionStorage");
+    expect(SCRIPT).not.toContain("Bearer");
+    // A süti nem véletlenül megy: a kérés kimondva kéri.
+    expect(SCRIPT).toContain(`credentials: "same-origin"`);
+  });
+
+  it("nem viszi magával a címsor-takarítást", () => {
+    // Az a keretbe került (`view/shell.ts`), mert minden oldalra érvényes.
+    expect(SCRIPT).not.toContain("replaceState");
   });
 });
 

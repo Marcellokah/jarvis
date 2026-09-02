@@ -9,8 +9,11 @@ export const TOKEN_NAMES = [
  *
  * Every hard bug this project has had was a number that looked real and was
  * not, so colour carries exactly one meaning each: `--jel` is measured data
- * and nothing else, `--vaz` is chrome and never data, `--riado` is a channel
- * that was due and did not arrive, and never decoration. What was not
+ * and nothing else, `--vaz` is chrome and never data, and `--riado` is the
+ * status strip's alarm — the one line that names the channels which were due
+ * and did not arrive — and never decoration. The strip is deliberately the
+ * only place it appears: the per-row missing channel stays hueless, because
+ * one alarm locus is what keeps the colour legible. What was not
  * measured has no hue at all and does not animate — the absence is what you
  * see, because nothing happens there.
  */
@@ -143,6 +146,16 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 @keyframes sweep { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 .allapot, section { animation: settle .5s cubic-bezier(.2,.8,.2,1) both;
   animation-delay: calc(var(--i, 0) * 60ms); }
+/* The stagger's index. Set here and not on each band's own tag: the shell
+   takes the body as one opaque string (see view/shell.ts), so its own child
+   order is the only place that knows where a band sits. Nothing set --i
+   before, so the 60ms stagger never fired at all. Rails inherit their
+   section's index, which is what the --i in their own delay reads. */
+.lap > * { --i: 0; }
+.lap > *:nth-child(2) { --i: 1; }
+.lap > *:nth-child(3) { --i: 2; }
+.lap > *:nth-child(4) { --i: 3; }
+.lap > *:nth-child(5) { --i: 4; }
 .rail::after { animation: rail-in .7s cubic-bezier(.2,.8,.2,1) both;
   animation-delay: calc(320ms + var(--i, 0) * 45ms); }
 @media (prefers-reduced-motion: reduce) {

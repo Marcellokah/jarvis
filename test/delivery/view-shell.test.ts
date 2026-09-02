@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { layout, type ShellData } from "../../src/delivery/http/view/shell.ts";
+import { layout, SCRUB_SCRIPT, type ShellData } from "../../src/delivery/http/view/shell.ts";
 
 const base: ShellData = {
   section: "ma",
@@ -54,6 +54,26 @@ describe("oldalkeret", () => {
   it("nem mutat riasztást, amíg csak várakozás van", () => {
     const html = layout(base);
     expect(/class="[^"]*elmaradt/.test(html)).toBe(false);
+  });
+
+  it("minden oldal kitörli a tokent a címsorból", () => {
+    // A dokumentált belépő URL a `/?token=<TOKEN>` (deploy/README.md), és az
+    // bármelyik oldalra mutathat — nem csak a kérdés-dobozéra, ahová a script
+    // korábban került. A szerver már sütire cserélte a tokent, mire ez lefut;
+    // ami marad, az a címsor (és vele az előzmény meg a könyvjelző) takarítása.
+    for (const section of ["ma", "elemzes", "szamok", "kerdes"] as const) {
+      const html = layout({ ...base, section });
+      expect(html, section).toContain(SCRUB_SCRIPT);
+    }
+    expect(SCRUB_SCRIPT).toContain(`searchParams.delete("token")`);
+    expect(SCRUB_SCRIPT).toContain("history.replaceState");
+  });
+
+  it("a takarítás csak a tokent viszi el, más paramétert nem", () => {
+    // Egy `?token=…&valami=x` URL-ből a `valami` maradjon meg: csak a token
+    // titok. A régi egysoros a teljes query stringet dobta.
+    expect(SCRUB_SCRIPT).not.toContain("location.pathname)");
+    expect(SCRUB_SCRIPT).toContain("u.pathname + u.search + u.hash");
   });
 
   it("escape-eli a beleadott szöveget", () => {

@@ -18,9 +18,11 @@ const DOMAIN_TITLE: Record<string, string> = {
  * not decoration — it is the only thing that tells the reader how old each
  * finding actually is.
  *
- * Exported alongside `analysesBody` (not just used internally) so a test can
- * assert on the "Elemzés" band's own content directly, without also parsing
- * the `<section>` wrapper `analysesBody` adds around it.
+ * Exported alongside `analysesBody` (not just used internally) because its
+ * own tests (`test/delivery/view-analyses.test.ts`) assert on the "Elemzés"
+ * band's content directly — the per-domain date, the unknown-domain fallback
+ * and the empty state — without also parsing the `<section>` wrapper
+ * `analysesBody` adds around it.
  */
 export function analysesBlock(
   items: readonly { domain: string; markdown: string; createdAt: string }[],

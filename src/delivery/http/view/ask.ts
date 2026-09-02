@@ -8,16 +8,20 @@ export interface AskData {
 
 // Kept inline: there is no build step and no asset pipeline, and a second
 // request for a few lines of script would need its own route and its own
-// auth. Unchanged from `page.ts`'s original script, except `.quiet` (that
-// page's dim-text class) is `.halk` here — the new shell's token name for
-// the same role (see `view/today.ts`'s missing-brief line for the same swap).
+// auth. `.quiet` (the old page's dim-text class) is `.halk` here — the new
+// shell's token name for the same role (see `view/today.ts`'s missing-brief
+// line for the same swap).
 //
-// `POST /api/chat` is untouched by this move: `chatAuth` (see `../auth.ts`)
-// accepts either this bearer header or the page's own cookie, so the
-// sessionStorage token this script carries keeps working exactly as before.
+// The token is no longer carried here at all. This script used to copy
+// `?token=` into `sessionStorage` and send it back as a bearer header, but
+// `chatAuth` (see `../auth.ts`) accepts the page's own `HttpOnly` cookie,
+// which the browser attaches to this same-origin POST by itself — so the copy
+// answered a question nothing asks any more, while keeping a readable copy of
+// the token in the browser and dying with the session. Scrubbing the token
+// out of the URL was the other half of that line; it moved to the shell
+// (`SCRUB_SCRIPT` in `view/shell.ts`), because arriving with a token can
+// happen on any of the four pages, not just this one.
 export const SCRIPT = `
-const q = new URLSearchParams(location.search).get("token");
-if (q) { sessionStorage.setItem("jarvis-token", q); history.replaceState({}, "", location.pathname); }
 const form = document.querySelector("form");
 if (form) form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -31,7 +35,11 @@ if (form) form.addEventListener("submit", async (e) => {
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer " + (sessionStorage.getItem("jarvis-token") || "") },
+      // Spelled out rather than left to the default: the cookie is now the
+      // only credential this request carries, so it must not depend on a
+      // default staying what it is.
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ question }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -86,10 +94,11 @@ export function chatBlock(data: AskData): string {
 /**
  * The `/kerdes` route's whole body, `chatBlock` plus the script that drives it.
  *
- * The script ships here and nowhere else: the old page carried one script for
- * the whole document, but the new shell (`view/shell.ts`) has no per-page
- * script slot, and every other page has no use for it. Placed after the form
- * it drives, so the DOM it queries already exists by the time it runs.
+ * This script ships here and nowhere else, because the form is: no other page
+ * has a question box for it to drive. (The URL scrub that used to travel with
+ * it is a property of every page and lives in the shell — see `SCRUB_SCRIPT`
+ * there.) Placed after the form it drives, so the DOM it queries already
+ * exists by the time it runs.
  */
 export function askBody(data: AskData): string {
   return `<section><h2>Kérdés</h2>${chatBlock(data)}</section><script>${SCRIPT}</script>`;

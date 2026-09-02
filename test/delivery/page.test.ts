@@ -386,6 +386,91 @@ describe("page routes", () => {
     expect(res.statusCode).toBe(401);
     await a.close();
   });
+
+  it("mind a négy oldal kitörli a tokent a címsorból", async () => {
+    // `deploy/README.md` a `/?token=<TOKEN>`-t adja belépő URL-nek, és azt
+    // ígéri, hogy a token "nem is marad benne a címsorban"; `pageAuth` ugyanezt
+    // mondja. A takarító script egy ideig csak a `/kerdes`-re került ki, tehát
+    // épp azon az oldalon nem futott, amit a README megnyittat — a token ott
+    // maradt a címsorban, az előzményben és minden onnan mentett könyvjelzőben.
+    const a = await boot();
+    for (const url of ["/", "/szamok", "/elemzes", "/kerdes"]) {
+      const res = await a.server.inject({
+        method: "GET", url, headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.body, url).toContain(`searchParams.delete("token")`);
+      expect(res.body, url).toContain("history.replaceState");
+    }
+    await a.close();
+  });
+
+  it("a megzavart süti nem zárja ki a gazdát", async () => {
+    // `decodeURIComponent("%zz")` dob, és a süti a query-token ág ELŐTT fut le,
+    // tehát egyetlen rossz süti minden védett útvonalat 500-ra vitt — a
+    // dokumentált `/?token=…` visszaút is 500 lett, vagyis a gazda kizárta
+    // magát, amíg kézzel sütit nem törölt. Egy dekódolhatatlan süti nem
+    // hitelesítő adat: essen át, ne omoljon össze tőle a kiszolgáló.
+    const a = await boot();
+    const bad = "jarvis_token=%zz";
+
+    const refused = await a.server.inject({ method: "GET", url: "/", headers: { cookie: bad } });
+    expect(refused.statusCode).toBe(401);
+
+    const recovered = await a.server.inject({
+      method: "GET", url: `/?token=${TEST_TOKEN}`, headers: { cookie: bad },
+    });
+    expect(recovered.statusCode).toBe(200);
+
+    const asked = await a.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { cookie: bad, authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "Mi újság?" },
+    });
+    // 502 a modell-stub visszautasítása; 500 vagy 401 lenne a bukás.
+    expect(asked.statusCode).toBe(502);
+    await a.close();
+  });
+
+  it("olvashatatlan időbélyegből nem lesz magabiztos 'NaN napja'", async () => {
+    // Mindkét oszlop NOT NULL ISO ma, tehát ez nem a valószínűségről szól,
+    // hanem a hiba alakjáról: `Math.max(0, NaN)` az NaN, és a régi `ageWords`
+    // ezt "NaN napja" formában ki is írta — magabiztos hazugság pont ott, ahol
+    // a projekt elve az ellenkezőjét követeli. A hiányzó adat nézzen ki
+    // hiányzónak: a kor egyszerűen ne jelenjen meg.
+    const a = await boot();
+    (a.briefs as unknown as { cached: () => unknown }).cached = () => ({
+      date: "2026-09-01", dateLabel: "", generatedAt: "nem-datum", synthesizer: "teszt",
+      markdown: "## Ma\n- Egy valódi briefing.", actions: [], durationMs: 0,
+      fromCache: true, outcomes: [],
+    });
+    (a.health as unknown as { forDate: () => unknown }).forDate = () => ({
+      date: "2026-09-01", hrv: 61, ingestedAt: "sem-ez-nem-datum",
+    });
+
+    const res = await a.server.inject({
+      method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain("NaN");
+    // Ami olvasható, az attól még ott van: a briefing szövege és a mért HRV.
+    expect(res.body).toContain("Egy valódi briefing.");
+    expect(res.body).not.toContain("íródott");
+    await a.close();
+  });
+
+  it("a legutóbbi adatos napot a keret hangján mondja ki", async () => {
+    // A státuszsáv "2026. szeptember 1., kedd"-et ír; egy nyers ISO dátum
+    // mellette ugyanarról a dologról két hang ugyanazon az oldalon.
+    const a = await boot();
+    a.health.fillGaps("2026-08-30", { steps: 8400 }, new Date("2026-08-30T20:00:00.000Z"));
+    const res = await a.server.inject({
+      method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("A legutóbbi nap: 2026. augusztus 30., vasárnap.");
+    await a.close();
+  });
 });
 
 /** The name=value pair from a Set-Cookie header, ready to send back as `cookie`. */
