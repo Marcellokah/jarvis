@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "node:path";
-import { readExport } from "../../src/infra/health-export/reader.ts";
+import { readExport, FOOD_CORRELATION_DUPLICATE } from "../../src/infra/health-export/reader.ts";
 import { rollup } from "../../src/infra/health-export/rollup.ts";
 
 const FIXTURE = resolve("test/fixtures/health/export.xml");
@@ -143,6 +143,31 @@ describe("rollup", () => {
       energyKcal: 312.4,
     });
     expect(workouts[1]).toMatchObject({ date: "2026-03-02", type: "Walking", energyKcal: null });
+  });
+
+  /**
+   * The end-to-end shape of the bug: the reader yielded both copies of every
+   * food entry, the rollup added them together (same source, so the
+   * pick-one-source rule never applied), and every dietary column came out
+   * exactly double.
+   */
+  describe("food entries Apple writes twice", () => {
+    const food = () => rollup(readExport(resolve("test/fixtures/health/food-correlation.xml")));
+
+    it("does not double a dietary column when the entry is also inside a Correlation", async () => {
+      const d = (await food()).days.find((x) => x.date === "2026-03-01")!;
+      // 124 + 38, the two entries — what the phone's own Shortcut reports.
+      expect(d.values.diet_kcal).toBe(162);
+      expect(d.values.diet_kcal).not.toBe(324); // both copies summed
+      expect(d.values.diet_protein_g).toBe(4.4);
+      expect(d.values.diet_carbs_g).toBe(16.8);
+      expect(d.values.diet_fat_g).toBe(3.2);
+    });
+
+    it("counts the collapsed copies so the import can report them", async () => {
+      const { skipped } = await food();
+      expect(skipped[FOOD_CORRELATION_DUPLICATE]).toBe(5);
+    });
   });
 
   it("reports the range it covered", async () => {

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shaped after the owner's real export, verbatim: Apple writes every food
+     entry twice — once as a top-level record, and again as a child of a food
+     Correlation — and the two copies are identical in every attribute.
+     Counting both doubled every dietary column in the database. -->
+<HealthData locale="hu_HU">
+ <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="Yazio" sourceVersion="2509091303" unit="kcal" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="124">
+  <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierDietaryProtein" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="4.4">
+  <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierDietaryCarbohydrates" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="16.8">
+  <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierDietaryFatTotal" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="3.2">
+  <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+ </Record>
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="Yazio" sourceVersion="2509091303" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100">
+  <MetadataEntry key="HKExternalUUID" value="a78944ef-3fb2-492c-9ebb-31c07311f920"/>
+  <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+  <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="Yazio" sourceVersion="2509091303" unit="kcal" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="124">
+   <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+  </Record>
+  <Record type="HKQuantityTypeIdentifierDietaryProtein" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="4.4">
+   <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+  </Record>
+  <Record type="HKQuantityTypeIdentifierDietaryCarbohydrates" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="16.8">
+   <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+  </Record>
+  <Record type="HKQuantityTypeIdentifierDietaryFatTotal" sourceName="Yazio" sourceVersion="2509091303" unit="g" creationDate="2026-03-01 12:00:24 +0100" startDate="2026-03-01 12:00:23 +0100" endDate="2026-03-01 12:00:23 +0100" value="3.2">
+   <MetadataEntry key="HKFoodType" value="Coffee with milk and sugar"/>
+  </Record>
+ </Correlation>
+ <!-- A plain record the moment the Correlation closes: nothing may stay
+      switched off behind it. Deliberately indented exactly like the nested
+      records above, because indentation is not the signal. -->
+  <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Phone" unit="count" startDate="2026-03-01 13:00:00 +0100" endDate="2026-03-01 13:30:00 +0100" value="1200"/>
+ <!-- Correlations and plain records alternating: a second food entry, its
+      Correlation, and another plain record. -->
+ <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="Yazio" unit="kcal" startDate="2026-03-01 19:30:00 +0100" endDate="2026-03-01 19:30:00 +0100" value="38"/>
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="Yazio" startDate="2026-03-01 19:30:00 +0100" endDate="2026-03-01 19:30:00 +0100">
+  <Record type="HKQuantityTypeIdentifierDietaryEnergyConsumed" sourceName="Yazio" unit="kcal" startDate="2026-03-01 19:30:00 +0100" endDate="2026-03-01 19:30:00 +0100" value="38"/>
+ </Correlation>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Phone" unit="count" startDate="2026-03-01 20:00:00 +0100" endDate="2026-03-01 20:30:00 +0100" value="800"/>
+ <!-- Self-closing: wraps nothing, so it must not swallow what follows. -->
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="Yazio" startDate="2026-03-01 21:00:00 +0100" endDate="2026-03-01 21:00:00 +0100"/>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Phone" unit="count" startDate="2026-03-01 21:00:00 +0100" endDate="2026-03-01 21:30:00 +0100" value="300"/>
+ <!-- Open, but holding no records at all. -->
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="Yazio" startDate="2026-03-01 22:00:00 +0100" endDate="2026-03-01 22:00:00 +0100">
+  <MetadataEntry key="HKFoodType" value="Water"/>
+ </Correlation>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Phone" unit="count" startDate="2026-03-01 22:00:00 +0100" endDate="2026-03-01 22:30:00 +0100" value="100"/>
+ <!-- Opened and closed on one line: it never stays open past its own line. -->
+ <Correlation type="HKCorrelationTypeIdentifierFood" sourceName="Yazio" startDate="2026-03-01 23:00:00 +0100" endDate="2026-03-01 23:00:00 +0100"></Correlation>
+ <Record type="HKQuantityTypeIdentifierStepCount" sourceName="Phone" unit="count" startDate="2026-03-01 23:00:00 +0100" endDate="2026-03-01 23:30:00 +0100" value="50"/>
+</HealthData>

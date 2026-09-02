@@ -27,19 +27,39 @@ export interface WorkoutEntry {
 }
 
 /**
- * A piece of the export that was read but could not be trusted: a <Record>
- * with no type or start, or a value in a unit this project does not store.
+ * A piece of the export this reader did not turn into a record.
  *
- * Yielded rather than silently dropped. A silent drop is indistinguishable
- * downstream from data that was never recorded, and the rollup's `skipped` map
- * is what the import prints — so anything discarded here still gets counted
- * and named. `reason` is a stable, human-readable key: it is what appears in
- * that report.
+ * Two different things travel this channel, and the difference matters:
+ *
+ *  - Read but *not trusted*: a <Record> with no type or start, a value in a
+ *    unit this project does not store. Something was measured and is now not
+ *    being stored — a real, if small, loss.
+ *  - Read but *already counted*: the second copy of a food entry, the one
+ *    Apple nests inside a <Correlation>. Nothing is lost; the identical
+ *    top-level <Record> is what gets stored.
+ *
+ * Both are yielded rather than silently dropped, because a silent drop is
+ * indistinguishable downstream from data that was never recorded, and the
+ * rollup's `skipped` map is what the import prints. `reason` is the stable,
+ * human-readable key that groups them there — one line per reason, with a
+ * count, not one line per discarded record. The import splits the two apart
+ * when it prints, so a de-duplication never reads as a loss.
  */
 export interface DroppedEntry {
   kind: "dropped";
   reason: string;
 }
+
+/**
+ * The `reason` for the nested half of a food entry.
+ *
+ * Exported so `scripts/import-health.ts` can pull it out of the "skipped"
+ * list by identity instead of by matching on prose. Everything else in that
+ * list is data that did not make it in; this one is data that made it in
+ * exactly once, and printing it alongside the others would say the opposite.
+ */
+export const FOOD_CORRELATION_DUPLICATE =
+  "Correlation: ugyanaz az étel-rekord, felül önállóan is szerepel";
 
 export type ExportEntry = HealthRecordEntry | WorkoutEntry | DroppedEntry;
 
@@ -118,6 +138,23 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
   // A workout's energy arrives in a child element after its opening tag, so the
   // workout is held back until its block closes.
   let pending: WorkoutEntry | undefined;
+  // How many <Correlation> elements are currently open around this line.
+  //
+  // Apple writes every food entry into the export twice: once as a top-level
+  // <Record>, and again — byte for byte the same measurement, same source,
+  // same timestamps, same value — as a child of a
+  // <Correlation type="HKCorrelationTypeIdentifierFood">. Counting both is
+  // what made every dietary column in the database exactly double.
+  //
+  // Depth is what tells the two copies apart. Indentation cannot: whitespace
+  // is not part of the export's contract, and a Correlation's records are
+  // indented no differently from a workout's statistics. Nor can the record's
+  // own attributes, which are identical in both copies by construction.
+  //
+  // A counter rather than a boolean: Correlations do not nest in any export
+  // seen so far, but a boolean would quietly mis-track if one ever did, and
+  // the counter costs nothing.
+  let correlationDepth = 0;
   // Distinguishes "the member was empty" from "the member had content but no
   // matching records" — only the former is a silent-failure symptom worth flagging.
   let sawAnyLine = false;
@@ -127,7 +164,31 @@ export async function* readExport(path: string): AsyncGenerator<ExportEntry> {
       sawAnyLine = true;
       const t = line.trimStart();
 
+      if (t.startsWith("<Correlation")) {
+        // A self-closing <Correlation .../>, and one opened and closed on the
+        // same line, both wrap nothing — and a Correlation may legitimately
+        // hold only <MetadataEntry> children and no records at all. Only a
+        // tag that really stays open until a later line raises the depth.
+        if (!t.endsWith("/>") && !t.includes("</Correlation>")) correlationDepth += 1;
+        continue;
+      }
+
+      if (t.startsWith("</Correlation>")) {
+        // Never below zero: an unmatched close in a truncated export must not
+        // leave the counter negative and switch the *next* Correlation's
+        // nested records back on.
+        if (correlationDepth > 0) correlationDepth -= 1;
+        continue;
+      }
+
       if (t.startsWith("<Record ")) {
+        if (correlationDepth > 0) {
+          // The same measurement the top-level <Record> already carries.
+          // Skipped, not lost — and still yielded, so the import can say how
+          // many it collapsed instead of quietly halving a number.
+          yield { kind: "dropped", reason: FOOD_CORRELATION_DUPLICATE };
+          continue;
+        }
         const a = attrs(t);
         if (!a.type || !a.startDate) {
           yield { kind: "dropped", reason: "Record: hiányzó type vagy startDate" };
