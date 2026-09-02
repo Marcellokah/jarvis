@@ -2,7 +2,11 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { BriefService } from "../../../core/brief-service.ts";
 import type { Clock } from "../../../infra/clock.ts";
-import type { HealthRepo } from "../../../infra/db/repositories/health.ts";
+import {
+  SNAPSHOT_FIELDS,
+  type HealthRepo,
+  type HealthSnapshot,
+} from "../../../infra/db/repositories/health.ts";
 import type { Logger } from "../../../infra/logger.ts";
 import { isoDate, TZ } from "../../../shared/dates.ts";
 import { rollup, DAILY } from "../../../infra/health-export/rollup.ts";
@@ -372,6 +376,26 @@ export async function readSamples(raw: unknown): Promise<SampleResult> {
   return { days: result.days, ignored };
 }
 
+type SnapshotField = Exclude<keyof HealthSnapshot, "date" | "ingestedAt">;
+
+/** The snapshot field each history column is written from, for the upsert. */
+const SNAPSHOT_FIELD_BY_COLUMN: ReadonlyMap<string, SnapshotField> = new Map(
+  SNAPSHOT_FIELDS.map(([column, field]) => [column, field] as const),
+);
+
+/**
+ * The columns a per-source DAY COUNTER can land in — every `sum` type's column.
+ *
+ * Derived from `DAILY` rather than listed, and positive rather than
+ * subtractive, because what it must exclude matters more than what it includes:
+ * sleep is not in `DAILY` at all, so `sleep_h` and the five stage minutes and
+ * `awakenings` cannot reach this set however the map grows. That is deliberate
+ * and load-bearing — see where this is used below.
+ */
+const COUNTER_COLUMNS: ReadonlySet<string> = new Set(
+  Object.values(DAILY).filter((spec) => spec.agg === "sum").map((spec) => spec.column),
+);
+
 export function registerIngestRoutes(
   app: FastifyInstance,
   deps: { health: HealthRepo; briefs: BriefService; clock: Clock; logger: Logger },
@@ -421,8 +445,11 @@ export function registerIngestRoutes(
     // WITHOUT one holds, at most, a `sleep_h` a direct field left there.
     const stored = deps.health.forDate(date);
     const storedFromSamples = stored?.asleepMin != null;
-    const sampleSleepH = samples.days
-      .find((day) => day.date === date)?.values.sleep_h;
+    // The one entry, if any, that is about the date this request is writing.
+    // Every other entry belongs to a day this run did not measure — see the
+    // fillGaps loop below.
+    const measuredToday = samples.days.find((day) => day.date === date);
+    const sampleSleepH = measuredToday?.values.sleep_h;
     const sleepFromSamples = storedFromSamples || sampleSleepH !== undefined;
     if (sleepFromSamples && values.sleepH !== undefined) {
       delete values.sleepH;
@@ -460,66 +487,139 @@ export function registerIngestRoutes(
       ? sampleSleepH
       : values.sleepH ?? null;
 
+    // The day counters this request measured for its own date — the same move
+    // the sleep block just above makes, for the same reason and by the same
+    // rule: the distinction is the CALLER, not the column.
+    //
+    // The defect this closes, measured against the live server: the evening
+    // Shortcut sends per-source `StepCount` aggregates, they reach the row
+    // through `fillGaps`, and `fillGaps` is existing-wins. So a post at 08:15
+    // stored 58 steps and the 23:55 post of the same day, carrying 9400, was
+    // dropped. The first run of a day won and no later run could correct it.
+    //
+    // Later wins here, and only here, because a counter only ever grows: two
+    // runs of the same phone on the same day are the same number seen at two
+    // moments, and the later one saw more of the day. 58 is not a competing
+    // measurement, it is a smaller view of 9400.
+    //
+    // This was rejected two days ago and the rejection was right AT THE TIME:
+    // the phone summed every source's raw samples while the import picked the
+    // largest single source, so the two numbers were different KINDS of number
+    // and neither could be called more complete. That premise is gone. The
+    // phone now queries per source and the server feeds those aggregates to the
+    // very rollup the import uses, which applies the same largest-single-source
+    // rule (see `readSamples`). Two runs of one phone now differ only in how
+    // much of the day they saw. Do not re-derive the withdrawn version: it was
+    // about the IMPORT overwriting the phone, which `fillGaps` still forbids
+    // and which nothing here touches.
+    //
+    // Only counters. `COUNTER_COLUMNS` cannot contain a sleep column, and that
+    // is the guard rather than an accident: the stage minutes and `awakenings`
+    // must stay upsert-null so that a second post the same morning — one whose
+    // samples step half-failed — cannot overwrite a coherent night `fillGaps`
+    // already resolved. A night is not a counter; it does not grow by being
+    // looked at again.
+    const fromCounters: Partial<Record<SnapshotField, number>> = {};
+    for (const [column, value] of Object.entries(measuredToday?.values ?? {})) {
+      if (!COUNTER_COLUMNS.has(column)) continue;
+      const field = SNAPSHOT_FIELD_BY_COLUMN.get(column);
+      if (field === undefined) continue;
+      fromCounters[field] = value;
+
+      // The direct `READING` field for the same column steps aside, exactly as
+      // `sleepH` does above and for the same reason: `Find Health Samples`
+      // returns every source's raw samples and `Calculate Statistics: Sum` adds
+      // the iPhone's and the Watch's record of one walk together, which is what
+      // sent 21,401 steps against Health's 6,645. Named in the reply rather than
+      // dropped silently, so a Shortcut still sending the redundant field is
+      // visible and can be fixed.
+      if (!Object.hasOwn(READING, field)) continue;
+      const reading = field as Reading;
+      if (values[reading] === undefined) continue;
+      delete values[reading];
+      const at = accepted.indexOf(reading);
+      if (at !== -1) accepted.splice(at, 1);
+      ignored.push({
+        field: reading,
+        reason: "a forrásonkénti napi összegekből számolt érték került be helyette",
+      });
+    }
+
     if (ignored.length > 0) {
       // Visible on purpose: a Shortcut step that silently stopped producing a
       // value looks identical to a quiet night otherwise.
       deps.logger.warn({ ignored, accepted }, "health snapshot had unusable readings");
     }
 
-    deps.health.upsert(
-      {
-        date,
-        sleepH,
-        hrv: values.hrv ?? null,
-        rhr: values.rhr ?? null,
-        moveKcal: values.moveKcal ?? null,
-        exerciseMin: values.exerciseMin ?? null,
-        steps: values.steps ?? null,
-        // Sleep-stage columns come only from the raw-sample path below, via
-        // fillGaps — a Shortcut cannot compute stage durations itself (see
-        // readSamples). They still have to be listed here, even as null: an
-        // upsert that omitted them from its column list would let a later
-        // post's ON CONFLICT overwrite what fillGaps had already written.
-        asleepMin: null,
-        inBedMin: null,
-        coreMin: null,
-        remMin: null,
-        deepMin: null,
-        awakenings: null,
-        vo2max: values.vo2max ?? null,
-        hrRecovery: values.hrRecovery ?? null,
-        walkingHr: values.walkingHr ?? null,
-        basalKcal: values.basalKcal ?? null,
-        flights: values.flights ?? null,
-        dietKcal: values.dietKcal ?? null,
-        dietProteinG: values.dietProteinG ?? null,
-        dietCarbsG: values.dietCarbsG ?? null,
-        dietFatG: values.dietFatG ?? null,
-        distanceKm: values.distanceKm ?? null,
-        standMin: values.standMin ?? null,
-        walkingSpeed: values.walkingSpeed ?? null,
-        stepLengthCm: values.stepLengthCm ?? null,
-        doubleSupportPct: values.doubleSupportPct ?? null,
-        asymmetryPct: values.asymmetryPct ?? null,
-        steadinessPct: values.steadinessPct ?? null,
-        sixMinWalkM: values.sixMinWalkM ?? null,
-        stairUpMs: values.stairUpMs ?? null,
-        stairDownMs: values.stairDownMs ?? null,
-      },
-      fields,
-      now,
-    );
+    const snapshot: Omit<HealthSnapshot, "ingestedAt"> = {
+      date,
+      sleepH,
+      hrv: values.hrv ?? null,
+      rhr: values.rhr ?? null,
+      moveKcal: values.moveKcal ?? null,
+      exerciseMin: values.exerciseMin ?? null,
+      steps: values.steps ?? null,
+      // Sleep-stage columns come only from the raw-sample path below, via
+      // fillGaps — a Shortcut cannot compute stage durations itself (see
+      // readSamples). They still have to be listed here, even as null: an
+      // upsert that omitted them from its column list would let a later
+      // post's ON CONFLICT overwrite what fillGaps had already written.
+      asleepMin: null,
+      inBedMin: null,
+      coreMin: null,
+      remMin: null,
+      deepMin: null,
+      awakenings: null,
+      vo2max: values.vo2max ?? null,
+      hrRecovery: values.hrRecovery ?? null,
+      walkingHr: values.walkingHr ?? null,
+      basalKcal: values.basalKcal ?? null,
+      flights: values.flights ?? null,
+      dietKcal: values.dietKcal ?? null,
+      dietProteinG: values.dietProteinG ?? null,
+      dietCarbsG: values.dietCarbsG ?? null,
+      dietFatG: values.dietFatG ?? null,
+      distanceKm: values.distanceKm ?? null,
+      standMin: values.standMin ?? null,
+      walkingSpeed: values.walkingSpeed ?? null,
+      stepLengthCm: values.stepLengthCm ?? null,
+      doubleSupportPct: values.doubleSupportPct ?? null,
+      asymmetryPct: values.asymmetryPct ?? null,
+      steadinessPct: values.steadinessPct ?? null,
+      sixMinWalkM: values.sixMinWalkM ?? null,
+      stairUpMs: values.stairUpMs ?? null,
+      stairDownMs: values.stairDownMs ?? null,
+    };
+
+    // Applied after the literal, over whatever the direct fields left there:
+    // these are the columns this run measured for its own date, and the upsert
+    // is incoming-wins, so this is the whole of "a later run of the same phone
+    // corrects an earlier one". Nothing else in the object changes meaning —
+    // every column absent from `fromCounters` is still exactly what it was.
+    Object.assign(snapshot, fromCounters);
+
+    deps.health.upsert(snapshot, fields, now);
 
     for (const day of samples.days) {
       // fillGaps, not upsert: the phone's samples must not overwrite what the
       // import already established for an older day.
       //
-      // The per-source day counters ride the same loop, deliberately without a
-      // precedence rule of their own: a same-evening re-run therefore keeps the
-      // first run's total, which is at most the few minutes between the two
-      // runs short. That is the accepted trade — see `ACCUMULATES_OVER_DAY` in
-      // the health repo for why no writer here can be trusted to correct
-      // another's counter, only to fill a hole it left.
+      // Unchanged, and it must stay unchanged: this is the same method the
+      // monthly import writes through, so loosening it here would let an export
+      // rewrite a night or a total the phone established. See
+      // `ACCUMULATES_OVER_DAY` in the health repo for why no writer can be
+      // trusted to correct ANOTHER's counter, only to fill a hole it left.
+      //
+      // The request's own date is no longer only handled here: its counters
+      // went through the upsert just above, so this pass finds them already
+      // written and keeps them — a no-op by construction, since existing-wins
+      // and the value it would write are now the same number. The sleep-stage
+      // columns of that same date still land here and only here, which is what
+      // keeps a second post from overwriting a night already resolved.
+      //
+      // Every OTHER date is untouched by that: sleep is filed on the wake-up
+      // day, which is usually but not always the request's date, and a date
+      // this run did not measure is not a date it saw more of.
       deps.health.fillGaps(day.date, day.values, now);
     }
 

@@ -403,11 +403,15 @@ describe("ingest — per-source day counters", () => {
     expect(counted.moveKcal).toBe(856);
   });
 
-  it("keeps the first evening run's counter when the run repeats", async () => {
-    // fillGaps is existing-wins and the counters get no precedence rule of
-    // their own, so a 23:59 re-run of the 23:55 run keeps the first total —
-    // at most those four minutes short. Deliberate: neither run's number is
-    // Health's merged daily total, so neither may overwrite the other.
+  it("keeps the first post's counter for a day that is not the request's own", async () => {
+    // Both posts here are dated 2026-09-02 (the clock's day) and both carry
+    // counters for 2026-09-01, so neither run measured that day — it reaches
+    // the row through fillGaps, which is existing-wins, and the first figure
+    // stands. That is the rule the monthly import relies on: a writer may fill
+    // a hole in another's day, never correct it.
+    //
+    // The request's OWN date is the other case, and it is not this one — see
+    // "a later run of the same day" below.
     const a = await boot();
     await post(a, { samples: [counter({ type: "StepCount", source: WATCH, unit: "count", value: 6645 })] });
     await post(a, {
@@ -577,5 +581,254 @@ describe("ingest — the phone's own number format", () => {
     expect(row.steps).toBe(12727);
     expect(row.distanceKm).toBeCloseTo(8.718, 3);
     expect(row.moveKcal).toBeCloseTo(1198.363, 3);
+  });
+});
+
+/**
+ * Two runs of the same phone on the same day, and which number survives.
+ *
+ * The measured defect: the evening Shortcut sends per-source daily counter
+ * aggregates, they reached the row through `fillGaps`, and `fillGaps` is
+ * existing-wins — so a post at 08:15 stored 58 steps and the 23:55 post of the
+ * same day, carrying 9400, was dropped. The first run of a day won and no later
+ * run could correct it.
+ *
+ * Later wins now, for the request's own date only. A counter only grows through
+ * the day: two runs of one phone are the same number seen at two moments, and
+ * the later one saw more of the day. This is NOT the withdrawn "the import
+ * overwrites the counters" rule — that one is about a second writer, and every
+ * test above still pins it.
+ */
+describe("ingest — a later run of the same day", () => {
+  const WATCH = "Marcell’s Apple Watch";
+  const TODAY = "2026-09-02";
+
+  /** One per-source aggregate, as the Shortcut sends it. */
+  const counter = (p: { type?: string; unit?: string; value: number; at: string; source?: string }) => ({
+    type: p.type ?? "StepCount", unit: p.unit ?? "count", value: p.value,
+    source: p.source ?? WATCH,
+    startDate: p.at, endDate: p.at,
+  });
+
+  const MORNING = "2026-09-02T08:15:00+02:00";
+  const EVENING = "2026-09-02T23:55:00+02:00";
+  /** The same instants as the clock sees them, so `date` is the counters' day. */
+  const MORNING_UTC = "2026-09-02T06:15:00.000Z";
+  const EVENING_UTC = "2026-09-02T21:55:00.000Z";
+
+  it("stores the evening run's counter over the morning run's", async () => {
+    // The reproduction, verbatim: 58 at 08:15, 9400 at 23:55, and 9400 is what
+    // the row must hold. 58 was never a competing measurement — it is a smaller
+    // view of the same running total.
+    const a = await boot();
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: [counter({ value: 58, at: MORNING })] });
+    expect(a.health.forDate(TODAY)!.steps).toBe(58);
+
+    a.setNow(EVENING_UTC);
+    const res = await post(a, { samples: [counter({ value: 9400, at: EVENING })] });
+
+    expect(res.statusCode).toBe(202);
+    expect(a.health.forDate(TODAY)!.steps).toBe(9400);
+  });
+
+  it("takes the later run even when its number is smaller, on purpose", async () => {
+    // Intended, not an oversight, and worth stating because "keep the larger"
+    // is the obvious alternative. It is the wrong rule: a per-source total can
+    // legitimately fall between two runs — Health revises a source, samples get
+    // deleted, or the rollup's pick moves to a different device — and a max()
+    // would make a wrong large number permanent, which is the "confidently
+    // wrong beats missing data" failure this codebase keeps refusing. The rule
+    // that can be stated in one line is the phone's latest word about its own
+    // day, so that is the rule.
+    const a = await boot();
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: [counter({ value: 9400, at: MORNING })] });
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [counter({ value: 58, at: EVENING })] });
+
+    expect(a.health.forDate(TODAY)!.steps).toBe(58);
+  });
+
+  it("covers every counter type, not just steps", async () => {
+    // The rule is about a kind of column, so it must not be wired up one column
+    // at a time. Energy, distance and flights are all `sum` types too.
+    const a = await boot();
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: [
+      counter({ type: "ActiveEnergyBurned", unit: "kcal", value: 90, at: MORNING }),
+      counter({ type: "DistanceWalkingRunning", unit: "km", value: 0.4, at: MORNING }),
+      counter({ type: "FlightsClimbed", unit: "count", value: 1, at: MORNING }),
+    ] });
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [
+      counter({ type: "ActiveEnergyBurned", unit: "kcal", value: 1198.363, at: EVENING }),
+      counter({ type: "DistanceWalkingRunning", unit: "km", value: 8.718, at: EVENING }),
+      counter({ type: "FlightsClimbed", unit: "count", value: 12, at: EVENING }),
+    ] });
+
+    const row = a.health.forDate(TODAY)!;
+    expect(row.moveKcal).toBeCloseTo(1198.363, 3);
+    expect(row.distanceKm).toBeCloseTo(8.718, 3);
+    expect(row.flights).toBe(12);
+  });
+
+  it("still refuses the import's figure for a counter the phone established", async () => {
+    // The half that must NOT change. `fillGaps` is how the monthly import
+    // writes, and it stays blanket existing-wins: a re-import landing after the
+    // evening run cannot undo it. Called directly, exactly as the import calls
+    // it, because that is the writer whose behaviour is being pinned.
+    const a = await boot();
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [counter({ value: 9400, at: EVENING })] });
+
+    a.health.fillGaps(TODAY, { steps: 3000, rhr: 52 }, new Date("2026-09-03T02:00:00.000Z"));
+
+    const row = a.health.forDate(TODAY)!;
+    expect(row.steps).toBe(9400);   // the phone's, untouched
+    expect(row.rhr).toBe(52);       // the hole the import may still fill
+  });
+
+  it("leaves a date other than the request's own to fillGaps, in the same request", async () => {
+    // The boundary, in one post: yesterday's counter and today's arrive
+    // together, and only today's is something this run measured more of.
+    // Yesterday's is a day this run did not live through twice — it goes the
+    // existing-wins way, whoever sent it.
+    const a = await boot();
+    const yesterday = "2026-09-01T23:55:00+02:00";
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: [
+      counter({ value: 6645, at: yesterday }),
+      counter({ value: 58, at: MORNING }),
+    ] });
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [
+      counter({ value: 9999, at: yesterday }),
+      counter({ value: 9400, at: EVENING }),
+    ] });
+
+    expect(a.health.forDate("2026-09-01")!.steps).toBe(6645); // first post's
+    expect(a.health.forDate(TODAY)!.steps).toBe(9400);        // last post's
+  });
+
+  it("lands every sleep column of a sleep-bearing payload", async () => {
+    // The night reaches the same row as the counters and by a different route,
+    // so it is worth asserting whole rather than by one column.
+    const a = await boot();
+
+    await post(a, { samples: [...NIGHT, counter({ value: 58, at: MORNING })] });
+
+    const row = a.health.forDate(TODAY)!;
+    expect(row.coreMin).toBeCloseTo(160, 3);
+    expect(row.deepMin).toBeCloseTo(90, 3);
+    expect(row.remMin).toBeCloseTo(180, 3);
+    expect(row.awakenings).toBe(1);
+    expect(row.asleepMin).toBeCloseTo(430, 3);
+    expect(row.inBedMin).toBeCloseTo(480, 3);
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1);
+    expect(row.steps).toBe(58);
+  });
+
+  it("does not let a second post the same morning blank or rewrite the night", async () => {
+    // Where the line is drawn, in one request each way. The second post is a
+    // re-run whose samples step half-failed: it carries five minutes of Deep
+    // and a bigger step count, both for the same date. The counter is a later
+    // view of one growing number and wins; the night is not — a night does not
+    // grow by being looked at again, and a half-resolved one must not replace
+    // the whole one already stored.
+    //
+    // This is why the sleep columns stay out of the upsert. Let them in and the
+    // stage minutes below become the second post's.
+    const a = await boot();
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: [...NIGHT, counter({ value: 58, at: MORNING })] });
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [
+      { type: "SleepAnalysis", value: "Deep",
+        startDate: "2026-09-02T02:00:00+02:00", endDate: "2026-09-02T02:05:00+02:00" },
+      counter({ value: 9400, at: EVENING }),
+    ] });
+
+    const row = a.health.forDate(TODAY)!;
+    expect(row.deepMin).toBeCloseTo(90, 3);      // the first night's, kept
+    expect(row.asleepMin).toBeCloseTo(430, 3);
+    expect(row.inBedMin).toBeCloseTo(480, 3);
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1);
+    expect(row.steps).toBe(9400);                // the later run's, taken
+  });
+
+  it("keeps the night whole when a later post carries counters and no sleep at all", async () => {
+    // The plainest version of the same fear: the evening run has no sleep step
+    // in it, so every sleep column of the request is absent. The upsert writes
+    // its 31 columns whatever happens, so this is worth pinning — nothing here
+    // may reach the night.
+    const a = await boot();
+
+    a.setNow(MORNING_UTC);
+    await post(a, { samples: NIGHT });
+
+    a.setNow(EVENING_UTC);
+    await post(a, { samples: [counter({ value: 9400, at: EVENING })] });
+
+    const row = a.health.forDate(TODAY)!;
+    expect(row.asleepMin).toBeCloseTo(430, 3);
+    expect(row.coreMin).toBeCloseTo(160, 3);
+    expect(row.remMin).toBeCloseTo(180, 3);
+    expect(row.deepMin).toBeCloseTo(90, 3);
+    expect(row.awakenings).toBe(1);
+    expect(row.inBedMin).toBeCloseTo(480, 3);
+    expect(row.sleepH).toBeCloseTo(430 / 60, 1);
+    expect(row.steps).toBe(9400);
+  });
+
+  it("prefers the aggregates over the phone's own steps field, and says so", async () => {
+    // The same move `sleepH` makes. The direct field is `Calculate Statistics:
+    // Sum` over every source's raw samples — the iPhone's and the Watch's
+    // record of one walk added together, which is what sent 21,401 steps
+    // against Health's 6,645. The aggregates are the rollup's number, so they
+    // win, and the reply names the field that stepped aside rather than
+    // dropping it silently.
+    const a = await boot();
+
+    a.setNow(EVENING_UTC);
+    const res = await post(a, {
+      steps: 21401,
+      samples: [
+        counter({ value: 12727, at: EVENING }),
+        counter({ value: 8674, at: EVENING, source: "Marcell’s iPhone" }),
+      ],
+    });
+    const body = res.json() as { accepted: string[]; ignored: { field: string }[] };
+
+    expect(a.health.forDate(TODAY)!.steps).toBe(12727);
+    expect(body.ignored.map((i) => i.field)).toContain("steps");
+    expect(body.accepted).not.toContain("steps");
+  });
+
+  it("keeps the direct field when the samples produced nothing for this date", async () => {
+    // "Samples were sent" is not the test, exactly as with `sleepH`: a payload
+    // whose counters were all refused must not cost the only step count there
+    // is.
+    const a = await boot();
+
+    a.setNow(EVENING_UTC);
+    const res = await post(a, {
+      steps: 9400,
+      samples: [counter({ value: 12727, at: EVENING, unit: "lépés" })],
+    });
+    const body = res.json() as { accepted: string[] };
+
+    expect(a.health.forDate(TODAY)!.steps).toBe(9400);
+    expect(body.accepted).toContain("steps");
   });
 });
