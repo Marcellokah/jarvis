@@ -26,9 +26,11 @@ export interface MetricRow {
  * and drawing a 0% rail there would claim it was measured badly rather than
  * not measured at all.
  */
-// Exported alongside `numbersBody` (not just used internally) so the
-// soon-to-be-deleted `page.ts` can still assemble its own "Számok" band from
-// the same renderer, instead of duplicating it — see the comment in page.ts.
+// Exported alongside `numbersBody` (not just used internally): the "Számok"
+// band is one row per metric, and any code that wants to assemble its own
+// table from a subset or a differently-ordered list of rows — rather than
+// the whole-body `numbersBody` — needs the row renderer itself, not just
+// the finished table.
 export function readout(r: MetricRow, i: number): string {
   const measured = r.coverage !== null && r.coverage > 0;
   const pct = r.coverage === null ? 0 : Math.min(100, Math.max(0, r.coverage * 100));

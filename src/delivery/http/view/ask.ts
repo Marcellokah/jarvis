@@ -56,10 +56,11 @@ if (form) form.addEventListener("submit", async (e) => {
 /**
  * The thread and the question box, unwrapped by any section or heading.
  *
- * Moved from `page.ts`'s `chatBlock` unchanged (down to the four literal
- * control strings other tests pin — see the task brief): `page.ts` — kept
- * alive only until Task 8 removes it — still assembles its own "Kérdés" band
- * from this content, so it is exported rather than copied a second time.
+ * Exported separately from `askBody` (not just used internally): its own
+ * tests (`test/delivery/view-ask.test.ts`) assert on this function's output
+ * directly — the disabled/enabled control strings and the escaping of what a
+ * model or a person typed — without needing to also parse the `<section>`
+ * wrapper and inline `<script>` that `askBody` adds around it.
  */
 export function chatBlock(data: AskData): string {
   const turns = data.history.map((t) => [
