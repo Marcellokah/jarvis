@@ -4,10 +4,14 @@ import type { BriefService } from "../../../core/brief-service.ts";
 import { MAX_QUESTION_CHARS, type ChatService } from "../../../core/chat.ts";
 import type { AnalysisRepo } from "../../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../../infra/db/repositories/conversations.ts";
+import type { HealthRepo } from "../../../infra/db/repositories/health.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
-import { huLongDate, TZ } from "../../../shared/dates.ts";
-import { renderPage, type MetricRow, type PageData } from "../page.ts";
+import { huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
+import { readChannels, summarise } from "../view/channels.ts";
+import { layout, type NavState } from "../view/shell.ts";
+import { todayBody } from "../view/today.ts";
+import type { MetricRow } from "../page.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
 export const WEB_CHAT_ID = "web";
@@ -17,6 +21,8 @@ export interface PageDeps {
   chat: ChatService;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
+  health: HealthRepo;
+  /** Kept for the `/szamok` route this same handler grows in a later task. */
   metricsRows: () => MetricRow[];
   clock: Clock;
   logger: Logger;
@@ -24,65 +30,74 @@ export interface PageDeps {
 
 const body = z.object({ question: z.string().trim().min(1).max(MAX_QUESTION_CHARS) });
 
+/** "2 órája" — a brief kora emberi szavakkal, vagy null, ha nincs brief. */
+function ageWords(from: string, now: Date): string {
+  const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(from)) / 60_000));
+  if (minutes < 60) return `${minutes} perce`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} órája`;
+  return `${Math.round(hours / 24)} napja`;
+}
+
 export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
   app.get("/", async (_request, reply) => {
     const now = deps.clock.now();
+    const today = isoDate(now, TZ);
 
     // Each piece fails on its own. The page's job is to show what exists, and
-    // a missing brief must not take the analyses and the numbers with it —
-    // nor a failing seven-year `aggregate()` take the brief.
+    // a missing brief must not take today's readings with it.
 
     // `cached`, never `get`: opening the page must not start a brief
-    // generation. Every module plus a Groq synthesis, up to 45 seconds, for a
-    // page the owner only wanted to read — and one more call against a 6,000
-    // token/minute ceiling that the next question then has to share.
-    //
-    // Empty-after-trim counts as absent: an empty "Briefing" heading is
-    // missing data that does not look missing.
+    // generation — every module plus a Groq synthesis, up to 45 seconds, for a
+    // page the owner only wanted to read.
     let briefMarkdown: string | null = null;
+    let briefAge: string | null = null;
     try {
       const brief = deps.briefs.cached(now);
-      briefMarkdown = brief && brief.markdown.trim() !== "" ? brief.markdown : null;
+      if (brief && brief.markdown.trim() !== "") {
+        briefMarkdown = brief.markdown;
+        briefAge = ageWords(brief.generatedAt, now);
+      }
     } catch (err) {
       deps.logger.warn({ err: String(err) }, "page rendered without a brief");
     }
 
-    let analyses: PageData["analyses"] = [];
+    let snapshot = undefined;
+    let lastSeen: string | null = null;
     try {
-      analyses = deps.analyses.latestPerDomain().map((a) => ({
-        domain: a.domain, markdown: a.markdown, createdAt: a.createdAt,
-      }));
+      snapshot = deps.health.forDate(today);
+      if (snapshot === undefined) lastSeen = deps.health.latest(today)?.date ?? null;
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without the analyses");
+      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
     }
 
-    let metricsRows: MetricRow[] = [];
+    let hasAnalysis = false;
     try {
-      metricsRows = deps.metricsRows();
+      hasAnalysis = deps.analyses.latestPerDomain().length > 0;
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without the numbers");
+      deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
     }
 
-    let history: PageData["history"] = [];
-    try {
-      history = deps.conversations.recent(WEB_CHAT_ID, 20);
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "page rendered without the thread");
-    }
-
-    // `chat.available()` is deliberately not wrapped: it only asks the secrets
-    // store for a key, and `keychainSecrets` already swallows its own errors
-    // and answers undefined. There is nothing here for it to throw.
-    const data: PageData = {
-      dateLabel: huLongDate(now, TZ),
-      briefMarkdown,
-      analyses,
-      metricsRows,
-      history,
-      chatAvailable: await deps.chat.available(),
+    const readings = readChannels(snapshot, now);
+    const nav: NavState = {
+      ma: briefMarkdown !== null,
+      elemzes: hasAnalysis,
+      kerdes: await deps.chat.available(),
     };
 
-    return reply.type("text/html; charset=utf-8").send(renderPage(data));
+    return reply.type("text/html; charset=utf-8").send(layout({
+      section: "ma",
+      dateLabel: huLongDate(now, TZ),
+      briefAge,
+      channels: summarise(readings),
+      nav,
+      body: todayBody({
+        briefMarkdown,
+        readings,
+        lastSeen,
+        writtenAge: snapshot ? ageWords(snapshot.ingestedAt, now) : null,
+      }),
+    }));
   });
 
   app.post("/api/chat", async (request, reply) => {

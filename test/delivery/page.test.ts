@@ -332,6 +332,51 @@ describe("page routes", () => {
     expect(res.statusCode).toBe(400);
     await app.close();
   });
+
+  it("a Ma oldal a mai méréseket mutatja, nullát soha", async () => {
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    // Nincs mai sor. `now` 10:00 helyi idő (Europe/Budapest, 2026-09-01 nyári
+    // időszámítás): a 8 órás határidejű HRV már elmaradt, a 24 órás határidejű
+    // Lépés még várakozik — egyik sem nulla.
+    //
+    // A `toContain("nincs mérés")` / `not.toMatch(/>0 lépés</)` pár a brief
+    // eredeti tesztje volt, de mindkettő a RÉGI `renderPage`-en is lefutott
+    // (a "Lépés (7 nap)" számtábla-sor is "nincs mérés"-t ír, és sosem
+    // ">0 lépés<" alakban), tehát a bukó lépésnél (2. lépés) nem bukott — nem
+    // bizonyította semmit. A csatorna-sorok pontos jelölését ellenőrizzük
+    // helyette, amit csak az új `today.ts` állít elő.
+    expect(res.body).toContain(
+      '<div class="csatorna elmaradt"><span class="cimke">HRV</span><span class="ertek">nincs mérés</span></div>',
+    );
+    expect(res.body).toContain(
+      '<div class="csatorna varakozik"><span class="cimke">Lépés</span><span class="ertek">várakozik</span></div>',
+    );
+    expect(res.body).not.toMatch(/>0 lépés</);
+    await a.close();
+  });
+
+  it("a Ma oldal akkor is renderel, ha a brief lekérése hibát dob", async () => {
+    const a = await boot();
+    // A brief-szolgáltatás megbukik; a mérések és a keret akkor is ott vannak.
+    (a.briefs as unknown as { cached: () => never }).cached = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await a.server.inject({
+      method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    // A brief eredeti tesztje `toContain("Ma")` volt, de ez a RÉGI oldalon is
+    // lefutott ("Ma még nem készült briefing." — a hiányzó-brief szöveg maga
+    // is "Ma"-val kezdődik), tehát semmit sem bizonyított a keretről. Az új
+    // keret (`shell.ts`) és a mai csatornák saját jelölését ellenőrizzük.
+    expect(res.body).toContain('<div class="csatornak">');
+    expect(res.body).toContain('<a href="/" class="menu');
+    await a.close();
+  });
 });
 
 /** The name=value pair from a Set-Cookie header, ready to send back as `cookie`. */

@@ -107,7 +107,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
   registerPageRoutes(app, {
     briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
-    conversations: deps.conversations, metricsRows: deps.metricsRows,
+    conversations: deps.conversations, health: deps.health, metricsRows: deps.metricsRows,
     clock: deps.clock, logger: deps.logger,
   });
 
