@@ -5,6 +5,9 @@ import type { Turn } from "../../infra/db/repositories/conversations.ts";
 // this module — kept alive only until Task 8 removes it — keeps compiling
 // without a second copy of any of them.
 import { metricsRowsFrom, readout, type MetricRow } from "./view/numbers.ts";
+// Same move, same reason: `analysesBlock` (and the `DOMAIN_TITLE` map it
+// closes over) is now `view/analyses.ts`'s, the new `/elemzes` route's home.
+import { analysesBlock } from "./view/analyses.ts";
 
 export { metricsRowsFrom, type MetricRow };
 
@@ -193,24 +196,6 @@ if (form) form.addEventListener("submit", async (e) => {
 `;
 
 
-const DOMAIN_TITLE: Record<string, string> = {
-  physical: "Fizikai fejlődés",
-  recovery: "Regenerálódás és alvás",
-  finance: "Pénzügy",
-  synthesis: "Összegzés",
-};
-
-function analysesBlock(data: PageData): string {
-  if (data.analyses.length === 0) {
-    return `<p class="quiet">Még nem futott mélyelemzés. Indítsd: <code>npm run analyze</code></p>`;
-  }
-  return data.analyses.map((a) => [
-    `<h3>${escapeHtml(DOMAIN_TITLE[a.domain] ?? a.domain)}`,
-    ` · ${escapeHtml(a.createdAt.slice(0, 10))}</h3>`,
-    renderMarkdown(a.markdown),
-  ].join("")).join("");
-}
-
 function chatBlock(data: PageData): string {
   const turns = data.history.map((t) => [
     `<div class="turn ${t.role === "user" ? "user" : "assistant"}">`,
@@ -259,7 +244,7 @@ export function renderPage(data: PageData): string {
     band(1, "Briefing", data.briefMarkdown === null || data.briefMarkdown.trim() === ""
       ? `<p class="quiet">Ma még nem készült briefing.</p>`
       : renderMarkdown(data.briefMarkdown)),
-    band(2, "Elemzés", analysesBlock(data)),
+    band(2, "Elemzés", analysesBlock(data.analyses)),
     band(3, "Számok", `<table>${metrics}</table>`),
     band(4, "Kérdés", chatBlock(data)),
     `</div><script>${SCRIPT}</script>`,

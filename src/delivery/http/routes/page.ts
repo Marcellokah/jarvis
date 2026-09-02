@@ -12,6 +12,8 @@ import { readChannels, summarise } from "../view/channels.ts";
 import { layout, type NavState } from "../view/shell.ts";
 import { todayBody } from "../view/today.ts";
 import { numbersBody, type MetricRow } from "../view/numbers.ts";
+import { analysesBody } from "../view/analyses.ts";
+import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
 export const WEB_CHAT_ID = "web";
@@ -167,6 +169,45 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       channels: summarise(readChannels(snapshot, now)),
       nav: await navState(deps, now),
       body: numbersBody(metricsRows),
+    }));
+  });
+
+  app.get("/elemzes", async (_request, reply) => {
+    const now = deps.clock.now();
+    const today = isoDate(now, TZ);
+
+    // Same status-strip inputs as every other page.
+    let briefAge: string | null = null;
+    try {
+      const brief = deps.briefs.cached(now);
+      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
+    }
+
+    let snapshot = undefined;
+    try {
+      snapshot = deps.health.forDate(today);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
+    }
+
+    // Its own try/catch, like every other piece of this page: a failing
+    // analyses repo must render the empty state, never take the page down.
+    let analyses: AnalysisRow[] = [];
+    try {
+      analyses = deps.analyses.latestPerDomain();
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its analyses");
+    }
+
+    return reply.type("text/html; charset=utf-8").send(layout({
+      section: "elemzes",
+      dateLabel: huLongDate(now, TZ),
+      briefAge,
+      channels: summarise(readChannels(snapshot, now)),
+      nav: await navState(deps, now),
+      body: analysesBody(analyses),
     }));
   });
 
