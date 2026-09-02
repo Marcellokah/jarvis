@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { renderPage, metricsRowsFrom, type PageData } from "../../src/delivery/http/page.ts";
+import { renderPage, type PageData } from "../../src/delivery/http/page.ts";
+import { metricsRowsFrom } from "../../src/delivery/http/view/numbers.ts";
 import type { Metric } from "../../src/core/analysis/stats.ts";
 import type { Metrics } from "../../src/core/analysis/aggregate.ts";
 import { buildTestApp, TEST_TOKEN, stubModule } from "../helpers.ts";
@@ -375,6 +376,30 @@ describe("page routes", () => {
     // keret (`shell.ts`) és a mai csatornák saját jelölését ellenőrizzük.
     expect(res.body).toContain('<div class="csatornak">');
     expect(res.body).toContain('<a href="/" class="menu');
+    await a.close();
+  });
+
+  it("a Számok oldal a metrikákat adja, sávval", async () => {
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Terhelési arány");
+    // Strengthened beyond the brief's literal test: "Terhelési arány" alone
+    // would still appear if `/szamok` reused the OLD `renderPage` wholesale
+    // (which also renders that label), proving nothing about the new route,
+    // the shared shell, or the rail. These pin down what only the new wiring
+    // produces.
+    expect(res.body).toContain('<a href="/szamok" class="menu" aria-current="page">');
+    expect(res.body).toMatch(/<span class="rail[^"]*"[^>]*style="--fill:[\d.]+%"/);
+    await a.close();
+  });
+
+  it("a Számok oldal hitelesítés nélkül elutasít", async () => {
+    const a = await boot();
+    const res = await a.server.inject({ method: "GET", url: "/szamok" });
+    expect(res.statusCode).toBe(401);
     await a.close();
   });
 });

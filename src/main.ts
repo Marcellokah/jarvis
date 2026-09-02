@@ -5,7 +5,7 @@ import { buildBot, sendTo } from "./delivery/telegram/bot.ts";
 import { acquireInstanceLock } from "./infra/instance-lock.ts";
 import { startScheduler } from "./infra/scheduler.ts";
 import { aggregate } from "./core/analysis/aggregate.ts";
-import { metricsRowsFrom } from "./delivery/http/page.ts";
+import { metricsRowsFrom } from "./delivery/http/view/numbers.ts";
 import { isoDate, TZ } from "./shared/dates.ts";
 import { createGatherMark, runNotifyTick } from "./core/notify/tick.ts";
 import { gatherCandidates } from "./core/notify/gather.ts";

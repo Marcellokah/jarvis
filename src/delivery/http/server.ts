@@ -48,16 +48,18 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   // Bearer auth guards /api/*; /healthz stays open so a liveness probe never
   // needs the token.
   //
-  // `GET /` is guarded too, by the same token: the page carries the brief,
-  // every analysis, the numbers and the whole thread in one response. The
-  // server binds to 127.0.0.1, but `deploy/README.md` documents a
-  // `tailscale serve` that proxies the whole origin — protection cannot depend
-  // on which of those happens to be switched on today.
+  // Every full page is guarded too, by the same token: each one carries the
+  // brief, the analyses, the numbers or the whole thread — more, in one
+  // response, than any single `/api/` route hands out. The server binds to
+  // 127.0.0.1, but `deploy/README.md` documents a `tailscale serve` that
+  // proxies the whole origin — protection cannot depend on which of those
+  // happens to be switched on today.
   //
   // `/api/chat` takes the cookie too: it is the page's own fetch, and the page
   // is already proving itself with that cookie one request earlier. Every
   // other `/api/*` route is called by a Shortcut or a script, which sends a
   // header and never a cookie, so those stay bearer-only.
+  const PAGE_ROUTES = new Set(["/", "/szamok"]);
   const auth = bearerAuth(deps.token);
   const chat = chatAuth(deps.token);
   const page = pageAuth(deps.token);
@@ -65,7 +67,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     const route = request.url.split("?")[0] ?? request.url;
     if (route === "/api/chat") await chat(request, reply);
     else if (route.startsWith("/api/")) await auth(request, reply);
-    else if (route === "/") await page(request, reply);
+    else if (PAGE_ROUTES.has(route)) await page(request, reply);
   });
 
   /**

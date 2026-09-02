@@ -11,7 +11,7 @@ import { huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
 import { readChannels, summarise } from "../view/channels.ts";
 import { layout, type NavState } from "../view/shell.ts";
 import { todayBody } from "../view/today.ts";
-import type { MetricRow } from "../page.ts";
+import { numbersBody, type MetricRow } from "../view/numbers.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
 export const WEB_CHAT_ID = "web";
@@ -22,7 +22,6 @@ export interface PageDeps {
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
   health: HealthRepo;
-  /** Kept for the `/szamok` route this same handler grows in a later task. */
   metricsRows: () => MetricRow[];
   clock: Clock;
   logger: Logger;
@@ -37,6 +36,37 @@ function ageWords(from: string, now: Date): string {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} órája`;
   return `${Math.round(hours / 24)} napja`;
+}
+
+/**
+ * The nav lamps, assembled the same way on every page.
+ *
+ * `/` was the only route when this was written inline; `/szamok` makes it the
+ * second, so it moves here rather than being copied. Each source keeps its
+ * own try/catch, exactly as `/` originally wrote them: a failing analyses
+ * repo must dim the "Elemzés" lamp, never take the whole page down.
+ */
+async function navState(deps: PageDeps, now: Date): Promise<NavState> {
+  let hasBrief = false;
+  try {
+    const brief = deps.briefs.cached(now);
+    hasBrief = brief !== null && brief.markdown.trim() !== "";
+  } catch (err) {
+    deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
+  }
+
+  let hasAnalysis = false;
+  try {
+    hasAnalysis = deps.analyses.latestPerDomain().length > 0;
+  } catch (err) {
+    deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
+  }
+
+  return {
+    ma: hasBrief,
+    elemzes: hasAnalysis,
+    kerdes: await deps.chat.available(),
+  };
 }
 
 export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
@@ -71,32 +101,61 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
     }
 
-    let hasAnalysis = false;
-    try {
-      hasAnalysis = deps.analyses.latestPerDomain().length > 0;
-    } catch (err) {
-      deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
-    }
-
     const readings = readChannels(snapshot, now);
-    const nav: NavState = {
-      ma: briefMarkdown !== null,
-      elemzes: hasAnalysis,
-      kerdes: await deps.chat.available(),
-    };
 
     return reply.type("text/html; charset=utf-8").send(layout({
       section: "ma",
       dateLabel: huLongDate(now, TZ),
       briefAge,
       channels: summarise(readings),
-      nav,
+      nav: await navState(deps, now),
       body: todayBody({
         briefMarkdown,
         readings,
         lastSeen,
         writtenAge: snapshot ? ageWords(snapshot.ingestedAt, now) : null,
       }),
+    }));
+  });
+
+  app.get("/szamok", async (_request, reply) => {
+    const now = deps.clock.now();
+    const today = isoDate(now, TZ);
+
+    // Same status-strip inputs as `/`: the brief's age and today's channel
+    // readings appear on every page, not just the one that shows the brief
+    // itself.
+    let briefAge: string | null = null;
+    try {
+      const brief = deps.briefs.cached(now);
+      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
+    }
+
+    let snapshot = undefined;
+    try {
+      snapshot = deps.health.forDate(today);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
+    }
+
+    // The aggregate the rows are built from touches every table the app has;
+    // a corrupt row or a bad query must dim the numbers, not the page.
+    let metricsRows: MetricRow[] = [];
+    try {
+      metricsRows = deps.metricsRows();
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its metrics");
+    }
+
+    return reply.type("text/html; charset=utf-8").send(layout({
+      section: "szamok",
+      dateLabel: huLongDate(now, TZ),
+      briefAge,
+      channels: summarise(readChannels(snapshot, now)),
+      nav: await navState(deps, now),
+      body: numbersBody(metricsRows),
     }));
   });
 
