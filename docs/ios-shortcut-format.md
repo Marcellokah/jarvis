@@ -218,6 +218,17 @@ hostname could not be found" —, és a hiba úgy néz ki, mintha a szerver lenn
 lekapcsolva. Hat másodperc bőven elég; kézzel előre felcsatlakozva a Shortcut
 azért ment, mert a várakozásnak akkor nem volt dolga.
 
+Az `if` ág (GetStatus → már csatlakozva? → különben Connect) fölösleges: a
+`Connect` no-op, ha már fent van, a lánc pedig addig sem megy tovább, amíg
+nincs kapcsolat. Elhagyva két akcióval és egy elágazással kevesebb.
+
+A `Connect`/`Disconnect` a futás közben **saját párbeszédet dob fel**, amit el
+kell fogadni. A generált fájlban `ShowWhenRun: False` és `WFShowWhenRun: False`
+szerepel az intenteken — ez kísérlet, nem mért tudás; ha a Shortcuts nem
+ismeri, figyelmen kívül hagyja. Ami biztosan hat: az **automatizálás**
+beállításánál a *Futtatás azonnal* (nem *Kérdés futtatás előtt*), és az akció
+ⓘ-jében a *Megjelenítés futtatáskor* kapcsoló, ha van neki.
+
 > **A macOS-en exportált fájlban `io.tailscale.ipn.macsys` szerepel.** Az a
 > változat iOS-en „nincs telepítve az app" hibát ad. Generáláskor mindig az
 > `ios` alakot kell írni.
