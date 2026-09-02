@@ -3,9 +3,12 @@ import { resolve, join } from "node:path";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { readExport, type ExportEntry } from "../../src/infra/health-export/reader.ts";
+import {
+  readExport, FOOD_CORRELATION_DUPLICATE, type ExportEntry,
+} from "../../src/infra/health-export/reader.ts";
 
 const FIXTURE = resolve("test/fixtures/health/export.xml");
+const FOOD_FIXTURE = resolve("test/fixtures/health/food-correlation.xml");
 
 async function collect(path: string): Promise<ExportEntry[]> {
   const out: ExportEntry[] = [];
@@ -132,6 +135,71 @@ describe("readExport", () => {
       // 1000 kJ is 239 kcal. Storing 1000 would have been the worse outcome.
       expect(workouts[0]!.energyKcal).toBeNull();
       expect(all.filter((e) => e.kind === "dropped")).toHaveLength(1);
+    });
+  });
+
+  /**
+   * Measured on the owner's real export: 439 <Correlation> elements and 878
+   * records of every dietary type — 439 top-level plus 439 nested copies of
+   * the very same measurements. Every dietary value in the database was
+   * therefore exactly double, and the phone's own Shortcut (reading HealthKit,
+   * where the entry exists once) said 162 kcal on a day the import stored 324.
+   */
+  describe("food entries Apple writes twice", () => {
+    const records = async () =>
+      (await collect(FOOD_FIXTURE)).filter((e) => e.kind === "record");
+
+    it("counts a food entry once when it is both top-level and inside a Correlation", async () => {
+      const kcal = (await records()).filter((e) => e.type === "DietaryEnergyConsumed");
+      // 124 kcal appears twice in the file and must arrive once.
+      expect(kcal.filter((e) => e.value === "124")).toHaveLength(1);
+    });
+
+    it("counts each type in a multi-type Correlation once, not once per copy", async () => {
+      const byType = new Map<string, number>();
+      for (const r of await records()) byType.set(r.type, (byType.get(r.type) ?? 0) + 1);
+      // The Correlation holds all four; each is also written top-level.
+      expect(byType.get("DietaryProtein")).toBe(1);
+      expect(byType.get("DietaryCarbohydrates")).toBe(1);
+      expect(byType.get("DietaryFatTotal")).toBe(1);
+      // Two separate food entries, each doubled in the file.
+      expect(byType.get("DietaryEnergyConsumed")).toBe(2);
+    });
+
+    it("keeps reading plain records after a Correlation closes", async () => {
+      // Five StepCount records follow the Correlations, the first of them on
+      // the very next line after a </Correlation> and indented exactly like a
+      // nested record — indentation is not the signal, depth is.
+      const steps = (await records()).filter((e) => e.type === "StepCount");
+      expect(steps.map((e) => e.value)).toEqual(["1200", "800", "300", "100", "50"]);
+    });
+
+    it("does not swallow what follows a Correlation that wraps nothing", async () => {
+      const steps = (await records()).filter((e) => e.type === "StepCount");
+      // 300 follows a self-closing <Correlation .../>; 100 follows one holding
+      // only metadata; 50 follows one opened and closed on a single line. Each
+      // would be missing if its Correlation had been treated as left open.
+      expect(steps.map((e) => e.value)).toContain("300");
+      expect(steps.map((e) => e.value)).toContain("100");
+      expect(steps.map((e) => e.value)).toContain("50");
+    });
+
+    /**
+     * A skipped twin is not the same thing as a record that could not be
+     * trusted: nothing is lost, the top-level copy is stored. It is still
+     * yielded — a silent drop is indistinguishable downstream from data that
+     * was never recorded — but under one stable reason, so the rollup groups
+     * all five into a single counted line instead of five lines of noise (on
+     * the real export: one line saying 1,756, not 1,756 lines).
+     */
+    it("reports each skipped twin under one stable reason rather than dropping it silently", async () => {
+      const dropped = (await collect(FOOD_FIXTURE)).filter((e) => e.kind === "dropped");
+      expect(dropped).toHaveLength(5); // 4 in the first Correlation, 1 in the second
+      expect(new Set(dropped.map((e) => e.reason))).toEqual(
+        new Set([FOOD_CORRELATION_DUPLICATE]),
+      );
+      // Not phrased as a unit problem: the import prints those as an alarm.
+      expect(FOOD_CORRELATION_DUPLICATE).not.toContain("nem várt egység");
     });
   });
 

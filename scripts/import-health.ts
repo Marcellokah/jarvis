@@ -31,7 +31,7 @@ import { dirname } from "node:path";
 import { createApp } from "../src/app.ts";
 import { loadEnv } from "../src/env.ts";
 import { fromRoot } from "../src/shared/paths.ts";
-import { readExport } from "../src/infra/health-export/reader.ts";
+import { readExport, FOOD_CORRELATION_DUPLICATE } from "../src/infra/health-export/reader.ts";
 import { rollup } from "../src/infra/health-export/rollup.ts";
 import { withoutPartialDayTotals } from "../src/infra/health-export/partial-day.ts";
 import { agentFix, holdersOf } from "../src/infra/db/holder.ts";
@@ -194,7 +194,30 @@ const ignored = Object.entries(skipped).sort((a, b) => b[1] - a[1]);
 // column would vanish in silence -- the one outcome the unit check exists to
 // prevent. These print in full, and separately.
 const unitProblems = ignored.filter(([type]) => type.includes("nem várt egység"));
-const onPurpose = ignored.filter(([type]) => !type.includes("nem várt egység"));
+
+// Apple writes each food entry twice — top-level and again inside a
+// <Correlation> — and the reader keeps only the first. That is the one line
+// in this list that is not a loss: nothing was left out of the database, a
+// number was stopped from being counted twice. Printed on its own, and said
+// in words, because ranked among genuinely skipped types it would read as
+// "1756 dietary records thrown away" — the exact opposite of what happened.
+const duplicates = ignored.filter(([type]) => type === FOOD_CORRELATION_DUPLICATE);
+const onPurpose = ignored.filter(
+  ([type]) => !type.includes("nem várt egység") && type !== FOOD_CORRELATION_DUPLICATE,
+);
+
+if (duplicates.length > 0) {
+  const n = duplicates[0]![1];
+  console.log();
+  console.log(
+    `Étel-rekordok duplán az exportban: ${n.toLocaleString("hu-HU")} `
+    + "(a Correlation-ön belüli másolat kimaradt)",
+  );
+  console.log(
+    "  (nem adatvesztés: mindegyiket a saját, önálló Record-ja képviseli — "
+    + "e nélkül minden táplálkozási érték duplán számolódna)",
+  );
+}
 
 if (unitProblems.length > 0) {
   console.log();
