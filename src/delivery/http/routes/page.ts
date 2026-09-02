@@ -62,10 +62,21 @@ async function navState(deps: PageDeps, now: Date): Promise<NavState> {
     deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
   }
 
+  // `available()` is a `SecretResolver` read under the hood, and nothing
+  // guarantees an arbitrary resolver swallows its own errors the way the
+  // keychain one happens to — a throw here must dim the "Kérdés" lamp, not
+  // 500 every page that shows it.
+  let chatAvailable = false;
+  try {
+    chatAvailable = await deps.chat.available();
+  } catch (err) {
+    deps.logger.warn({ err: String(err) }, "nav indicator fell back to dark");
+  }
+
   return {
     ma: hasBrief,
     elemzes: hasAnalysis,
-    kerdes: await deps.chat.available(),
+    kerdes: chatAvailable,
   };
 }
 
