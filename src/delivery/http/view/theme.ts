@@ -176,4 +176,31 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .spark path { stroke-dasharray: 1; stroke-dashoffset: 0;
   animation: vonal-be .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(320ms + var(--i, 0) * 45ms); }
 @media (prefers-reduced-motion: reduce) { .spark path { animation: none; } }
+
+/* ---- nagy diagram ---- */
+.plot { display: block; width: 100%; height: auto; }
+.plot .racs { stroke: var(--vaz); stroke-width: .5; opacity: .35; }
+.plot .tengely { fill: var(--vaz); font: .62rem var(--mono); }
+.plot .hezag { fill: var(--racs); }
+.plot .sav { fill: var(--jel); opacity: .28; }
+.plot .vonal { fill: none; stroke: var(--jel); stroke-width: 1.5; stroke-linecap: round; }
+.plot .pont { fill: var(--jel); }
+.plot .celpont { fill: transparent; outline: none; }
+.plot .olvaso { opacity: 0; pointer-events: none; }
+.plot .olvaso rect { fill: var(--racs); }
+.plot .olvaso text { fill: var(--szoveg); font: .66rem var(--mono); }
+.plot .celpont:hover + .olvaso,
+.plot .celpont:focus-visible + .olvaso { opacity: 1; }
+.plot .celpont:focus-visible { stroke: var(--jel); stroke-width: 1; }
+/* pathLength itself is an SVG attribute, not a CSS property — the markup
+   (chart/plot.ts) sets pathLength="1" on every .vonal <path>, which is what
+   makes this dasharray/dashoffset pair mean "the whole line" regardless of
+   the segment's real length, so a 30-day and a 7-year chart draw in over the
+   same span. The gap band deliberately does NOT reuse this animation: the
+   hole should read as absence because nothing happens there, not because it
+   faded in like measured data did. */
+.plot .vonal { stroke-dasharray: 1; stroke-dashoffset: 0;
+  animation: vonal-be .7s cubic-bezier(.2,.8,.2,1) both; }
+.plot .sav { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: 200ms; }
+@media (prefers-reduced-motion: reduce) { .plot .vonal, .plot .sav { animation: none; } }
 `;
