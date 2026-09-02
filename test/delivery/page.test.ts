@@ -120,6 +120,22 @@ describe("metricsRowsFrom", () => {
     expect(rows.find((r) => r.label === "Alvás (90 nap)")!.series?.column).toBe("asleep_min");
     expect(rows.find((r) => r.label === "HRV (7 nap)")!.series).toEqual({ column: "hrv", days: 7 });
   });
+
+  it("egy olvashatatlan ablakcímke csak a saját sorát veszíti el, nem az összeset", () => {
+    // A `days` NaN volt minden nem `Nd` alakú címkére, és nem maradt a saját
+    // sorában: a /szamok útvonal `Math.max`-szal veszi a leghosszabb ablakot
+    // egyetlen közös lekérdezéshez, és `Math.max(NaN, ...)` NaN — vagyis egy
+    // rossz címke az oldal ÖSSZES sparkline-ját eltüntette. Ma latens (minden
+    // ablak `Nd`), de a kár mérete miatt őrizni kell.
+    const rows = metricsRowsFrom(metricsFixture({
+      hrv7: { value: 68.7, n: 6, coverage: 6 / 7, window: "hét" },
+    }));
+    expect(rows.find((r) => r.label === "HRV (7 nap)")!.series).toBeNull();
+    // A többi sor érintetlen: ez a különbség a "saját sorát veszíti" és a
+    // "mindent visz" között.
+    expect(rows.find((r) => r.label === "Lépés (365 nap)")!.series).toEqual({ column: "steps", days: 365 });
+    for (const r of rows) expect(r.series?.days).not.toBeNaN();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -367,6 +383,81 @@ describe("page routes", () => {
     expect(res.body).toContain('<a href="/szamok/hrv?tart=30" class="tartomany" aria-current="page">30 nap</a>');
     expect(res.body).not.toContain('tart=365" class="tartomany" aria-current="page"');
     expect(res.body).not.toContain('tart=mind" class="tartomany" aria-current="page"');
+    await a.close();
+  });
+
+  it("a `mind` nem oszt el olyan napokkal, amikről nem is lehetett adat", async () => {
+    // A `mind` 4000 napot kér vissza, az előzmény viszont 2019-ben kezdődik:
+    // minden lefedettség ~1300 olyan nappal osztódott, amit ez a rendszer nem
+    // mérhetett meg. A 99,9%-ban teljes lépéssorozat így „68% lefedettség"-et
+    // hirdetett — pontosan az a magabiztosan rossz szám, aminek a kizárására
+    // az egész projekt épül, és a diagram bal harmada üresen maradt, minden
+    // magyarázó hézagsáv nélkül.
+    const a = await boot();
+    a.health.upsert({ ...emptySnapshot("2026-08-30"), steps: 9000 }, {}, new Date("2026-08-30T20:00:00Z"));
+    a.health.upsert({ ...emptySnapshot("2026-09-01"), steps: 11000 }, {}, new Date("2026-09-01T20:00:00Z"));
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/steps?tart=mind", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    // 2026-08-30 … 2026-09-01: három nap, két mérés — 66%, nem 0%.
+    expect(res.body).toContain('<p class="osszegzes">3 nap: 2 mérés, 66% lefedettség');
+    expect(res.body).not.toContain("4000 nap");
+    await a.close();
+  });
+
+  it("egy előzményen belüli lyuk viszont továbbra is számít a lefedettségbe", async () => {
+    // Az előző teszt párja: önmagában az azt is megengedné, hogy az ablak eleje
+    // MINDIG az első méréshez tapadjon — amivel egy 30 napos ablakban a 28
+    // mérés nélküli nap egyszerűen eltűnne. Csak az előzmény kezdete ELŐTTI
+    // rész vágható le, ezért kell egy jóval korábbi sor: az ablak eleje így az
+    // előzményen belülre esik, és a benne lévő lyuk valódi lyuk marad.
+    const a = await boot();
+    a.health.upsert({ ...emptySnapshot("2026-01-01"), steps: 7000 }, {}, new Date("2026-01-01T20:00:00Z"));
+    a.health.upsert({ ...emptySnapshot("2026-08-20"), steps: 8000 }, {}, new Date("2026-08-20T20:00:00Z"));
+    a.health.upsert({ ...emptySnapshot("2026-09-01"), steps: 11000 }, {}, new Date("2026-09-01T20:00:00Z"));
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/steps?tart=30", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<p class="osszegzes">30 nap: 2 mérés, 6% lefedettség');
+    await a.close();
+  });
+
+  it("a sor saját ablaka oda visz, amit a link ígér", async () => {
+    // A Számok sorai a SAJÁT ablakukkal linkelnek ide (`?tart=7`, `?tart=90`),
+    // a részletoldal viszont csak a 30/365/mind kulcsokat ismerte: a hét
+    // linkből négy némán egy 365 napos diagramra érkezett, miközben az URL-ben
+    // `tart=7` állt és a választón az „1 év" volt kijelölve. A sor ablaka
+    // valódi információ, nem eldobni kell, hanem megmutatni.
+    const a = await boot();
+    const szamok = await a.server.inject({
+      method: "GET", url: "/szamok", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(szamok.body).toContain('href="/szamok/hrv?tart=7"');
+
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/hrv?tart=7", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<a href="/szamok/hrv?tart=7" class="tartomany" aria-current="page">7 nap</a>');
+    expect(res.body).not.toContain('tart=365" class="tartomany" aria-current="page"');
+    // A három megnevezett ablak innen is elérhető marad, a helyén a skálán.
+    expect(res.body).toContain('<a href="/szamok/hrv?tart=30" class="tartomany">30 nap</a>');
+    expect(res.body).toContain('<a href="/szamok/hrv?tart=mind" class="tartomany">minden</a>');
+    await a.close();
+  });
+
+  it("a képtelen napszám az egy évre esik vissza, nem nyit millió napos ablakot", async () => {
+    const a = await boot();
+    for (const tart of ["0", "-3", "7,5", "999999"]) {
+      const res = await a.server.inject({
+        method: "GET", url: `/szamok/hrv?tart=${encodeURIComponent(tart)}`,
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('<a href="/szamok/hrv?tart=365" class="tartomany" aria-current="page">1 év</a>');
+    }
     await a.close();
   });
 

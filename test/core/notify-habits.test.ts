@@ -77,3 +77,23 @@ describe("lastDateWith", () => {
     db.close();
   });
 });
+
+describe("firstDate", () => {
+  it("az előzmény első napját adja, akkor is, ha az a legrégebbi sor", () => {
+    // Ez a diagramablakok alsó korlátja: ami ez elé esik, olyan nap, amiről ez
+    // a rendszer nem is szerezhetett adatot, és nem oszthatja a lefedettséget.
+    const db = memoryDb();
+    const repo = createHealthRepo(db);
+    const now = new Date("2026-09-10T00:00:00.000Z");
+    repo.fillGaps("2026-09-05", { steps: 9000 }, now);
+    repo.fillGaps("2019-02-13", { steps: 4000 }, now);
+    expect(repo.firstDate()).toBe("2019-02-13");
+    db.close();
+  });
+
+  it("üres előzményen null, nem dátumnak látszó semmi", () => {
+    const db = memoryDb();
+    expect(createHealthRepo(db).firstDate()).toBeNull();
+    db.close();
+  });
+});

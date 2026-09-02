@@ -164,6 +164,14 @@ export interface HealthRepo {
   fillGaps(date: string, values: Record<string, number>, now: Date): void;
   /** The most recent day holding a value in `column`, or null. */
   lastDateWith(column: string): string | null;
+  /**
+   * The first day the history holds a row at all, or null when it is empty.
+   *
+   * A chart window may reach back further than the history does, and the
+   * coverage it prints would then be divided by days this system could not
+   * possibly have measured. This is the earliest denominator that is honest.
+   */
+  firstDate(): string | null;
 }
 
 interface Row {
@@ -351,6 +359,12 @@ export function createHealthRepo(db: Db): HealthRepo {
          ON CONFLICT (date) DO UPDATE SET ${assignments}`,
         date, ...columns.map((c) => values[c]!), now.toISOString(),
       );
+    },
+
+    firstDate() {
+      return db.get<{ date: string }>(
+        "SELECT date FROM health_snapshots ORDER BY date LIMIT 1",
+      )?.date ?? null;
     },
 
     lastDateWith(column) {

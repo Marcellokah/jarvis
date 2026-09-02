@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSeries } from "../../src/delivery/http/view/chart/series.ts";
 import { plot } from "../../src/delivery/http/view/chart/plot.ts";
 import { SOROZATOK } from "../../src/delivery/http/view/chart/registry.ts";
+import { STYLE } from "../../src/delivery/http/view/theme.ts";
 
 const days = (first: string, ...vals: (number | null)[]) =>
   vals.map((value, i) => ({
@@ -26,16 +27,20 @@ describe("nagy diagram", () => {
   it("a hézagsáv nem riasztó színnel rajzolódik", () => {
     // Egy 2021-es lyuk nem hiba, csak hiány. A magenta az állapotsávé.
     //
-    // Ez a teszt csak azt tudja bizonyítani, hogy plot() sosem ír ki egy
-    // "riado" alstringet — mert a kimenet kizárólag osztálynevekre hivatkozik
-    // (pl. "hezag", "sav"), a színeket a theme.ts CSS-e adja hozzájuk. Ha
-    // valaki a .hezag vagy .sav szabályt itt, ebben a fájlban átírná
-    // var(--riado)-ra, ez a teszt azt NEM venné észre — placeholder,
-    // dokumentálja a szándékot, de nem őrzi. A tényleges garancia kézi
-    // ellenőrzés: theme.ts-ben `.plot .hezag { fill: var(--racs); }` és
-    // `.plot .sav { fill: var(--jel); ... }`, egyik sem var(--riado).
-    const s = buildSeries("hrv", "2026-01-01", "2026-01-09", days("2026-01-01", 1, 2, 3, null, null, null, null, 4, 5));
-    expect(plot(s, hrv)).not.toContain("riado");
+    // Ez a szabály a stíluslapban él, nem a plot() kimenetében — a kimenet
+    // csak osztályneveket ír ki. A korábbi változat ezért azt nézte, hogy a
+    // plot() kimenete nem tartalmazza a "riado" alstringet, ami sosem
+    // tartalmazhatta: a teszt nem tudott megbukni. Most a szabályt magát
+    // nézzük, és azt is, hogy egyáltalán megtaláltuk — különben egy átnevezett
+    // osztály üresen, hamis nyugalommal futtatná le.
+    // Minden ilyen szabály, nem csak az első: az animációs blokk ugyanezt a
+    // szelektort újra megnyitja, és ott is igaznak kell lennie.
+    const rules = (selector: string) =>
+      [...STYLE.matchAll(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`, "g"))].map((m) => m[0]);
+    expect(rules(".plot .hezag").length).toBeGreaterThan(0);
+    expect(rules(".plot .sav").length).toBeGreaterThan(0);
+    expect(rules(".plot .hezag").join("")).not.toContain("riado");
+    expect(rules(".plot .sav").join("")).not.toContain("riado");
   });
 
   it("minden oszlophoz tartozik billentyűzettel elérhető olvasó", () => {
@@ -86,5 +91,117 @@ describe("nagy diagram", () => {
     expect(readerCount).toBeLessThan(n);
     expect(readerCount).toBeGreaterThan(0);
     expect(html).not.toContain("NaN");
+  });
+
+  it("sűrű sorozatban sem húz vonalat a saját hézagsávján át", () => {
+    // Ez az ág bukott meg a valódi adaton. Sűrűnél a törés egyetlen feltétele
+    // az volt, hogy egy PIXELOSZLOP üresen maradjon — a tulajdonos
+    // előzményén viszont a HRV 37 hézagjából 37, a nyugalmi pulzusé 66-ból 65
+    // KESKENYEBB egy oszlopnál, tehát üres oszlop sosem keletkezett, és a
+    // mediánvonal átment a saját, kirajzolt hézagsávján: pontosan azokon a
+    // napokon, amikről nincs adat.
+    //
+    // A minta ezt az alakot állítja elő: 2000 napi mérés (sűrű, 660 oszlop),
+    // egy oszlop 3,03 nap — a közepén egy 3 napos lyuk, ami így egyetlen
+    // oszlopon belül marad, üres oszlopot nem hagy maga után.
+    const vals: (number | null)[] = Array.from({ length: 2001 }, (_, i) => 40 + (i % 5));
+    vals[1001] = null;
+    vals[1002] = null;
+    const rows = days("2020-01-01", ...vals);
+    const s = buildSeries("hrv", "2020-01-01", rows.at(-1)!.date, rows);
+    expect(s.points.length).toBeGreaterThan(660); // tényleg a sűrű ág
+    expect(s.gaps).toHaveLength(1);
+
+    const html = plot(s, hrv);
+    expect(html).toContain('class="hezag"');
+    // Két szakasz, két útvonal: a hézag két oldala nincs összekötve.
+    expect((html.match(/class="vonal"/g) ?? [])).toHaveLength(2);
+  });
+
+  it("sűrűnél a magában álló oszlopot pontnak rajzolja, nem semmit", () => {
+    // Egy csak "M"-et tartalmazó útvonal érvényes SVG, és pontosan nulla
+    // pixelt fest: a két hézag közé szorult egyetlen oszlop nyomtalanul
+    // eltűnt. A ritka ág mindig kört rajzolt oda.
+    const vals = [
+      ...Array.from({ length: 700 }, (_, i) => 40 + (i % 5)),
+      ...new Array(60).fill(null),
+      88,
+    ];
+    const rows = days("2024-01-01", ...vals);
+    const s = buildSeries("hrv", "2024-01-01", rows.at(-1)!.date, rows);
+    expect(s.points.length).toBeGreaterThan(660);
+    const html = plot(s, hrv);
+    expect(html).toContain('class="pont"');
+    expect(html).not.toMatch(/class="vonal" pathLength="1" d="M[\d.]+ [\d.]+"/);
+  });
+
+  it("a szórás nélküli sorozat középen fut, nem a tengelyen ül", () => {
+    // Valódi eset: a hatperces séta 49 mérése mind 500 m. A sparkline
+    // középre teszi (range === 0 → H/2), a nagy nézet a keret aljára
+    // szorította, három egyforma rácsfelirattal — ugyanaz a sor két
+    // ellentmondó képet mutatott. A középvonal a becsületes: az alsó él a
+    // metrika valaha mért legkisebb értékét jelentené.
+    const spec = SOROZATOK.get("six_min_walk_m")!;
+    const s = buildSeries("six_min_walk_m", "2026-01-01", "2026-01-05", days("2026-01-01", 500, 500, 500, 500, 500));
+    const html = plot(s, spec);
+    // T + IH/2 = 10 + 228/2 = 124.
+    expect(html).toMatch(/class="vonal"[^>]*d="M[\d.]+ 124/);
+    // Egyetlen rácsfelirat, nem három egyforma.
+    expect((html.match(/>500 m</g) ?? [])).toHaveLength(1);
+  });
+
+  it("ritka sorozatnál sem ad mérésenként egy tabstopot", () => {
+    // A ritka ág az alapértelmezett nézet, és ugyanaz a baja volt, amit a
+    // sűrűnél a 6. feladat már megoldott: 365 napi lépésmérés 365 célpont,
+    // `vo2max?tart=mind` 648 — egyenként pixelnyi csíkok, amiket sem egérrel
+    // nem lehet eltalálni, sem Tabbal végigjárni, és mindegyik kétszer viszi a
+    // saját feliratát (title + látható olvasó): ~190 KB jelölés egy 30 KB-os
+    // képhez.
+    const n = 365;
+    const rows = days("2025-01-01", ...Array.from({ length: n }, (_, i) => 40 + (i % 9)));
+    const s = buildSeries("hrv", "2025-01-01", rows.at(-1)!.date, rows);
+    expect(s.points.length).toBeLessThan(660); // tényleg a ritka ág
+    const html = plot(s, hrv);
+    const readerCount = (html.match(/tabindex="0"/g) ?? []).length;
+    expect(readerCount).toBeGreaterThan(0);
+    expect(readerCount).toBeLessThanOrEqual(200);
+  });
+
+  it("rövid ablakon minden célpont a saját napját és értékét mondja", () => {
+    // A célpontrács nem törölheti a napi pontosságot ott, ahol elfér: egy 30
+    // napos ablakban minden mérés a saját cellájába esik.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-30", days("2026-01-01", 40, 41, 42));
+    expect(plot(s, hrv)).toContain("<title>2026-01-01 · 40,0 ms</title>");
+  });
+
+  it("egy cella dátumtartománya nem lóg át a szomszédjára", () => {
+    // A feliratot a cella SAJÁT pontjaiból írjuk, nem a helyezési tört
+    // visszakerekítéséből: az utóbbinál az i. oszlop vége és az i+1. kezdete
+    // ugyanaz a nap lett, tehát minden olvasó egy szomszédjához tartozó napot
+    // is magának állított.
+    const rows = days("2024-01-01", ...Array.from({ length: 700 }, (_, i) => 40 + (i % 5)));
+    const s = buildSeries("hrv", "2024-01-01", rows.at(-1)!.date, rows);
+    const html = plot(s, hrv);
+    const ranges = [...html.matchAll(/<title>(\d{4}-\d{2}-\d{2})(?:–(\d{4}-\d{2}-\d{2}))?/g)]
+      .map((m) => ({ from: m[1]!, to: m[2] ?? m[1]! }));
+    expect(ranges.length).toBeGreaterThan(10);
+    for (let i = 1; i < ranges.length; i++) {
+      expect(ranges[i]!.from > ranges[i - 1]!.to).toBe(true);
+    }
+  });
+
+  it("az összefoglaló a napszámot és a trendet is elmondja", () => {
+    // A spec szerinti alak: „HRV, 365 nap: 1424 mérés, 52% lefedettség,
+    // 41–108 ms, a trend enyhén emelkedő." Ugyanez a string kell a sparkline
+    // fölé is — egy sor és a mögötte lévő oldal nem mondhat mást ugyanarról.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-05", days("2026-01-01", 40, 50, null, null, 60));
+    const html = plot(s, hrv);
+    expect(html).toMatch(/<title>HRV, 5 nap: 3 mérés, 60% lefedettség, [^<]*a trend emelkedő<\/title>/);
+  });
+
+  it("három mérés alatt nem állít trendet", () => {
+    // Két pontra mindig ráilleszthető egy egyenes; attól még nem trend.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-02", days("2026-01-01", 40, 60));
+    expect(plot(s, hrv)).not.toContain("a trend");
   });
 });

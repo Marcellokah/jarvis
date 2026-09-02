@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSeries } from "../../src/delivery/http/view/chart/series.ts";
 import { sparkline } from "../../src/delivery/http/view/chart/sparkline.ts";
 import { SOROZATOK } from "../../src/delivery/http/view/chart/registry.ts";
+import { STYLE } from "../../src/delivery/http/view/theme.ts";
 
 const days = (first: string, ...vals: (number | null)[]) =>
   vals.map((value, i) => ({
@@ -43,7 +44,26 @@ describe("sparkline", () => {
   });
 
   it("nem használ riasztó színt", () => {
-    const s = buildSeries("hrv", "2026-01-01", "2026-01-02", days("2026-01-01", 1, 2));
-    expect(sparkline(s, hrv)).not.toContain("--riado");
+    // A színt a stíluslap adja, a sparkline() csak osztályneveket ír ki — a
+    // korábbi `not.toContain("--riado")` a kimeneten ezért sosem bukhatott
+    // meg. A szabályt magát nézzük, és azt is, hogy megtaláltuk-e.
+    // Minden ilyen szabály, nem csak az első: az animációs blokk ugyanezt a
+    // szelektort újra megnyitja, és ott is igaznak kell lennie.
+    const rules = (selector: string) =>
+      [...STYLE.matchAll(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`, "g"))].map((m) => m[0]);
+    expect(rules(".spark path").length).toBeGreaterThan(0);
+    expect(rules(".spark circle").length).toBeGreaterThan(0);
+    expect(rules(".spark path").join("")).not.toContain("riado");
+    expect(rules(".spark circle").join("")).not.toContain("riado");
+  });
+
+  it("ugyanazt az összefoglalót mondja, amit a nagy nézet", () => {
+    // Egy sor sparkline-ja és a mögötte lévő részletoldal ugyanarról a
+    // sorozatról nem mondhat két különböző dolgot: a napszám a kicsiből
+    // hiányzott, a trend mindkettőből.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-05", days("2026-01-01", 40, 50, null, null, 60));
+    expect(sparkline(s, hrv)).toMatch(
+      /<title>HRV, 5 nap: 3 mérés, 60% lefedettség, [^<]*a trend emelkedő<\/title>/,
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../markdown.ts";
+import { chartSummary } from "./summary.ts";
 import type { Series, Point } from "./series.ts";
 import type { SeriesSpec } from "./registry.ts";
 
@@ -16,11 +17,10 @@ const PAD = 1.5;
  * noise rather than information, so the line simply stops.
  */
 export function sparkline(series: Series, spec: SeriesSpec): string {
-  const summary = escapeHtml(
-    `${spec.label}: ${series.points.length} mérés, `
-    + `${Math.floor(series.coverage * 100)}% lefedettség`
-    + (series.points.length === 0 ? "" : `, ${spec.format(series.min)}–${spec.format(series.max)}`),
-  );
+  // The exact wording the large view uses, from the same function: a reader
+  // who follows the row's link must not be told two different things about
+  // one series — see summary.ts.
+  const summary = escapeHtml(`${spec.label}, ${chartSummary(series, spec)}`);
 
   const open = (cls: string) =>
     `<svg class="${cls}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" `

@@ -87,12 +87,20 @@ function row(label: string, m: Metric, digits = 0, unit = "", column?: string): 
   // is the one place the owner reads coverage. Only genuine completeness may
   // claim it — incomplete data must never look complete.
   const pct = Math.floor(m.coverage * 100);
+  // An unreadable window label does not stay inside its own row: the /szamok
+  // route takes `Math.max` over every row's `days` to size one shared history
+  // query, and `Math.max(NaN, ...)` is NaN — so a single window that is not
+  // shaped `Nd` used to erase EVERY sparkline on the page rather than just
+  // this row's. A row whose window cannot be read loses its own chart and its
+  // own link, and nothing else does.
+  const days = Number.parseInt(m.window, 10);
+  const chartable = Number.isInteger(days) && days > 0;
   return {
     label,
     value: m.value === null ? "nincs mérés" : `${hu(m.value, digits)}${unit}`,
     detail: `${m.n} nap · ${pct}% lefedettség (${m.window})`,
     coverage: m.coverage,
-    series: column === undefined ? null : { column, days: Number(m.window.replace(/d$/, "")) },
+    series: column === undefined || !chartable ? null : { column, days },
   };
 }
 

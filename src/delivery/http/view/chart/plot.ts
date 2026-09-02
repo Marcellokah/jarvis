@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../markdown.ts";
-import { bucketise } from "./buckets.ts";
+import { bucketise, columnOf, type Bucket } from "./buckets.ts";
+import { chartSummary } from "./summary.ts";
 import { dayNumber, type Series, type Point } from "./series.ts";
 import type { SeriesSpec } from "./registry.ts";
 
@@ -7,8 +8,20 @@ const W = 720, H = 260, L = 52, R = 8, T = 10, B = 22;
 const IW = W - L - R;
 const IH = H - T - B;
 
-/** The inverse of `dayNumber`: the ISO date a day-since-epoch number names. */
-const dateOfDay = (day: number): string => new Date(day * 86_400_000).toISOString().slice(0, 10);
+/**
+ * The narrowest reader target worth drawing, in this viewBox's own units.
+ *
+ * It is what caps the number of targets, and the cap is not cosmetic. One
+ * target per measurement puts 648 of them on `vo2max?tart=mind` and 365 on
+ * the default steps chart — each a strip barely a pixel wide, so no pointer
+ * can pick one out and no one can Tab through them, and each carrying its
+ * label twice (once as a `<title>`, once as the visible readout) for ~190 KB
+ * of markup around a 30 KB picture. Targets therefore sit on a fixed grid
+ * whether the series is dense or sparse, and a cell that caught several
+ * measurements says how many.
+ */
+const READER_W = 4;
+const READER_COLS = Math.max(1, Math.round(IW / READER_W));
 
 /**
  * The large view: axes, gap bands, a min-max band and a median line.
@@ -47,19 +60,17 @@ const dateOfDay = (day: number): string => new Date(day * 86_400_000).toISOStrin
  * fixes that without JavaScript, which this chart does not ship.
  *
  * When the series is dense (more measurements than pixel columns), the chart
- * draws a bucketed min-max band, not raw points — see buckets.ts. The reader
- * follows the same rule: one focusable target per drawn column, describing
- * its range and median, not one per raw measurement. Doing it the other way
- * would put thousands of overlapping, individually-tabbable targets on a
- * 7-year chart, and their text would describe measurements the picture
- * itself already collapsed into a band.
+ * draws a bucketed min-max band, not raw points — see buckets.ts. Either way
+ * the line obeys the one rule this whole branch exists for: it never spans a
+ * hole the series itself calls unusual. The sparse branch gets that from
+ * `series.segments`; the dense branch has to be told, because a hole one
+ * pixel column wide leaves no empty column behind to break on and the median
+ * line would otherwise run straight through its own `hezag` band — which is
+ * exactly what it did on the two metrics the spec was written from (37 of 37
+ * HRV holes, 65 of 66 resting-pulse ones).
  */
 export function plot(series: Series, spec: SeriesSpec): string {
-  const summary = escapeHtml(
-    `${spec.label}, ${series.totalDays} nap: ${series.points.length} mérés, `
-    + `${Math.floor(series.coverage * 100)}% lefedettség`
-    + (series.points.length === 0 ? "" : `, ${spec.format(series.min)}–${spec.format(series.max)}`),
-  );
+  const summary = escapeHtml(`${spec.label}, ${chartSummary(series, spec)}`);
   const open = `<svg class="plot" viewBox="0 0 ${W} ${H}" role="group" aria-label="${summary}">`
     + `<title>${summary}</title>`;
 
@@ -70,11 +81,16 @@ export function plot(series: Series, spec: SeriesSpec): string {
   const span = series.toDay - series.fromDay;
   const lo = spec.zeroBased ? Math.min(0, series.min) : series.min;
   const hi = series.max;
-  const range = hi - lo === 0 ? 1 : hi - lo;
+  // A series with no spread at all — 49 six-minute-walk tests, every one of
+  // them 500 m — has no axis to place a value on. It is centred, exactly as
+  // the sparkline centres it: pinning it to the bottom of the frame would
+  // read as the lowest value the metric ever took, and the two renderers
+  // would tell the same row two different stories.
+  const flat = hi - lo === 0;
   const n = (v: number) => Math.round(v * 100) / 100;
 
   const xOfDay = (day: number) => span === 0 ? L + IW / 2 : L + ((day - series.fromDay) / span) * IW;
-  const yOfVal = (v: number) => T + IH - ((v - lo) / range) * IH;
+  const yOfVal = (v: number) => flat ? T + IH / 2 : T + IH - ((v - lo) / (hi - lo)) * IH;
 
   // Gap bands first: they are the ground the rest is drawn on.
   const gaps = series.gaps.map((g) => {
@@ -86,9 +102,11 @@ export function plot(series: Series, spec: SeriesSpec): string {
     return `<rect class="hezag" x="${n(x1)}" y="${T}" width="${n(Math.max(1, x2 - x1))}" height="${IH}"/>`;
   }).join("");
 
-  const grid = [0, 0.5, 1].map((f) => {
+  // A flat series gets one grid line carrying its one value. Three lines with
+  // three identical labels would look like an axis and say nothing.
+  const grid = (flat ? [0.5] : [0, 0.5, 1]).map((f) => {
     const y = T + IH * f;
-    const v = hi - (hi - lo) * f;
+    const v = flat ? hi : hi - (hi - lo) * f;
     return `<line class="racs" x1="${L}" y1="${n(y)}" x2="${W - R}" y2="${n(y)}"/>`
       + `<text class="tengely" x="4" y="${n(y + 3)}">${escapeHtml(spec.format(v))}</text>`;
   }).join("");
@@ -110,36 +128,53 @@ export function plot(series: Series, spec: SeriesSpec): string {
       + `<text x="${n(bx + 6)}" y="${T + 13}">${esc}</text></g>`;
   };
 
+  // One reader per occupied grid cell, dense and sparse alike — see READER_W.
+  // A cell holding a single measurement still reads as that one day and that
+  // one value; only a cell that really caught several says so.
+  const cellLabel = (b: Bucket) => {
+    const value = `${spec.format(b.min)}–${spec.format(b.max)} (medián ${spec.format(b.median)})`;
+    if (b.n === 1) return `${b.from} · ${spec.format(b.median)}`;
+    return `${b.from === b.to ? b.from : `${b.from}–${b.to}`} · ${b.n} mérés, ${value}`;
+  };
+  const cellW = IW / READER_COLS;
+  const targets = bucketise(series, READER_COLS).map((b, i) => {
+    if (b === null) return "";
+    const x = L + (i / READER_COLS) * IW;
+    const label = cellLabel(b);
+    return `<rect class="celpont" tabindex="0" x="${n(x)}" y="${T}" width="${n(cellW)}" height="${IH}">`
+      + `<title>${escapeHtml(label)}</title></rect>${reader(x + cellW / 2, label)}`;
+  }).join("");
+
   let data: string;
-  let targets: string;
   if (dense) {
     const buckets = bucketise(series, columns);
-    const colW = IW / columns;
+    // The column each unusual hole lands its far end in. The line has to start
+    // a fresh subpath there: an even-every-other-day series packs its holes
+    // into a single column, so "the next column is empty" — the only break the
+    // dense branch used to know — never fires, and the median line bridges the
+    // very band drawn to say nothing was measured.
+    const breakAt = new Set(series.gaps.map((g) => columnOf(series, dayNumber(g.toDate), columns)));
     const band: string[] = [];
-    const line: string[] = [];
-    const readers: string[] = [];
-    let connected = false;
+    const runs: { x: number; y: number }[][] = [];
     for (const [i, b] of buckets.entries()) {
-      if (b === null) { connected = false; continue; }
+      if (b === null) continue;
       const x = L + (i / columns) * IW;
       band.push(`<rect class="sav" x="${n(x)}" y="${n(yOfVal(b.max))}" width="1.2" `
         + `height="${n(Math.max(0.6, yOfVal(b.min) - yOfVal(b.max)))}"/>`);
-      line.push(`${connected ? "L" : "M"}${n(x)} ${n(yOfVal(b.median))}`);
-      connected = true;
-
-      // The column's own day range, read back out of the same fraction
-      // bucketise() used to place points in it.
-      const dayLo = span === 0 ? series.fromDay : Math.round(series.fromDay + (i / columns) * span);
-      const dayHi = span === 0 ? series.fromDay : Math.round(series.fromDay + ((i + 1) / columns) * span);
-      const dateLabel = dayLo === dayHi ? dateOfDay(dayLo) : `${dateOfDay(dayLo)}–${dateOfDay(dayHi)}`;
-      const label = `${dateLabel} · ${b.n} mérés, ${spec.format(b.min)}–${spec.format(b.max)} `
-        + `(medián ${spec.format(b.median)})`;
-      const cw = n(Math.max(1, colW));
-      readers.push(`<rect class="celpont" tabindex="0" x="${n(x)}" y="${T}" width="${cw}" height="${IH}">`
-        + `<title>${escapeHtml(label)}</title></rect>${reader(x + colW / 2, label)}`);
+      const previous = i > 0 && buckets[i - 1] !== null;
+      if (!previous || breakAt.has(i) || runs.length === 0) runs.push([]);
+      runs.at(-1)!.push({ x, y: yOfVal(b.median) });
     }
-    data = band.join("") + `<path class="vonal" pathLength="1" d="${line.join(" ")}"/>`;
-    targets = readers.join("");
+    // A run of one column is a point, not a line: an "M"-only path is legal
+    // SVG that draws absolutely nothing, so the one column between two holes
+    // would simply vanish. The sparse branch has always drawn a circle there.
+    data = band.join("") + runs.map((run) => {
+      if (run.length === 1) {
+        return `<circle class="pont" cx="${n(run[0]!.x)}" cy="${n(run[0]!.y)}" r="2"/>`;
+      }
+      const d = run.map((p, i) => `${i === 0 ? "M" : "L"}${n(p.x)} ${n(p.y)}`).join(" ");
+      return `<path class="vonal" pathLength="1" d="${d}"/>`;
+    }).join("");
   } else {
     data = series.segments.map((seg) => {
       if (seg.length === 1) {
@@ -147,15 +182,6 @@ export function plot(series: Series, spec: SeriesSpec): string {
       }
       const d = seg.map((p: Point, i) => `${i === 0 ? "M" : "L"}${n(xOfDay(p.day))} ${n(yOfVal(p.value))}`).join(" ");
       return `<path class="vonal" pathLength="1" d="${d}"/>`;
-    }).join("");
-
-    // One reader per measured day: sparse enough that every measurement
-    // earns its own focusable target.
-    targets = series.points.map((p) => {
-      const x = xOfDay(p.day);
-      const label = `${p.date} · ${spec.format(p.value)}`;
-      return `<rect class="celpont" tabindex="0" x="${n(x - 2)}" y="${T}" width="4" height="${IH}">`
-        + `<title>${escapeHtml(label)}</title></rect>${reader(x, label)}`;
     }).join("");
   }
 

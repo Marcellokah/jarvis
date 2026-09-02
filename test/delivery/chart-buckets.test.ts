@@ -47,4 +47,14 @@ describe("sűrítés", () => {
     const b = bucketise(s, 5);
     expect(b.filter((x) => x !== null)).toHaveLength(1);
   });
+
+  it("az oszlop a saját napjait viszi, nem a kerekített oszlophatárokat", () => {
+    // A felirat dátumtartománya innen jön. Ha az oszlopindexből számolnánk
+    // vissza, az i. oszlop vége és az i+1. kezdete ugyanaz a nap lenne, és
+    // minden olvasó egy szomszédjához tartozó napot is magának állítana.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-04", days("2026-01-01", 10, 30, 20, 40));
+    const b = bucketise(s, 2);
+    expect(b[0]).toMatchObject({ from: "2026-01-01", to: "2026-01-02" });
+    expect(b[1]).toMatchObject({ from: "2026-01-03", to: "2026-01-04" });
+  });
 });

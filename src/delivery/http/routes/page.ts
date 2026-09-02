@@ -240,17 +240,28 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       const inputs = await shellInputs(deps, now);
       const range = parseRange(request.query.tart);
       const to = isoDate(now, TZ);
-      const from = isoDate(addDays(now, -range.days + 1), TZ);
+      let from = isoDate(addDays(now, -range.days + 1), TZ);
 
       let series = buildSeries(spec.column, from, to, []);
       try {
+        // A window may reach back further than the history itself does —
+        // `mind` asks for 4000 days and the record begins in 2019 — and every
+        // coverage figure on the page is then divided by ~1300 days this
+        // system could not have measured: a 99.9%-complete step series
+        // announced "68% lefedettség", the confidently wrong number this whole
+        // project exists to prevent. The record's first day is the earliest
+        // honest denominator. Only a window that STARTS before it is clamped:
+        // a hole inside the record is a real hole and must keep counting
+        // against coverage.
+        const first = deps.health.firstDate();
+        if (first !== null && first > from && first <= to) from = first;
         series = buildSeries(spec.column, from, to, valuesFrom(deps.health.between(from, to), spec.column));
       } catch (err) {
         deps.logger.warn({ err: String(err) }, "detail page rendered without its series");
       }
 
       return reply.type("text/html; charset=utf-8")
-        .send(render("szamok", inputs, detailBody(spec, series, range.key, plot(series, spec))));
+        .send(render("szamok", inputs, detailBody(spec, series, range, plot(series, spec))));
     },
   );
 
