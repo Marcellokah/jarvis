@@ -45,11 +45,15 @@ mi döntjük el.
 Nem fix napszámnál. A HRV-nél a kétnapos ritmus a normális, tehát ott a hatnapos
 lyuk a hír; a lépésnél a napi ritmus, tehát ott a három napos.
 
-**A küszöb a sorozat saját medián-napközéből jön:** `küszöb = max(2, 3 × medián)`.
-Két egymást követő pontot csak akkor köt össze vonal, ha a köztük lévő
-napkülönbség **kisebb, mint a küszöb**. A medián azért, és nem az átlag, mert
-egyetlen 35 napos lyuk az átlagot elhúzná, a mediánt nem — a küszöbnek a
-tipikus ritmust kell leírnia, nem a kivételt.
+**A küszöb a sorozat saját medián-napközéből jön:** `küszöb = 3 × medián`. Két
+egymást követő pontot csak akkor köt össze vonal, ha a köztük lévő napkülönbség
+**kisebb, mint a küszöb**. A medián azért, és nem az átlag, mert egyetlen 35
+napos lyuk az átlagot elhúzná, a mediánt nem — a küszöbnek a tipikus ritmust
+kell leírnia, nem a kivételt.
+
+Napi ritmusú sorozatnál a medián 1, tehát a küszöb 3: egy kihagyott nap még
+összeköt, kettő már nem. A HRV-nél a medián 2, a küszöb 6 — és a mért
+legnagyobb HRV-hézag épp 6 nap, tehát pontosan ott törik meg, ahol a hír van.
 
 Kevesebb mint két pontnál nincs vonal, csak a pontok maguk.
 
@@ -154,6 +158,16 @@ Minden sor, aminek van `SOROZATOK`-bejegyzése, kap egy **60×18 pixeles
 sparkline-t** az érték és a lefedettségi sáv mellé, és a címke link lesz a
 részletoldalra. Aminek nincs sorozata (terhelési arány, trendek, előfizetések),
 az marad, ahogy van — sem sparkline, sem link.
+
+Ehhez a `MetricRow` egy mezővel bővül: `series: { column: string; days: number }
+| null`. A `column` mondja meg, melyik részletoldalra mutat a link, a `days`
+pedig azt, hogy **a sparkline ugyanazt az ablakot mutassa, amit a sor** — a
+„Lépés (7 nap)" és a „Lépés (365 nap)" ugyanabból az oszlopból jön, de két
+különböző történetet mond, és egy közös sparkline mindkettőről hazudna.
+
+Ez ugyanaz a lépés, mint amikor a `coverage` szám lett szövegből: a sáv és a
+sparkline csak akkor mondhat igazat, ha valódi adatból rajzolódik, nem a
+`detail` prózájából visszafejtve.
 
 A sparkline ugyanabból a `Series`-ből rajzolódik, mint a nagy nézet, ugyanazzal
 a törésszabállyal. Egyetlen logika, két méret.
