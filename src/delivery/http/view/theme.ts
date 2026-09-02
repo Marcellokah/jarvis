@@ -162,4 +162,18 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .allapot, section, .rail::after, form.busy::after { animation: none; }
 }
+
+/* ---- diagram ---- */
+.spark { display: block; overflow: visible; }
+.spark path { fill: none; stroke: var(--jel); stroke-width: 1.25; stroke-linecap: round; }
+.spark circle { fill: var(--jel); }
+.spark.ures { opacity: .35; }
+@keyframes vonal-be { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+/* pathLength itself is an SVG attribute, not a CSS property — the markup
+   (chart/sparkline.ts) sets pathLength="1" on every <path>, which is what
+   makes this dasharray/dashoffset pair mean "the whole line" regardless of
+   the segment's real length. */
+.spark path { stroke-dasharray: 1; stroke-dashoffset: 0;
+  animation: vonal-be .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(320ms + var(--i, 0) * 45ms); }
+@media (prefers-reduced-motion: reduce) { .spark path { animation: none; } }
 `;
