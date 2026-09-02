@@ -4,6 +4,7 @@ import { metricsRowsFrom } from "../../src/delivery/http/view/numbers.ts";
 import type { Metric } from "../../src/core/analysis/stats.ts";
 import type { Metrics } from "../../src/core/analysis/aggregate.ts";
 import { buildTestApp, TEST_TOKEN, stubModule } from "../helpers.ts";
+import type { ChatService } from "../../src/core/chat.ts";
 
 const base: PageData = {
   dateLabel: "2026. szeptember 1., kedd",
@@ -443,6 +444,83 @@ describe("page routes", () => {
     // actually guarded rather than assuming the hook covers it.
     const a = await boot();
     const res = await a.server.inject({ method: "GET", url: "/elemzes" });
+    expect(res.statusCode).toBe(401);
+    await a.close();
+  });
+
+  it("a Kérdés oldal használható marad, ha a modell nem érhető el", async () => {
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/kerdes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(`<input type="text" placeholder="Kérdezz valamit…" disabled>`);
+    expect(res.body).toContain(`<button type="submit" disabled>`);
+    expect(res.body).toContain("nem érhető el");
+    // Strengthened beyond the brief's literal test, for the same reason the
+    // /szamok and /elemzes tests above add their own aria-current check: this
+    // text and these disabled controls would render identically if /kerdes
+    // reused the OLD `renderPage` wholesale (its `chatBlock` renders the same
+    // disabled state by default), proving nothing about the new route or the
+    // shared shell. The "kerdes" nav lamp — dark here, since `boot()`'s chat
+    // stub is unavailable by default — only the new wiring produces.
+    expect(res.body).toContain('<a href="/kerdes" class="menu jelzo holt" aria-current="page">');
+    await a.close();
+  });
+
+  it("a Kérdés oldal engedi a kérdést, ha a modell elérhető", async () => {
+    // The other half of the pair, the same way /page.test.ts's own
+    // `renderPage` tests pair "unreachable" with "reachable": without this,
+    // disabling the form unconditionally would still pass the test above.
+    const chat: ChatService = { available: async () => true, ask: async () => "Válasz." };
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })], now: "2026-09-01T08:00:00.000Z", chat,
+    });
+    const res = await a.server.inject({
+      method: "GET", url: "/kerdes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(`<input type="text" placeholder="Kérdezz valamit…">`);
+    expect(res.body).toContain(`<button type="submit">`);
+    expect(res.body).not.toContain("nem érhető el");
+    expect(res.body).toContain('<a href="/kerdes" class="menu jelzo el" aria-current="page">');
+    await a.close();
+  });
+
+  it("a Kérdés oldal a beszélgetés szálát mutatja", async () => {
+    const a = await boot();
+    a.conversations.appendExchange(
+      "web", "Mi újság?", "Minden rendben.", new Date("2026-09-01T08:00:00.000Z"),
+    );
+    const res = await a.server.inject({
+      method: "GET", url: "/kerdes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Mi újság?");
+    expect(res.body).toContain("Minden rendben.");
+    await a.close();
+  });
+
+  it("a Kérdés oldal akkor is renderel, ha a beszélgetés-lekérés hibát dob", async () => {
+    // Its own try/catch, like every other piece of every page: a failing
+    // conversation repo must render the empty thread, never take the page
+    // down — mirrors the "a Ma oldal akkor is renderel..." test above for
+    // the brief service.
+    const a = await boot();
+    (a.conversations as unknown as { recent: () => never }).recent = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await a.server.inject({
+      method: "GET", url: "/kerdes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<a href="/kerdes" class="menu');
+    await a.close();
+  });
+
+  it("a Kérdés oldal hitelesítés nélkül elutasít", async () => {
+    const a = await boot();
+    const res = await a.server.inject({ method: "GET", url: "/kerdes" });
     expect(res.statusCode).toBe(401);
     await a.close();
   });

@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { BriefService } from "../../../core/brief-service.ts";
 import { MAX_QUESTION_CHARS, type ChatService } from "../../../core/chat.ts";
 import type { AnalysisRepo } from "../../../infra/db/repositories/analyses.ts";
-import type { ConversationRepo } from "../../../infra/db/repositories/conversations.ts";
+import type { ConversationRepo, Turn } from "../../../infra/db/repositories/conversations.ts";
 import type { HealthRepo } from "../../../infra/db/repositories/health.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
@@ -13,6 +13,7 @@ import { layout, type NavState } from "../view/shell.ts";
 import { todayBody } from "../view/today.ts";
 import { numbersBody, type MetricRow } from "../view/numbers.ts";
 import { analysesBody } from "../view/analyses.ts";
+import { askBody } from "../view/ask.ts";
 import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
@@ -208,6 +209,51 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       channels: summarise(readChannels(snapshot, now)),
       nav: await navState(deps, now),
       body: analysesBody(analyses),
+    }));
+  });
+
+  app.get("/kerdes", async (_request, reply) => {
+    const now = deps.clock.now();
+    const today = isoDate(now, TZ);
+
+    // Same status-strip inputs as every other page.
+    let briefAge: string | null = null;
+    try {
+      const brief = deps.briefs.cached(now);
+      if (brief && brief.markdown.trim() !== "") briefAge = ageWords(brief.generatedAt, now);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without a brief age");
+    }
+
+    let snapshot = undefined;
+    try {
+      snapshot = deps.health.forDate(today);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without today's readings");
+    }
+
+    // `nav.kerdes` is exactly `chat.available()`, already computed with its
+    // own try/catch inside `navState` — reused here instead of calling
+    // `deps.chat.available()` a second time for the same answer.
+    const nav = await navState(deps, now);
+
+    // Its own try/catch, like every other piece of this page: a failing
+    // conversation repo must render the empty thread, never take the page
+    // down — the one thing worse than an empty "Kérdés" page is a 500 one.
+    let history: Turn[] = [];
+    try {
+      history = deps.conversations.recent(WEB_CHAT_ID, 20);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its conversation thread");
+    }
+
+    return reply.type("text/html; charset=utf-8").send(layout({
+      section: "kerdes",
+      dateLabel: huLongDate(now, TZ),
+      briefAge,
+      channels: summarise(readChannels(snapshot, now)),
+      nav,
+      body: askBody({ history, chatAvailable: nav.kerdes }),
     }));
   });
 

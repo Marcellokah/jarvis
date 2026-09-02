@@ -8,6 +8,9 @@ import { metricsRowsFrom, readout, type MetricRow } from "./view/numbers.ts";
 // Same move, same reason: `analysesBlock` (and the `DOMAIN_TITLE` map it
 // closes over) is now `view/analyses.ts`'s, the new `/elemzes` route's home.
 import { analysesBlock } from "./view/analyses.ts";
+// Same move, same reason again: `chatBlock` and `SCRIPT` are now
+// `view/ask.ts`'s, the new `/kerdes` route's home.
+import { chatBlock, SCRIPT } from "./view/ask.ts";
 
 export { metricsRowsFrom, type MetricRow };
 
@@ -154,68 +157,6 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 }
 `;
 
-
-// Kept inline: there is no build step and no asset pipeline, and a second
-// request for a few lines of script would need its own route and its own auth.
-const SCRIPT = `
-const q = new URLSearchParams(location.search).get("token");
-if (q) { sessionStorage.setItem("jarvis-token", q); history.replaceState({}, "", location.pathname); }
-const form = document.querySelector("form");
-if (form) form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = form.querySelector("input[type=text]");
-  const question = input.value.trim();
-  if (!question) return;
-  const button = form.querySelector("button");
-  input.disabled = button.disabled = true;
-  form.classList.add("busy");
-  button.textContent = "Kérdezek";
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer " + (sessionStorage.getItem("jarvis-token") || "") },
-      body: JSON.stringify({ question }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    location.reload();
-  } catch (err) {
-    form.classList.remove("busy");
-    button.textContent = "Újra";
-    // The failure says what happened next to the box it happened in, rather
-    // than overwriting the control's own name with an error.
-    let note = form.parentNode.querySelector(".ask-error");
-    if (!note) {
-      note = document.createElement("p");
-      note.className = "quiet ask-error";
-      form.parentNode.appendChild(note);
-    }
-    note.textContent = "A kérdés nem ment át (" + err.message + "). A fenti tartalom teljes.";
-    input.disabled = button.disabled = false;
-  }
-});
-`;
-
-
-function chatBlock(data: PageData): string {
-  const turns = data.history.map((t) => [
-    `<div class="turn ${t.role === "user" ? "user" : "assistant"}">`,
-    `<div class="who">${t.role === "user" ? "Te" : "Jarvis"}</div>`,
-    renderMarkdown(t.content),
-    "</div>",
-  ].join("")).join("");
-
-  const disabled = data.chatAvailable ? "" : " disabled";
-  const notice = data.chatAvailable
-    ? ""
-    : `<p class="quiet">A modell most nem érhető el. A fenti tartalom teljes.</p>`;
-
-  return [
-    turns,
-    notice,
-    `<form><input type="text" placeholder="Kérdezz valamit…"${disabled}>`,
-    `<button type="submit"${disabled}>Kérdés</button></form>`,
-  ].join("");
-}
 
 export function renderPage(data: PageData): string {
   const metrics = data.metricsRows.map(readout).join("");
