@@ -319,6 +319,44 @@ describe("page routes", () => {
     await a.close();
   });
 
+  it("a részletoldal kirajzolja a mérés diagramját", async () => {
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/hrv", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('class="plot"');
+    expect(res.body).toContain("HRV");
+    await a.close();
+  });
+
+  it("ismeretlen metrika 404, nem üres diagram", async () => {
+    // Egy üres diagram azt állítaná, hogy van ilyen mérés, csak nincs adata.
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/nincs_ilyen", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it("érvénytelen tartomány az egy évre esik vissza, nem hibázik", async () => {
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/hrv?tart=marha", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('aria-current="page"');
+    await a.close();
+  });
+
+  it("a részletoldal token nélkül elutasít", async () => {
+    const a = await boot();
+    const res = await a.server.inject({ method: "GET", url: "/szamok/hrv" });
+    expect(res.statusCode).toBe(401);
+    await a.close();
+  });
+
   it("az Elemzés oldal dátumozza az elemzéseket", async () => {
     const a = await boot();
     // AnalysisRepo.save(row: Omit<AnalysisRow, "id">) — createdAt, domain,

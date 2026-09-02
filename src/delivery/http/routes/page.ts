@@ -20,6 +20,8 @@ import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
 import { buildSeries } from "../view/chart/series.ts";
 import { SOROZATOK, valuesFrom } from "../view/chart/registry.ts";
 import { sparkline } from "../view/chart/sparkline.ts";
+import { plot } from "../view/chart/plot.ts";
+import { detailBody, parseRange } from "../view/chart/detail.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
 export const WEB_CHAT_ID = "web";
@@ -226,6 +228,31 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
     return reply.type("text/html; charset=utf-8")
       .send(render("szamok", inputs, numbersBody(metricsRows, charts)));
   });
+
+  app.get<{ Params: { metrika: string }; Querystring: { tart?: string } }>(
+    "/szamok/:metrika", async (request, reply) => {
+      const spec = SOROZATOK.get(request.params.metrika);
+      // 404, nem üres diagram: az utóbbi azt állítaná, hogy létezik ez a mérés,
+      // csak épp nincs adata — ami a rendszer alapszabályát sértené.
+      if (spec === undefined) return reply.code(404).send({ error: "not_found" });
+
+      const now = deps.clock.now();
+      const inputs = await shellInputs(deps, now);
+      const range = parseRange(request.query.tart);
+      const to = isoDate(now, TZ);
+      const from = isoDate(addDays(now, -range.days + 1), TZ);
+
+      let series = buildSeries(spec.column, from, to, []);
+      try {
+        series = buildSeries(spec.column, from, to, valuesFrom(deps.health.between(from, to), spec.column));
+      } catch (err) {
+        deps.logger.warn({ err: String(err) }, "detail page rendered without its series");
+      }
+
+      return reply.type("text/html; charset=utf-8")
+        .send(render("szamok", inputs, detailBody(spec, series, range.key, plot(series, spec))));
+    },
+  );
 
   app.get("/elemzes", async (_request, reply) => {
     const inputs = await shellInputs(deps, deps.clock.now());
