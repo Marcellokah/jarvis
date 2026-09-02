@@ -41,7 +41,18 @@ function cookieValue(header: string | undefined, name: string): string | null {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
     if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      // A malformed percent-escape (`jarvis_token=%zz`) makes this throw, and
+      // the cookie is checked before the query-token branch — so one bad
+      // cookie turned every guarded route into a 500, the documented
+      // `/?token=…` recovery included, and locked the owner out until they
+      // cleared cookies by hand. A cookie that cannot even be decoded is not
+      // a credential: it proves nothing, and must leave the other proofs
+      // their turn rather than taking the whole server with it.
+      return null;
+    }
   }
   return null;
 }
@@ -55,16 +66,18 @@ function cookieProves(request: FastifyRequest, token: string): boolean {
 /**
  * Guards `POST /api/chat`: the bearer header, or the page's own cookie.
  *
- * Without the cookie this route was the branch's headline feature quietly
- * breaking on the second day. The page's script fills `sessionStorage` from
- * `?token=` only, and sessionStorage dies with the browser session — so a
- * returning visitor got a 200 page from the 30-day cookie and a 401 on every
- * question, with no recovery but re-pasting the token into the URL.
+ * The cookie is how the page itself asks, and now the only way it does. The
+ * page used to send a bearer header built from a `sessionStorage` copy of
+ * `?token=`, but sessionStorage dies with the browser session — a returning
+ * visitor got a 200 page from the 30-day cookie and a 401 on every question,
+ * with no recovery but re-pasting the token into the URL. With the cookie
+ * accepted here, that copy had no job left, so the page keeps no token at all
+ * (see `view/ask.ts`) and there is nothing on the page for script to read.
  *
  * No CSRF surface added: the cookie is `SameSite=Strict`, so a cross-site
  * page cannot make the browser attach it, and `HttpOnly`, so script on such a
- * page cannot read it either. The bearer header stays the page's own path —
- * this only stops it being the only one.
+ * page cannot read it either. The bearer header stays for the callers that do
+ * have a token to send — the Shortcut, `curl`, the smoke test.
  */
 export function chatAuth(token: string) {
   return async function (request: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -81,7 +94,10 @@ export function chatAuth(token: string) {
  * first visit brings the token in the query string. That is accepted exactly
  * once and immediately traded for an HttpOnly, SameSite=Strict cookie: later
  * navigations carry no token in the URL, where it would otherwise land in the
- * browser history and (before this) the request log.
+ * browser history and (before this) the request log. The one URL that does
+ * carry it is scrubbed out of the address bar by the shell's own script
+ * (`SCRUB_SCRIPT` in `view/shell.ts`), which every page ships — that is the
+ * half of the promise the server cannot keep on its own.
  *
  * No `Secure` flag: the server also answers plain http on 127.0.0.1, and a
  * Secure cookie would simply never come back there.

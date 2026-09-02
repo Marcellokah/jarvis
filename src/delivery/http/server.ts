@@ -16,7 +16,7 @@ import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerPageRoutes } from "./routes/page.ts";
-import type { MetricRow } from "./page.ts";
+import type { MetricRow } from "./view/numbers.ts";
 
 export interface ServerDeps {
   token: string;
@@ -34,6 +34,30 @@ export interface ServerDeps {
   logger: Logger;
 }
 
+/**
+ * The path Fastify's router actually dispatches to — `find-my-way` decodes
+ * percent-escapes before matching, so this has to as well or the auth hook
+ * below is checking a different string than the one that gets routed.
+ *
+ * Query string stripped first, exactly the way the router itself splits
+ * `url` before decoding the path portion, so `%3F` inside a path segment is
+ * never mistaken for the real `?`. `null` means "could not make sense of
+ * this" (a lone `%`, a truncated escape, hex bytes that are not valid UTF-8)
+ * — callers must treat that as matching no known route, not as any
+ * particular one. In practice `find-my-way` already rejects exactly that
+ * input with its own 400 before a request carrying it ever reaches this
+ * hook, so `null` is a defensive backstop for this app, not the thing
+ * standing between an attacker and a route today.
+ */
+function decodedPath(url: string): string | null {
+  const raw = url.split("?")[0] ?? url;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
 
@@ -45,14 +69,41 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     allowList: (request) => request.url === "/healthz",
   });
 
-  // Bearer auth guards /api/*; /healthz stays open so a liveness probe never
-  // needs the token.
-  //
-  // `GET /` is guarded too, by the same token: the page carries the brief,
-  // every analysis, the numbers and the whole thread in one response. The
-  // server binds to 127.0.0.1, but `deploy/README.md` documents a
-  // `tailscale serve` that proxies the whole origin — protection cannot depend
-  // on which of those happens to be switched on today.
+  // Every registered route Fastify actually dispatches to, gathered from the
+  // router itself via the `onRoute` hook rather than copied into a list by
+  // hand here. Nothing but bookkeeping — the auth decision below never
+  // consults it — but the test suite reads it to assert every route the app
+  // really has is guarded, so a new route can never silently slip past that
+  // check the way a hand-maintained allow list could.
+  const registeredRoutes: { method: string; url: string }[] = [];
+  app.addHook("onRoute", (routeOptions) => {
+    for (const method of ([] as string[]).concat(routeOptions.method)) {
+      registeredRoutes.push({ method, url: routeOptions.url });
+    }
+  });
+  app.decorate("registeredRoutes", registeredRoutes);
+
+  /**
+   * The one path that needs no token at all: a liveness probe cannot carry
+   * one, and it hands back nothing but `{ ok: true }`.
+   *
+   * Deliberately not `/api/…`: this app has exactly one public path, and
+   * spelling it out here — instead of pattern-matching a prefix the way
+   * `/api/` is matched below — means adding a route can never accidentally
+   * land in "public" by sharing a prefix with this one.
+   */
+  const PUBLIC_ROUTES = new Set(["/healthz"]);
+
+  // Bearer auth guards /api/*; every other path defaults to full page auth —
+  // opt-OUT (name it in `PUBLIC_ROUTES` to open it) rather than opt-IN, so a
+  // route this file has never heard of is guarded the moment it is
+  // registered elsewhere, not just the two page routes that happen to exist
+  // today. `/`, `/szamok`, and whatever `routes/page.ts` grows next all carry
+  // the brief, the analyses, the numbers or the whole thread — more, in one
+  // response, than any single `/api/` route hands out. The server binds to
+  // 127.0.0.1, but `deploy/README.md` documents a `tailscale serve` that
+  // proxies the whole origin — protection cannot depend on which of those
+  // happens to be switched on today.
   //
   // `/api/chat` takes the cookie too: it is the page's own fetch, and the page
   // is already proving itself with that cookie one request earlier. Every
@@ -62,10 +113,19 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const chat = chatAuth(deps.token);
   const page = pageAuth(deps.token);
   app.addHook("onRequest", async (request, reply) => {
-    const route = request.url.split("?")[0] ?? request.url;
-    if (route === "/api/chat") await chat(request, reply);
-    else if (route.startsWith("/api/")) await auth(request, reply);
-    else if (route === "/") await page(request, reply);
+    const route = decodedPath(request.url);
+    // `find-my-way` decodes percent-escapes before it matches a route (so
+    // `GET /%73zamok` dispatches to the `/szamok` handler), but `request.url`
+    // stays exactly as the client sent it. Comparing that raw string against
+    // `/szamok` let an escaped path sail through unguarded — this hook has to
+    // see what the router sees. A path that fails to decode (a lone `%`, a
+    // truncated escape) matches nothing below and falls to the strictest
+    // guard, `pageAuth` — the safe reading of a byte sequence this cannot
+    // make sense of.
+    if (route !== null && PUBLIC_ROUTES.has(route)) return;
+    if (route === "/api/chat") { await chat(request, reply); return; }
+    if (route !== null && route.startsWith("/api/")) { await auth(request, reply); return; }
+    await page(request, reply);
   });
 
   /**
@@ -107,7 +167,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
   registerPageRoutes(app, {
     briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
-    conversations: deps.conversations, metricsRows: deps.metricsRows,
+    conversations: deps.conversations, health: deps.health, metricsRows: deps.metricsRows,
     clock: deps.clock, logger: deps.logger,
   });
 
