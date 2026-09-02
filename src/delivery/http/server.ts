@@ -16,7 +16,7 @@ import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerPageRoutes } from "./routes/page.ts";
-import type { MetricRow } from "./page.ts";
+import type { MetricRow } from "./view/numbers.ts";
 
 export interface ServerDeps {
   token: string;

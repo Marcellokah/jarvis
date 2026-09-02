@@ -77,7 +77,7 @@ import { createAnalysisRepo, type AnalysisRepo } from "../src/infra/db/repositor
 import { createConversationRepo, type ConversationRepo } from "../src/infra/db/repositories/conversations.ts";
 import { unavailableChat, type ChatService } from "../src/core/chat.ts";
 import { aggregate } from "../src/core/analysis/aggregate.ts";
-import { metricsRowsFrom } from "../src/delivery/http/page.ts";
+import { metricsRowsFrom } from "../src/delivery/http/view/numbers.ts";
 import { isoDate } from "../src/shared/dates.ts";
 import { buildServer } from "../src/delivery/http/server.ts";
 import type { JarvisModule } from "../src/core/module.ts";

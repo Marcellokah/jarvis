@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown } from "../markdown.ts";
+import { renderMarkdown } from "../markdown.ts";
 import type { Turn } from "../../../infra/db/repositories/conversations.ts";
 
 export interface AskData {
