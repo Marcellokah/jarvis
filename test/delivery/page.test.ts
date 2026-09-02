@@ -4,6 +4,27 @@ import type { Metric } from "../../src/core/analysis/stats.ts";
 import type { Metrics } from "../../src/core/analysis/aggregate.ts";
 import { buildTestApp, TEST_TOKEN, stubModule } from "../helpers.ts";
 import type { ChatService } from "../../src/core/chat.ts";
+import type { HealthSnapshot } from "../../src/infra/db/repositories/health.ts";
+
+/**
+ * Every field null but `date` — the same shape `view-channels.test.ts`'s
+ * `row` and `analysis-aggregate.test.ts`'s snapshot helper already use, kept
+ * local here rather than shared: a test's fixture should not become another
+ * test's dependency (see `metricsFixture`'s own comment above for the same
+ * call made about `metrics()`).
+ */
+function emptySnapshot(date: string): Omit<HealthSnapshot, "ingestedAt"> {
+  return {
+    date, sleepH: null, hrv: null, rhr: null, moveKcal: null, exerciseMin: null,
+    steps: null, asleepMin: null, inBedMin: null, coreMin: null, remMin: null,
+    deepMin: null, awakenings: null, vo2max: null, hrRecovery: null,
+    walkingHr: null, basalKcal: null, flights: null, dietKcal: null,
+    dietProteinG: null, dietCarbsG: null, dietFatG: null, distanceKm: null,
+    standMin: null, walkingSpeed: null, stepLengthCm: null, doubleSupportPct: null,
+    asymmetryPct: null, steadinessPct: null, sixMinWalkM: null, stairUpMs: null,
+    stairDownMs: null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // metricsRowsFrom
@@ -76,6 +97,28 @@ describe("metricsRowsFrom", () => {
       hrv7: { value: 61.2, n: 365, coverage: 1, window: "365d" },
     }));
     expect(rows.find((r) => r.label === "HRV (7 nap)")!.detail).toContain("100%");
+  });
+
+  // Not in the brief's own test list, added because the brief's Step 5 asks
+  // to break `metricsRowsFrom` by giving "Terhelési arány" a `series` and
+  // watch a test fail — but the brief's own new `view-numbers.test.ts` tests
+  // build their `MetricRow` fixtures by hand and never call
+  // `metricsRowsFrom` at all, so that break could not have reached them.
+  // This is the test that actually exercises the mapping Step 5 means to
+  // break: a row backed by a real daily column gets a `series`, and a ratio
+  // of two windows — which has no single column to draw — never does.
+  it("only a row backed by a real daily column gets a series", () => {
+    // `metricsFixture`'s default `EMPTY` carries a placeholder "365d" window
+    // on every field it did not override, so only the overridable `hrv7`
+    // field can prove the `days` figure comes from the metric's own window
+    // rather than a number this test happened to write down twice.
+    const rows = metricsRowsFrom(metricsFixture({
+      hrv7: { value: 68.7, n: 6, coverage: 6 / 7, window: "7d" },
+    }));
+    expect(rows.find((r) => r.label === "Terhelési arány")!.series).toBeNull();
+    expect(rows.find((r) => r.label === "Lépés (7 nap)")!.series?.column).toBe("steps");
+    expect(rows.find((r) => r.label === "Alvás (90 nap)")!.series?.column).toBe("asleep_min");
+    expect(rows.find((r) => r.label === "HRV (7 nap)")!.series).toEqual({ column: "hrv", days: 7 });
   });
 });
 
@@ -256,6 +299,16 @@ describe("page routes", () => {
     // produces.
     expect(res.body).toContain('<a href="/szamok" class="menu" aria-current="page">');
     expect(res.body).toMatch(/<span class="rail[^"]*"[^>]*style="--fill:[\d.]+%"/);
+    await a.close();
+  });
+
+  it("a Számok oldal sparkline-t rajzol a mért sorokhoz", async () => {
+    const a = await boot();
+    a.health.upsert({ ...emptySnapshot("2026-09-01"), steps: 9000 }, {}, new Date("2026-09-01T20:00:00Z"));
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.body).toContain('class="spark');
     await a.close();
   });
 

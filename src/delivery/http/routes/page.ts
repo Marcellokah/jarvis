@@ -7,7 +7,7 @@ import type { ConversationRepo, Turn } from "../../../infra/db/repositories/conv
 import type { HealthRepo, HealthSnapshot } from "../../../infra/db/repositories/health.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
-import { huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
+import { addDays, huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
 import {
   readChannels, summarise, type ChannelReading, type ChannelSummary,
 } from "../view/channels.ts";
@@ -17,6 +17,9 @@ import { numbersBody, type MetricRow } from "../view/numbers.ts";
 import { analysesBody } from "../view/analyses.ts";
 import { askBody } from "../view/ask.ts";
 import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
+import { buildSeries } from "../view/chart/series.ts";
+import { SOROZATOK, valuesFrom } from "../view/chart/registry.ts";
+import { sparkline } from "../view/chart/sparkline.ts";
 
 /** The web page is one thread; Telegram chats are their own. */
 export const WEB_CHAT_ID = "web";
@@ -181,7 +184,8 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
   });
 
   app.get("/szamok", async (_request, reply) => {
-    const inputs = await shellInputs(deps, deps.clock.now());
+    const now = deps.clock.now();
+    const inputs = await shellInputs(deps, now);
 
     // The aggregate the rows are built from touches every table the app has;
     // a corrupt row or a bad query must dim the numbers, not the page.
@@ -192,8 +196,35 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without its metrics");
     }
 
+    // Its own try/catch, like every other input this shell assembles: a
+    // failing health query must dim the sparklines, never take the numbers —
+    // let alone the whole page — down with it.
+    const charts = new Map<string, string>();
+    try {
+      const to = isoDate(now, TZ);
+      // One fetch for the longest window any row needs, sliced per row below
+      // — the rows share history, so there is no reason to query it twice.
+      const longest = Math.max(0, ...metricsRows.map((r) => r.series?.days ?? 0));
+      if (longest > 0) {
+        const snaps = deps.health.between(isoDate(addDays(now, -longest + 1), TZ), to);
+        for (const r of metricsRows) {
+          if (r.series === null) continue;
+          const spec = SOROZATOK.get(r.series.column);
+          if (spec === undefined) continue;
+          const from = isoDate(addDays(now, -r.series.days + 1), TZ);
+          const window = snaps.filter((s) => s.date >= from);
+          charts.set(
+            r.label,
+            sparkline(buildSeries(r.series.column, from, to, valuesFrom(window, r.series.column)), spec),
+          );
+        }
+      }
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its sparklines");
+    }
+
     return reply.type("text/html; charset=utf-8")
-      .send(render("szamok", inputs, numbersBody(metricsRows)));
+      .send(render("szamok", inputs, numbersBody(metricsRows, charts)));
   });
 
   app.get("/elemzes", async (_request, reply) => {
