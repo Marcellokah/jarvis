@@ -346,7 +346,27 @@ describe("page routes", () => {
       method: "GET", url: "/szamok/hrv?tart=marha", headers: { authorization: `Bearer ${TEST_TOKEN}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('aria-current="page"');
+    // A puszta `aria-current="page"` bármelyik tartományra igaz lehetne — a
+    // teljes linket nézzük, hogy pontosan a 365 napos "1 év" nyerjen, ne
+    // csak "valamelyik" tartomány legyen kijelölve.
+    expect(res.body).toContain('<a href="/szamok/hrv?tart=365" class="tartomany" aria-current="page">1 év</a>');
+    expect(res.body).not.toContain('tart=30" class="tartomany" aria-current="page"');
+    expect(res.body).not.toContain('tart=mind" class="tartomany" aria-current="page"');
+    await a.close();
+  });
+
+  it("érvényes tartomány a kért ablakot jelöli aktívnak, nem az alapértelmezettet", async () => {
+    // Az előző teszt párja: önmagában az bizonyítaná, hogy valami mindig
+    // aktívnak van jelölve, nem azt, hogy a KÉRT ablak — ezt csak egy nem
+    // alapértelmezett, érvényes `tart` érték tudja megmutatni.
+    const a = await boot();
+    const res = await a.server.inject({
+      method: "GET", url: "/szamok/hrv?tart=30", headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<a href="/szamok/hrv?tart=30" class="tartomany" aria-current="page">30 nap</a>');
+    expect(res.body).not.toContain('tart=365" class="tartomany" aria-current="page"');
+    expect(res.body).not.toContain('tart=mind" class="tartomany" aria-current="page"');
     await a.close();
   });
 
