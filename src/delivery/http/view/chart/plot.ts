@@ -15,10 +15,36 @@ const dateOfDay = (day: number): string => new Date(day * 86_400_000).toISOStrin
  *
  * Drawing order carries meaning. Gap bands go furthest back because they are
  * ground, not data; the reader targets go in front of everything because they
- * are what the pointer and the keyboard must reach. The readout needs no
- * JavaScript at all: each column owns a transparent, focusable rect, and CSS
- * reveals the group next to it on `:hover` or `:focus-visible` — which makes
- * it work with a mouse, a keyboard and a tap, on a page that ships no script.
+ * are what the pointer and the keyboard must reach.
+ *
+ * The `<svg>` is a labelled GROUP (`role="group"`), not a labelled IMAGE
+ * (`role="img"`). Those are different promises: `role="img"` tells assistive
+ * tech the element is one atomic picture, and it flattens every descendant
+ * into that single node — a screen-reader user tabbing onto one of the
+ * focusable `<rect>` targets below would land on nothing, because the
+ * targets no longer exist as objects in the accessibility tree. This chart
+ * puts focusable content inside the graphic on purpose, so it cannot claim
+ * `role="img"` and still keep that content reachable — a group leaves each
+ * target exposed as its own object, with its own name from its own
+ * `<title>`. The whole-chart summary is not lost by dropping `role="img"`:
+ * it is carried by the group's own `aria-label`/`<title>`, and it is the
+ * only form of this information a non-visual reader — a screen reader, or
+ * this same string reused verbatim in a Telegram reply — has any use for,
+ * since the drawn bands and axes carry nothing for them at all.
+ *
+ * The readout's real reach, honestly: mouse hover always works, on every
+ * browser, because `:hover` on an SVG shape is unconditional. Keyboard and
+ * tap both route through the same mechanism — CSS reveals the `.olvaso`
+ * group next to a target on `:hover` or `:focus` — and that mechanism only
+ * fires if the browser actually lets a plain `<rect tabindex="0">` receive
+ * focus in the first place. Chromium and Firefox do this without asking.
+ * WebKit (Safari, and anything embedding it — so iOS in general) does not:
+ * a non-form SVG element with `tabindex` is not in Safari's default Tab
+ * order at all unless the user has turned on Full Keyboard Access, a system
+ * setting this page cannot see or set. A tap can still focus the element
+ * directly (bypassing Tab order), so touch mostly works in practice even in
+ * Safari — but sequential keyboard reach does not, and no amount of CSS
+ * fixes that without JavaScript, which this chart does not ship.
  *
  * When the series is dense (more measurements than pixel columns), the chart
  * draws a bucketed min-max band, not raw points — see buckets.ts. The reader
@@ -34,7 +60,7 @@ export function plot(series: Series, spec: SeriesSpec): string {
     + `${Math.floor(series.coverage * 100)}% lefedettség`
     + (series.points.length === 0 ? "" : `, ${spec.format(series.min)}–${spec.format(series.max)}`),
   );
-  const open = `<svg class="plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="${summary}">`
+  const open = `<svg class="plot" viewBox="0 0 ${W} ${H}" role="group" aria-label="${summary}">`
     + `<title>${summary}</title>`;
 
   if (series.points.length === 0) {

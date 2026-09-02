@@ -57,6 +57,19 @@ describe("nagy diagram", () => {
     expect(plot(s, hrv)).toMatch(/<title>[^<]*3 mérés[^<]*<\/title>/);
   });
 
+  it("csoport marad, nem lapított kép — a fókuszálható célpontok egyenként elérhetők", () => {
+    // role="img" atomizálná a teljes fát: a benne lévő fókuszálható <rect>-ek
+    // eltűnnének a kisegítő fa elemzéséből, egy Tabbal odaérkező felolvasó
+    // semmit nem mondana. A role="group" ezt megőrzi, az összefoglalót pedig
+    // a csoport saját aria-label/<title> párja viszi tovább — az egyetlen
+    // forma, amiben ez az információ egy nem látó olvasóhoz eljut.
+    const s = buildSeries("hrv", "2026-01-01", "2026-01-05", days("2026-01-01", 1, 2, 3, 4, 5));
+    const html = plot(s, hrv);
+    expect(html).not.toContain('role="img"');
+    expect(html).toContain('role="group"');
+    expect(html).toMatch(/aria-label="[^"]*mérés[^"]*"/);
+  });
+
   it("sűrű sorozatnál oszloponként egy olvasót ad, nem mérésenként egyet", () => {
     // 700 napi mérés a 660 pixeloszlopos rajzterületen sűrű: bucketise()
     // szerint minden oszlop a saját min-max-medián tartományát rajzolja, nem

@@ -189,8 +189,16 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .plot .olvaso { opacity: 0; pointer-events: none; }
 .plot .olvaso rect { fill: var(--racs); }
 .plot .olvaso text { fill: var(--szoveg); font: .66rem var(--mono); }
+/* The reveal fires on :hover or plain :focus, not :focus-visible: a tap
+   focuses the target directly, and a mouse click focuses it too, and
+   :focus-visible by design excludes both — only keyboard-driven focus would
+   have shown the reading. The reveal is content (a value), not a focus
+   indicator, so it has to answer to any focus. :focus-visible stays below
+   for the outline, which IS a focus indicator and is correctly
+   keyboard-only. See the doc comment in chart/plot.ts for how far any of
+   this actually reaches in Safari/WebKit. */
 .plot .celpont:hover + .olvaso,
-.plot .celpont:focus-visible + .olvaso { opacity: 1; }
+.plot .celpont:focus + .olvaso { opacity: 1; }
 .plot .celpont:focus-visible { stroke: var(--jel); stroke-width: 1; }
 /* pathLength itself is an SVG attribute, not a CSS property — the markup
    (chart/plot.ts) sets pathLength="1" on every .vonal <path>, which is what

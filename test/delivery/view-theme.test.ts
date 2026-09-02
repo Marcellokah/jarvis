@@ -35,6 +35,18 @@ describe("téma", () => {
     expect(/body\s*\{[^}]*background:\s*var\(--hatter\)/.test(STYLE)).toBe(true);
   });
 
+  it("a nagy diagram olvasója bármilyen fókuszra megjelenik, nem csak :focus-visible-re", () => {
+    // :focus-visible szándékosan kizárja az egér- és érintés-eredetű fókuszt.
+    // Ha a `.olvaso` felfedése csak erre menne, egy koppintás vagy egy
+    // egérkattintás fókuszálná a célpontot, de az olvasó rejtve maradna — a
+    // "koppintással is működik" ígéret hazugság lenne. A tartalom-feltárás
+    // ezért sima :focus-ra fut, a :focus-visible csak a billentyűzetes
+    // fókuszgyűrűnek marad, ami helyesen csak billentyűzetre jelenik meg.
+    expect(/\.plot \.celpont:hover \+ \.olvaso,\s*\n\s*\.plot \.celpont:focus \+ \.olvaso \{ opacity: 1; \}/.test(STYLE)).toBe(true);
+    expect(STYLE).not.toMatch(/\.plot \.celpont:focus-visible \+ \.olvaso/);
+    expect(/\.plot \.celpont:focus-visible \{ stroke: var\(--jel\); stroke-width: 1; \}/.test(STYLE)).toBe(true);
+  });
+
   it("a csökkentett mozgás mindent leállít, az oldalváltást is", () => {
     // A @view-transition alapból animál; a reduced-motion blokknak a
     // ::view-transition-* pszeudóelemeket is le kell állítania, különben az
