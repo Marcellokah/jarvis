@@ -150,21 +150,37 @@ Minden oldal tetején, mono betűvel: a mai dátum, a brief kora, és **hány
 csatorna él ma**.
 
 A csatornaszám nem a 31 oszlopon értendő. A `NAPI_MAG` egy nevesített,
-exportált halmaz — azok a mérések, amiket a napi csatorna **minden nap**
-szállít:
+exportált lista — azok a mérések, amiket a napi csatorna **minden nap**
+szállít, és mindegyik mellett az az óra, **amikorra esedékes**:
 
-```
-sleep_h · hrv · rhr · steps · move_kcal · exercise_min
-```
+| Csatorna | Esedékes | Honnan jön |
+|---|---|---|
+| `sleep_h` | 08:00 | reggeli futás, nyers alvás-mintákból |
+| `hrv` | 08:00 | reggeli futás |
+| `rhr` | 08:00 | reggeli futás |
+| `steps` | 23:59 | esti futás |
+| `move_kcal` | 23:59 | esti futás |
+| `exercise_min` | 23:59 | esti futás |
 
-Ezekben a hiány azt jelenti, hogy a csővezeték hibázott, nem azt, hogy a mérés
-nem történt meg. A ritkán mérteket (VO2max, járásstabilitás, hatperces séta)
-szándékosan nem tartalmazza: egy örökké „4/12"-t mutató sáv riasztana valamire,
-ami teljesen rendben van. Ez ugyanaz az elv, amin az egész rendszer áll, csak
-magára a csővezetékre alkalmazva.
+Az esedékesség nélkül a sáv használhatatlan lenne: az esti futás 23:50-kor
+szállít, tehát a sáv reggel nyolctól estig **minden nap** „3/6 él"-t mutatna
+három névvel magentában, miközben semmi baj nincs. Egy jelző, ami mindig
+riaszt, pontosan annyit ér, mint amelyik soha.
 
-Ha a mai magból hiányzik valami, a hiányzó csatornák neve a sávban látszik,
-`--riado` színnel. Ez a magenta egyetlen rendeltetése ezen az oldalon.
+**Ami még nem esedékes, az nem hiányzik** — a sávban „várakozik" állapotban
+áll, `--halvany` színnel, nem `--riado`-val. Csak az esedékes órája után lett
+belőle hiány, és csak akkor kapja meg a magentát. Ez ugyanaz az elv, amin az
+egész rendszer áll — a hiányzó adat hiányzónak látsszon —, csak magára a
+csővezetékre alkalmazva, azzal a pontosítással, hogy a még meg nem érkezett
+adat nem hiányzó.
+
+A ritkán mérteket (VO2max, járásstabilitás, hatperces séta) a lista
+szándékosan nem tartalmazza: azok nem minden nap keletkeznek, tehát a
+hiányuk nem a csővezetékről mond semmit.
+
+A sáv tehát három számot ad: hány csatorna érkezett meg, hány várakozik még,
+és hány maradt el. Az elmaradtak neve látszik, `--riado` színnel — ez a
+magenta egyetlen rendeltetése ezen az oldalon.
 
 ### Mozgás
 
@@ -202,8 +218,9 @@ asszisztens-felület önmagában megkülönböztet.
 2. **Briefing** — a mai brief markdownja. Ha nincs, vagy trim után üres:
    „Ma még nem készült briefing." Üres cím tartalom nélkül nem elfogadható.
 3. **A mai nap mérései** — a `NAPI_MAG` hat csatornája, mindegyik a saját
-   értékével vagy „nincs mérés"-sel. A mértek `--jel` színnel, a hiányzók
-   színtelenül és szaggatottan.
+   értékével, „várakozik"-kal vagy „nincs mérés"-sel, az esedékessége szerint.
+   A mértek `--jel` színnel, a várakozók és a hiányzók színtelenül és
+   szaggatottan; a hiány a névsorban kap `--riado`-t, nem a soron.
 4. **Frissesség** — mikor íródott a mai sor (`ingestedAt`), és ha nincs mai
    sor, akkor melyik a legutóbbi nap, amiről van adat.
 
@@ -222,9 +239,14 @@ modell vagy ember írt, escape-elve jelenik meg.
 - a menüpontok jelzője a valódi adatból jön — brief nélkül a Ma jelzője
   kialszik, elemzés nélkül az Elemzésé, elérhetetlen modellnél a Kérdésé;
 - a Számok menüpontnak nincs jelzője;
-- egy mai sor nélküli nap a Ma oldalon hat „nincs mérés"-t mutat és egyetlen
-  nullát sem;
-- a `NAPI_MAG` hiányzó csatornái névvel jelennek meg az állapotsávban;
+- egy mai sor nélküli nap a Ma oldalon egyetlen nullát sem mutat;
+- **az esedékesség számít:** délelőtt tíz órakor a három esti csatorna
+  „várakozik", nem „elmaradt", és nem kap `--riado`-t; éjfél után ugyanaz a
+  hiányzó adat már elmaradt, és névvel megjelenik az állapotsávban. Ez a pár
+  együtt kell — külön-külön mindkettő átmegy egy olyan implementáción, ami az
+  esedékességet figyelmen kívül hagyja;
+- a `NAPI_MAG` minden eleméhez tartozik esedékes óra, és a lista nem tartalmaz
+  ritkán mért csatornát;
 - a Ma oldal akkor is renderel, ha a brief lekérése hibát dob.
 
 ## Globális megkötések
