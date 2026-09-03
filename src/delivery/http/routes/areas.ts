@@ -268,8 +268,10 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     const inputs = await shellInputs(deps, now);
 
     // The one figure on the five pages that does NOT come from aggregate():
-    // `Metrics` has no nutrition branch yet, so the days are counted from the
-    // same snapshot read main.ts performs for the aggregate anyway.
+    // this page never calls `metricsOf()` at all, so reading `Metrics.nutrition`
+    // here would mean aggregating the whole history a second time just to
+    // reach one field of it. Reading the same snapshot rows main.ts already
+    // rolls up for the aggregate is the cheaper duplication.
     let measuredDays = 0;
     let measuredProteinDays = 0;
     let lastDate: string | null = null;

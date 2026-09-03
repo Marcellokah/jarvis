@@ -1,6 +1,6 @@
 import type { Logger } from "../../infra/logger.ts";
 import type { NotificationRepo } from "../../infra/db/repositories/notifications.ts";
-import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
+import type { AnalysisRepo, Domain } from "../../infra/db/repositories/analyses.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { Metrics } from "../analysis/aggregate.ts";
 import type { Tz } from "../../shared/dates.ts";
@@ -114,7 +114,7 @@ export async function gatherCandidates(deps: GatherDeps, now: Date): Promise<Can
     deps.logger.warn({ err: String(err) }, "metrics unavailable for the notification");
   }
 
-  let newAnalyses: { domain: string; summary: string; createdAt: string }[] = [];
+  let newAnalyses: { domain: Domain; summary: string; createdAt: string }[] = [];
   try {
     const since = deps.notifications.lastSentAt();
     const oldest = now.getTime() - ANALYSIS_MAX_AGE_H * 3_600_000;

@@ -1,6 +1,7 @@
 import type { Metrics } from "../analysis/aggregate.ts";
 import { daysBetween, isoDate, type Tz } from "../../shared/dates.ts";
 import { dayGap } from "../analysis/stats.ts";
+import type { Domain } from "../../infra/db/repositories/analyses.ts";
 
 export type CandidateKind = "deadline" | "health" | "analysis" | "habit";
 
@@ -38,7 +39,7 @@ export interface CandidateInput {
   tz: Tz;
   /** Null when the history could not be aggregated; the rest still stands. */
   metrics: Metrics | null;
-  newAnalyses: { domain: string; summary: string; createdAt: string }[];
+  newAnalyses: { domain: Domain; summary: string; createdAt: string }[];
   deadlines: DeadlineItem[];
   /** The most recent day with sleep data, or null if there has never been any. */
   lastSleepDate: string | null;
@@ -87,10 +88,19 @@ const MIN_N7 = 3;
 const MIN_N90 = 20;
 const MIN_RHR_N = 60;
 
-const DOMAIN_LABEL: Record<string, string> = {
+/**
+ * Keyed on `Domain`, not `Record<string, string>`: a fifth domain must fail
+ * to compile here rather than silently fall through to `a.domain` at the call
+ * site below. That is exactly what happened when `nutrition` was added —
+ * the old `Record<string, string>` type accepted the widened `Domain` union
+ * without complaint, so the missing entry only showed up as an untranslated
+ * "nutrition" in a live push, with no test catching it.
+ */
+const DOMAIN_LABEL: Record<Domain, string> = {
   physical: "Fizikai fejlődés",
   recovery: "Regenerálódás",
   finance: "Pénzügy",
+  nutrition: "Táplálkozás",
   synthesis: "Összegzés",
 };
 
@@ -204,6 +214,11 @@ export function candidates(input: CandidateInput): Candidate[] {
       key: `analysis:${a.domain}:${a.createdAt.slice(0, 10)}`,
       kind: "analysis",
       urgency: "soon",
+      // `a.domain` is typed `Domain`, so `DOMAIN_LABEL` is exhaustive over it
+      // and this lookup can never actually miss. `?? a.domain` stays as a
+      // runtime backstop regardless — the type only guards code that goes
+      // through this function's own signature, not a row read back from
+      // `analyses` that predates a domain being added to the union.
       text: `${DOMAIN_LABEL[a.domain] ?? a.domain} — ${leadOf(a.summary)}`,
     });
   }

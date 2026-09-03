@@ -35,7 +35,7 @@ function metrics(over: {
     nutrition: {
       measuredDays: 0, windowDays: 0, lastDate: null, longestStreak: null,
       kcal: EMPTY, proteinG: EMPTY,
-      balance: { mean: null, n: 0, over: 0, under: 0, dropped: 0 },
+      balance: { mean: null, sd: null, n: 0, over: 0, under: 0, dropped: 0 },
       plannedProteinG: null, plannedKcal: null,
     },
   };
@@ -213,10 +213,24 @@ describe("candidates — analyses", () => {
   });
 
   it("keys an analysis by its identity, not by the current time", () => {
-    const newAnalyses = [{ domain: "physical", summary: "x", createdAt: "2026-09-01T09:00:00.000Z" }];
+    const newAnalyses: CandidateInput["newAnalyses"] =
+      [{ domain: "physical", summary: "x", createdAt: "2026-09-01T09:00:00.000Z" }];
     const first = candidates(input({ newAnalyses }))[0]!.key;
     const later = candidates(input({ now: new Date("2026-09-01T10:30:00.000Z"), newAnalyses }))[0]!.key;
     expect(later).toBe(first);
+  });
+
+  it("labels a nutrition analysis in Hungarian, not with the raw domain key", () => {
+    // DOMAIN_LABEL used to be typed Record<string, string>, so adding
+    // `nutrition` to the Domain union did not force an entry here, and the
+    // fallback `?? a.domain` quietly shipped the English word "nutrition"
+    // in an otherwise all-Hungarian push. Removing the `nutrition` entry
+    // from DOMAIN_LABEL must fail this test.
+    const found = candidates(input({
+      newAnalyses: [{ domain: "nutrition", summary: "Fehérjefedezet rendben.", createdAt: "2026-09-01T09:00:00.000Z" }],
+    }));
+    expect(found[0]!.text).toBe("Táplálkozás — Fehérjefedezet rendben.");
+    expect(found[0]!.text).not.toContain("nutrition");
   });
 
   it("uses the lead, not the whole summary, when the summary runs long", () => {

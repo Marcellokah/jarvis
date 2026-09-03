@@ -49,7 +49,7 @@ const metrics: Metrics = {
     measuredDays: 0, windowDays: 0, lastDate: null, longestStreak: null,
     kcal: { value: null, n: 0, coverage: 0, window: "0d" },
     proteinG: { value: null, n: 0, coverage: 0, window: "0d" },
-    balance: { mean: null, n: 0, over: 0, under: 0, dropped: 0 },
+    balance: { mean: null, sd: null, n: 0, over: 0, under: 0, dropped: 0 },
     plannedProteinG: null, plannedKcal: null,
   },
 };
@@ -123,6 +123,39 @@ describe("táplálkozási prompt", () => {
   it("a területnek van magyar címe", () => {
     const { system } = buildDomainPrompt("nutrition", metrics, []);
     expect(system).toContain("Táplálkozás");
+  });
+
+  it("megmagyarázza, hogy a windowDays honnan számol", () => {
+    // Without this the model sees `measuredDays: 74, windowDays: 354` with
+    // no explanation of the denominator's origin, and the days before the
+    // first intake are not skipped days — the system simply was not
+    // collecting yet. That distinction has to reach the prompt in words.
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    expect(system).toContain("windowDays");
+    expect(system).toMatch(/nem kihagyott/i);
+  });
+
+  it("megmagyarázza, hogy over/under miért lehet kevesebb, mint n", () => {
+    // Otherwise `over + under < n` reads as an arithmetic error rather than
+    // as the correct result of a day landing exactly on zero.
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    expect(system).toMatch(/balance\.over/);
+    expect(system).toMatch(/balance\.under/);
+    expect(system).toMatch(/nulla egyenleg/i);
+  });
+
+  it("a testsúly-mondat szó szerint változatlan marad", () => {
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    expect(system).toContain(
+      "TESTSÚLY-ADAT NINCS a rendszerben, tehát testtömeg-kilogrammra "
+      + "vetített állítást ne írj.",
+    );
+  });
+
+  it("nem az esetlen 'ehhez mérd a mértet' fordulatot használja", () => {
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    expect(system).not.toContain("ehhez mérd a mértet");
+    expect(system).toContain("ehhez mérd a mért értéket");
   });
 });
 

@@ -27,9 +27,17 @@ const BRIEF: Record<Exclude<Domain, "synthesis">, string> = {
     "Energiaegyensúly, fehérjefedezet és a mérés következetessége. A "
     + "`balance` csak azokból a napokból számol, ahol a bevitel ÉS az "
     + "alapanyagcsere ÉS az aktív kalória is megvan; a `dropped` azt mondja, "
-    + "hány mért nap maradt ki emiatt. A `plannedProteinG` a heti étrend "
-    + "napi fehérjéje — ehhez mérd a mértet, mert TESTSÚLY-ADAT NINCS a "
-    + "rendszerben, tehát testtömeg-kilogrammra vetített állítást ne írj.",
+    + "hány mért nap maradt ki emiatt. A `balance.over` és `balance.under` "
+    + "külön számolja a többlettel, illetve a hiánnyal záró napokat — egy "
+    + "pontosan nulla egyenlegű nap egyikbe sem esik bele, tehát az, hogy "
+    + "`over + under` kisebb, mint `n`, nem hiba. A `windowDays` az első "
+    + "rögzített bevitel napjától a mai napig eltelt napok száma: a mérés "
+    + "kezdete előtti napok nem kihagyott napok, akkor a rendszer egyszerűen "
+    + "még nem gyűjtött adatot, ezért a `measuredDays`/`windowDays` arányt a "
+    + "mérés indulásától számold, nem a teljes múlttól. A `plannedProteinG` "
+    + "a heti étrend napi fehérjéje — ehhez mérd a mért értéket, mert "
+    + "TESTSÚLY-ADAT NINCS a rendszerben, tehát testtömeg-kilogrammra "
+    + "vetített állítást ne írj.",
 };
 
 /**

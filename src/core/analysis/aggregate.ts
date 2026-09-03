@@ -76,6 +76,8 @@ export interface NutritionMetrics {
   balance: {
     /** Mean daily `diet − (basal + move)`, or null with no day carrying all three. */
     mean: number | null;
+    /** Sample standard deviation of the same daily diffs; null below two days. */
+    sd: number | null;
     n: number;
     over: number;
     under: number;
@@ -268,7 +270,15 @@ export function aggregate(input: AggregateInput): Metrics {
   // before the phone started reporting it, and dividing by the full history
   // would turn "we only started logging in September" into "you log one day
   // in thirty-six".
-  const windowDays = firstIntakeDate === null ? 0 : dayGap(firstIntakeDate, today) + 1;
+  //
+  // Clamped against `intake.length`, not just against zero: if `today` were
+  // ever earlier than the first intake — this input is exported and pure, so
+  // no production caller shape is enforced here — `dayGap` would go negative
+  // and hand the model `windowDays: -9` next to `measuredDays: 1`, a window
+  // shorter than the days it supposedly contains.
+  const windowDays = firstIntakeDate === null
+    ? 0
+    : Math.max(dayGap(firstIntakeDate, today) + 1, intake.length);
 
   let longestStreak: NutritionMetrics["longestStreak"] = null;
   let streak = 0;
@@ -277,6 +287,9 @@ export function aggregate(input: AggregateInput): Metrics {
     streak = previousIntakeDate !== null && dayGap(previousIntakeDate, s.date) === 1
       ? streak + 1
       : 1;
+    // Strict `>`, not `>=`: `intake` is walked oldest-first, so on a tie
+    // between two equal-length streaks the first one found — the earlier
+    // one — is kept rather than overwritten by the later tie.
     if (longestStreak === null || streak > longestStreak.days) {
       longestStreak = { days: streak, endedOn: s.date };
     }
@@ -291,6 +304,7 @@ export function aggregate(input: AggregateInput): Metrics {
   let over = 0;
   let under = 0;
   let dropped = 0;
+  const balanceDiffs: number[] = [];
   for (const s of intake) {
     if (typeof s.basalKcal !== "number" || typeof s.moveKcal !== "number") {
       dropped++;
@@ -299,6 +313,10 @@ export function aggregate(input: AggregateInput): Metrics {
     const diff = s.dietKcal! - (s.basalKcal + s.moveKcal);
     balanceSum += diff;
     balanceN++;
+    balanceDiffs.push(diff);
+    // A day that lands exactly on zero counts in neither: it is neither a
+    // surplus nor a deficit day, so `over + under` can legitimately fall
+    // short of `n` without that being a bug.
     if (diff > 0) over++;
     else if (diff < 0) under++;
   }
@@ -333,7 +351,11 @@ export function aggregate(input: AggregateInput): Metrics {
     longestStreak,
     kcal: windowed(series(snapshots, "dietKcal"), today, Math.max(1, windowDays), `${windowDays}d`),
     proteinG: windowed(series(snapshots, "dietProteinG"), today, Math.max(1, windowDays), `${windowDays}d`),
-    balance: { mean: balanceN === 0 ? null : Math.round(balanceSum / balanceN), n: balanceN, over, under, dropped },
+    balance: {
+      mean: balanceN === 0 ? null : Math.round(balanceSum / balanceN),
+      sd: stdDev(balanceDiffs),
+      n: balanceN, over, under, dropped,
+    },
     plannedProteinG: plannedTotal("proteinG"),
     plannedKcal: plannedTotal("kcal"),
   };

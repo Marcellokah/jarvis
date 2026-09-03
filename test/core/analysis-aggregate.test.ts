@@ -236,3 +236,69 @@ describe("aggregate — finance", () => {
     expect(m.finance.annualisedHuf).toBe(4990 * 12);
   });
 });
+
+describe("aggregate — nutrition", () => {
+  it("clamps windowDays so it never falls below measuredDays, even when today precedes the first intake", () => {
+    // Unreachable from every production caller today — `today` is always the
+    // real current date — but `aggregate()` is exported and pure, so nothing
+    // in its own signature rules this out. Before the clamp this produced
+    // `windowDays: -9` next to `measuredDays: 1`: a window shorter than the
+    // single day it supposedly contains, handed straight to the model as JSON.
+    const m = aggregate(input({
+      today: TODAY,
+      snapshots: [snap("2026-09-10", { dietKcal: 2000 })],
+    }));
+    expect(m.nutrition.measuredDays).toBe(1);
+    expect(m.nutrition.windowDays).toBe(1);
+    expect(m.nutrition.windowDays).toBeGreaterThanOrEqual(m.nutrition.measuredDays);
+    expect(m.nutrition.kcal.window).toBe("1d");
+  });
+
+  it("counts an exactly-zero balance day in neither over nor under", () => {
+    const snapshots = [
+      snap(shiftDay(TODAY, -2), { dietKcal: 2000, basalKcal: 1500, moveKcal: 500 }), // diff 0
+      snap(shiftDay(TODAY, -1), { dietKcal: 2100, basalKcal: 1500, moveKcal: 500 }), // diff +100
+      snap(TODAY, { dietKcal: 1900, basalKcal: 1500, moveKcal: 500 }), // diff -100
+    ];
+    const m = aggregate(input({ snapshots }));
+    expect(m.nutrition.balance.n).toBe(3);
+    expect(m.nutrition.balance.over).toBe(1);
+    expect(m.nutrition.balance.under).toBe(1);
+    // The zero day is real evidence — it counts in `n` — but sits in neither
+    // bucket, so `over + under < n` is the correct shape, not a bug.
+    expect(m.nutrition.balance.over + m.nutrition.balance.under).toBeLessThan(m.nutrition.balance.n);
+  });
+
+  it("keeps the earlier streak on a tie between two equal-length streaks", () => {
+    const snapshots = [
+      snap("2026-08-01", { dietKcal: 2000 }),
+      snap("2026-08-02", { dietKcal: 2000 }), // first 2-day streak, ends 08-02
+      snap("2026-08-05", { dietKcal: 2000 }), // isolated day, breaks the run
+      snap("2026-08-10", { dietKcal: 2000 }),
+      snap("2026-08-11", { dietKcal: 2000 }), // second 2-day streak, ends 08-11
+    ];
+    const m = aggregate(input({ snapshots }));
+    // Strict `>` keeps the first streak found on a tie; `>=` would instead
+    // report the later one, ending 08-11.
+    expect(m.nutrition.longestStreak).toEqual({ days: 2, endedOn: "2026-08-02" });
+  });
+
+  it("adds the daily balance's standard deviation alongside its mean", () => {
+    const snapshots = [
+      snap(shiftDay(TODAY, -2), { dietKcal: 2000, basalKcal: 1500, moveKcal: 400 }), // diff 100
+      snap(shiftDay(TODAY, -1), { dietKcal: 2000, basalKcal: 1500, moveKcal: 300 }), // diff 200
+      snap(TODAY, { dietKcal: 2000, basalKcal: 1500, moveKcal: 200 }), // diff 300
+    ];
+    const m = aggregate(input({ snapshots }));
+    expect(m.nutrition.balance.mean).toBe(200);
+    expect(m.nutrition.balance.sd).toBeCloseTo(100, 6);
+  });
+
+  it("leaves the balance sd null with fewer than two balance-eligible days", () => {
+    const m = aggregate(input({
+      snapshots: [snap(TODAY, { dietKcal: 2000, basalKcal: 1500, moveKcal: 400 })],
+    }));
+    expect(m.nutrition.balance.n).toBe(1);
+    expect(m.nutrition.balance.sd).toBeNull();
+  });
+});
