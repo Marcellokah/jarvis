@@ -38,6 +38,7 @@ export function hubBody(d: HubData): string {
       + `${renderMarkdown(d.synthesis.markdown)}</section>`;
 
   const cards = d.cards.map((c) => [
+    // hrefs are this module's own literal route strings (e.g. "/terulet/terheles"), never caller-supplied
     `<a class="kartya${c.figure === null ? " hianyzik" : ""}" href="${c.href}">`,
     `<span class="cimke">${escapeHtml(c.title)}</span>`,
     `<span class="szam">${escapeHtml(c.figure ?? "nincs adat")}</span>`,
