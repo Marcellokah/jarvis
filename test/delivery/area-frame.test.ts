@@ -12,6 +12,16 @@ describe("magyar számformázás", () => {
   });
   it("tizedesvesszőt használ", () => {
     expect(hu(1.41, 2)).toBe("1,41");
+    expect(hu(1.4, 2)).toBe("1,40");
+    expect(hu(1.456, 2)).toBe("1,46");
+  });
+  it("négy jegyű számot is csoportosít", () => {
+    // A hu-HU „auto" csoportosítása pont a négyjegyűeknél hallgat el, és a
+    // három korábbi másolat közül csak a numbers.ts hagyta rá — ugyanaz a
+    // 6753 lépés a Számok oldalon „6753", a Ma oldal csatornasorában
+    // „6 753" volt. A közös formázó mindig csoportosít, és ez a teszt az,
+    // ami ezt megtartja.
+    expect(hu(6753)).toBe("6 753");
   });
   it("a forintot mértékegységgel adja", () => {
     expect(huFt(64860)).toBe("64 860 Ft");
@@ -70,6 +80,16 @@ describe("sorozat-csempék", () => {
   it("kódolja az oszlopnevet az URL-ben", () => {
     const html = seriesBand("X", [{ column: "a/b", label: "A", days: 7, chart: "" }]);
     expect(html).toContain("/szamok/a%2Fb?tart=7");
+  });
+
+  it("escape-eli a fejléc és a címke szövegét", () => {
+    const html = seriesBand("<b>title</b>", [
+      { column: "test", label: "<i>label</i>", days: 7, chart: "" },
+    ]);
+    expect(html).not.toContain("<b>");
+    expect(html).not.toContain("<i>");
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).toContain("&lt;i&gt;");
   });
 });
 

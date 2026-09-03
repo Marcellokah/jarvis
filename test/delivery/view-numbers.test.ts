@@ -38,6 +38,15 @@ describe("readout", () => {
     const html = readout({ ...base, coverage: null }, 0, "");
     expect(html).not.toContain("rail");
   });
+
+  it("a négy jegyű szám szóközzel csoportosított", () => {
+    // Előtte a numbers.ts saját hu() függvénye nem adott useGrouping: true-t,
+    // így hu-HU alapból pont a négyjegyűeknél hagyta el a szeparátort.
+    // Ugyanaz a 6753 lépés a Számok oldalon „6753" volt, a Ma oldal
+    // csatornasorában „6 753". A közös formázó ezt egységesíti.
+    const html = readout({ ...base, label: "Lépés (7 nap)", value: "6 753", coverage: 7 / 7, series: { column: "steps", days: 7 } }, 0, "");
+    expect(html).toContain("<td class=\"value\">6 753</td>");
+  });
 });
 
 describe("numbersBody", () => {
