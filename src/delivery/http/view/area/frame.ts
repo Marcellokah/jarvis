@@ -57,6 +57,49 @@ export function seriesBand(title: string, tiles: readonly SeriesTile[]): string 
 
 export interface AreaAnalysis { markdown: string; createdAt: string }
 
+export interface EarlierAnalysis {
+  createdAt: string;
+  /** One paragraph — the field the next analysis run reads back. */
+  summary: string;
+}
+
+/**
+ * How many earlier analyses the disclosure shows.
+ *
+ * Past this the list stops being a history and becomes an archive, and an
+ * archive wants its own place rather than a fold on a page about today.
+ */
+const ELOZMENY_MAX = 5;
+
+/**
+ * The earlier analyses for one domain, collapsed.
+ *
+ * A native `<details>`, with no JavaScript: the browser already has a
+ * disclosure widget, and a scripted accordion would be more code and worse
+ * keyboard reach for the same thing.
+ *
+ * The `<summary>` names the count rather than saying "Korábbiak", because a
+ * neutral label does not tell the reader whether opening it is worth it. It
+ * names how many are SHOWN, not how many exist — a label promising nine over
+ * a list of five is the same class of confidently-wrong number this project
+ * refuses everywhere else.
+ *
+ * Nothing at all when there is no history: an empty disclosure would promise
+ * something behind it.
+ */
+export function historyBlock(earlier: readonly EarlierAnalysis[]): string {
+  const shown = earlier.slice(0, ELOZMENY_MAX);
+  if (shown.length === 0) return "";
+  const items = shown.map((e) => [
+    `<div class="tetel">`,
+    `<span class="kor">${escapeHtml(e.createdAt.slice(0, 10))}</span>`,
+    `<p>${escapeHtml(e.summary)}</p>`,
+    "</div>",
+  ].join("")).join("");
+  return `<details class="elozmeny"><summary>${shown.length} korábbi elemzés</summary>`
+    + `${items}</details>`;
+}
+
 /**
  * The area's own analysis, dated.
  *
@@ -69,12 +112,16 @@ export interface AreaAnalysis { markdown: string; createdAt: string }
  * since F1. An area that has no analysis DOMAIN at all (nutrition, until S8
  * builds one) does not call this function — its band is absent, not empty.
  */
-export function analysisBand(a: AreaAnalysis | undefined): string {
+export function analysisBand(
+  a: AreaAnalysis | undefined,
+  earlier: readonly EarlierAnalysis[],
+): string {
+  const elozmeny = historyBlock(earlier);
   if (a === undefined) {
     return "<section><h2>Elemzés</h2>"
       + `<p class="halk">Még nem futott mélyelemzés erre a területre. `
-      + `Indítsd: <code>npm run analyze</code></p></section>`;
+      + `Indítsd: <code>npm run analyze</code></p>${elozmeny}</section>`;
   }
   return `<section><h2>Elemzés · ${escapeHtml(a.createdAt.slice(0, 10))}</h2>`
-    + `${renderMarkdown(a.markdown)}</section>`;
+    + `${renderMarkdown(a.markdown)}${elozmeny}</section>`;
 }

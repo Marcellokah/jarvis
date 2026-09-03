@@ -241,6 +241,17 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
   background: var(--racs); border-color: var(--vaz); }
 .tartomanyok a.tartomany:focus-visible { outline: 2px solid var(--jel); outline-offset: 2px; }
 
+/* ---- elemzés-előzmény ---- */
+.elozmeny { margin-top: 1.2rem; border-top: 1px solid var(--racs); padding-top: .6rem; }
+.elozmeny > summary { cursor: pointer; color: var(--vaz);
+  font: 600 .68rem/1.6 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.elozmeny > summary:focus-visible { outline: 2px solid var(--jel); outline-offset: 2px; }
+.elozmeny .tetel { padding: .7rem 0; border-bottom: 1px solid var(--racs); }
+.elozmeny .tetel:last-child { border-bottom: 0; }
+.elozmeny .kor { display: block; font: .62rem/1.6 var(--mono); color: var(--halvany);
+  letter-spacing: .12em; }
+.elozmeny .tetel p { margin: .2rem 0 0; color: var(--halvany); }
+
 /* ---- teendők és írási műveletek ---- */
 .teendok { display: grid; gap: 1px; background: var(--racs);
   border: 1px solid var(--racs); }

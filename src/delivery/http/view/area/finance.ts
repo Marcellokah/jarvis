@@ -95,5 +95,5 @@ export function financeBody(d: FinanceData): string {
       : escapeHtml(huFt(d.annualisedHuf)))
     + "</p></section>";
 
-  return [lead, chart, subTable(d), annual, analysisBand(d.analysis)].join("");
+  return [lead, chart, subTable(d), annual, analysisBand(d.analysis, [])].join("");
 }

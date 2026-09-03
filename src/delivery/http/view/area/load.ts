@@ -97,6 +97,6 @@ export function loadBody(d: LoadData): string {
     monthly,
     typeTable(d.byType),
     recentTable(d.recent),
-    analysisBand(d.analysis),
+    analysisBand(d.analysis, []),
   ].join("");
 }

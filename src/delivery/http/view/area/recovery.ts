@@ -92,6 +92,6 @@ export function recoveryBody(d: RecoveryData): string {
     seriesBand("Regeneráció", d.tiles),
     sleepBlock(d.sleepByYear),
     `<section><h2>Fázisok és ébredés</h2><table>${stages}</table></section>`,
-    analysisBand(d.analysis),
+    analysisBand(d.analysis, []),
   ].join("");
 }
