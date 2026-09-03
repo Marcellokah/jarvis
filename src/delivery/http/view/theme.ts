@@ -85,7 +85,7 @@ nav.fomenu a.menu.jelzo.el::after { background: var(--jel); }
 section { margin-bottom: 2.75rem; }
 section > :first-child { margin-top: 0; }
 h2 { font: 600 .72rem/1.8 var(--mono); letter-spacing: .2em; text-transform: uppercase;
-  color: var(--vaz); margin: 0 0 .9rem; }
+  color: var(--halvany); margin: 0 0 .9rem; }
 h3 { font: 600 .7rem/1.8 var(--mono); letter-spacing: .16em; text-transform: uppercase;
   color: var(--szoveg); margin: 2.2rem 0 .6rem; padding-top: 1rem;
   border-top: 1px solid var(--racs); }
@@ -251,6 +251,11 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .elozmeny .kor { display: block; font: .62rem/1.6 var(--mono); color: var(--halvany);
   letter-spacing: .12em; }
 .elozmeny .tetel p { margin: .2rem 0 0; color: var(--halvany); }
+
+/* ---- köszönés ---- */
+.koszones { margin-bottom: 1.6rem; }
+.koszones .udv { margin: 0; font: 500 1.35rem/1.3 var(--text); color: var(--szoveg); }
+.koszones .mondat { margin: .35rem 0 0; color: var(--halvany); }
 
 /* ---- teendők és írási műveletek ---- */
 .teendok { display: grid; gap: 1px; background: var(--racs);
