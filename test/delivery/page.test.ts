@@ -271,6 +271,40 @@ describe("page routes", () => {
     await app.close();
   });
 
+  it("a chat válasza renderelt HTML-t is ad, nem csak nyers markdownt", async () => {
+    // A markdown a szerveren renderelődik: egy második, kliensoldali
+    // renderelő ugyanazt a munkát kettőzné meg, épp a modell írta szövegen.
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      chat: { available: async () => true, ask: async () => "**félkövér** válasz" },
+    });
+    const res = await a.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "kérdés" },
+    });
+    const body = JSON.parse(res.body);
+    expect(body.answer).toBe("**félkövér** válasz");
+    expect(body.html).toContain("<strong>félkövér</strong>");
+    await a.close();
+  });
+
+  it("a válasz HTML-je escape-eli a modell írta jelöléseket", async () => {
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      chat: { available: async () => true, ask: async () => "<script>alert(1)</script>" },
+    });
+    const res = await a.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "kérdés" },
+    });
+    expect(JSON.parse(res.body).html).not.toContain("<script>alert(1)</script>");
+    await a.close();
+  });
+
   it("a Ma oldal a mai méréseket mutatja, nullát soha", async () => {
     const a = await boot();
     const res = await a.server.inject({

@@ -7,6 +7,7 @@ import { todayBody } from "../view/today.ts";
 import type { ActionRow, ActionsData } from "../view/actions.ts";
 import { metricsRowsFrom, numbersBody, type MetricRow } from "../view/numbers.ts";
 import { askBody } from "../view/ask.ts";
+import { renderMarkdown } from "../markdown.ts";
 import { buildSeries } from "../view/chart/series.ts";
 import { SOROZATOK, valuesFrom } from "../view/chart/registry.ts";
 import { sparkline } from "../view/chart/sparkline.ts";
@@ -208,7 +209,12 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       const timer = setTimeout(() => controller.abort(), 90_000);
       try {
         const answer = await deps.chat.ask(WEB_CHAT_ID, parsed.data.question, controller.signal);
-        return reply.send({ answer });
+        // `html` beside `answer`, not instead of it: the raw markdown is the
+        // response's contract and stays. The rendered form travels with it so
+        // the page can put the answer straight into the thread — rendering it
+        // in the browser instead would mean a second markdown renderer, on
+        // exactly the text a model wrote.
+        return reply.send({ answer, html: renderMarkdown(answer) });
       } finally {
         clearTimeout(timer);
       }

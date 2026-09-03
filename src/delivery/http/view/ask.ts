@@ -21,6 +21,12 @@ export interface AskData {
 // out of the URL was the other half of that line; it moved to the shell
 // (`SCRUB_SCRIPT` in `view/shell.ts`), because arriving with a token can
 // happen on any of the four pages, not just this one.
+//
+// On success, the answer is spliced straight into the thread — no reload,
+// so the scroll position, the briefing, the measurements and the charts
+// above it stay exactly as they were. `location.reload()` survives only as
+// the fallback for a response with no `html` field (an older server), where
+// the reload is the only way left to show what the server actually has.
 export const SCRIPT = `
 const form = document.querySelector("form");
 if (form) form.addEventListener("submit", async (e) => {
@@ -43,7 +49,39 @@ if (form) form.addEventListener("submit", async (e) => {
       body: JSON.stringify({ question }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    location.reload();
+    const data = await res.json();
+    // No \`html\` means an older server than this page: the answer exists, it
+    // just has to come back through a reload. The reload shows the server's
+    // own truth, so nothing is lost by it.
+    if (!data.html) { location.reload(); return; }
+
+    const thread = form.parentNode;
+    const add = (who, cls, fill) => {
+      const box = document.createElement("div");
+      box.className = "turn " + cls;
+      const name = document.createElement("div");
+      name.className = "who";
+      name.textContent = who;
+      box.appendChild(name);
+      fill(box);
+      thread.insertBefore(box, form);
+      return box;
+    };
+    // The question goes in as text, never as markup: what a person types is
+    // not HTML. The answer goes in as HTML because the server rendered it —
+    // through the same escaping renderer a reload would have used.
+    add("Te", "user", (box) => {
+      const p = document.createElement("p");
+      p.textContent = question;
+      box.appendChild(p);
+    });
+    add("Jarvis", "assistant", (box) => { box.insertAdjacentHTML("beforeend", data.html); });
+
+    input.value = "";
+    form.classList.remove("busy");
+    button.textContent = "Kérdés";
+    input.disabled = button.disabled = false;
+    input.focus();
   } catch (err) {
     form.classList.remove("busy");
     button.textContent = "Újra";
