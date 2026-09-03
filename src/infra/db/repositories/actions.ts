@@ -17,6 +17,17 @@ export interface StoredAction {
 export interface ActionRepo {
   replaceForDate(date: string, items: { module: string; action: ActionItem }[], now: Date): StoredAction[];
   listOpen(date: string): StoredAction[];
+  /**
+   * Every open action, whatever day it belongs to, newest day first.
+   *
+   * `listOpen(date)` asks about one day, and that is the wrong question for
+   * the page: `replaceForDate` only ever replaces the actions of the day it
+   * runs for, so an action from any other day stays open until someone closes
+   * it. On the real database `listOpen(today)` currently answers with nothing
+   * while nine actions sit open — a page built on it would claim there is
+   * nothing to do.
+   */
+  listAllOpen(): StoredAction[];
   find(id: string): StoredAction | undefined;
   setStatus(id: string, status: ActionStatus, now: Date): void;
 }
@@ -79,6 +90,14 @@ export function createActionRepo(db: Db): ActionRepo {
     listOpen(date) {
       return db
         .all<Row>("SELECT * FROM action_items WHERE date = ? AND status = 'open'", date)
+        .map(toStored);
+    },
+
+    listAllOpen() {
+      return db
+        .all<Row>(
+          "SELECT * FROM action_items WHERE status = 'open' ORDER BY date DESC, created_at DESC, id",
+          )
         .map(toStored);
     },
 
