@@ -50,6 +50,7 @@ const server = await buildServer({
       months: app.subscriptionMonths.months().map((month) => ({
         month, subs: app.subscriptionMonths.forMonth(month),
       })),
+      plan: [0, 1, 2, 3, 4, 5, 6].flatMap((w) => app.meals.forWeekday(w)),
     });
   },
   modules: app.modules,
@@ -145,6 +146,7 @@ const scheduler = startScheduler({
                   months: app.subscriptionMonths.months().map((month) => ({
                     month, subs: app.subscriptionMonths.forMonth(month),
                   })),
+                  plan: [0, 1, 2, 3, 4, 5, 6].flatMap((w) => app.meals.forWeekday(w)),
                 }),
                 // runOne runs a single module. `get` and `generate` synthesise a
                 // brief, which is a Groq call — this path must never trigger one.

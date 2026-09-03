@@ -1,8 +1,9 @@
 import type { HealthSnapshot } from "../../infra/db/repositories/health.ts";
 import type { WorkoutRow } from "../../infra/health-export/rollup.ts";
 import type { MonthlySubscription } from "../../infra/db/repositories/subscription-months.ts";
+import type { PlannedMeal } from "../../infra/db/repositories/meals.ts";
 import {
-  shiftDay, slopePer30d, stdDev, windowed, type Metric, type Point,
+  dayGap, shiftDay, slopePer30d, stdDev, windowed, type Metric, type Point,
 } from "./stats.ts";
 
 export interface AggregateInput {
@@ -11,6 +12,15 @@ export interface AggregateInput {
   snapshots: readonly HealthSnapshot[];
   workouts: readonly WorkoutRow[];
   months: readonly { month: string; subs: readonly MonthlySubscription[] }[];
+  /**
+   * The weekly meal plan.
+   *
+   * The planned protein is what the measured intake is compared against —
+   * there is no body weight anywhere in this database, so a per-kilogram
+   * claim would have to be invented. The plan is the honest yardstick: it is
+   * what this person decided to eat.
+   */
+  plan: readonly PlannedMeal[];
 }
 
 export interface TrendMetric extends Metric {
@@ -53,6 +63,30 @@ export interface FinanceMetrics {
   annualisedHuf: number | null;
 }
 
+export interface NutritionMetrics {
+  /** Days carrying an intake figure at all. */
+  measuredDays: number;
+  /** Days from the first intake to `today` inclusive — the honest denominator. */
+  windowDays: number;
+  lastDate: string | null;
+  /** The longest unbroken run of measured days, and the day it ended on. */
+  longestStreak: { days: number; endedOn: string } | null;
+  kcal: Metric;
+  proteinG: Metric;
+  balance: {
+    /** Mean daily `diet − (basal + move)`, or null with no day carrying all three. */
+    mean: number | null;
+    n: number;
+    over: number;
+    under: number;
+    /** Days with intake dropped because a burn term was missing. */
+    dropped: number;
+  };
+  /** Planned daily protein from the weekly plan — null when no day is fully priced. */
+  plannedProteinG: number | null;
+  plannedKcal: number | null;
+}
+
 /**
  * How many recorded months an annual projection needs.
  *
@@ -71,6 +105,7 @@ export interface Metrics {
   physical: PhysicalMetrics;
   recovery: RecoveryMetrics;
   finance: FinanceMetrics;
+  nutrition: NutritionMetrics;
 }
 
 const STRENGTH = "TraditionalStrengthTraining";
@@ -113,7 +148,7 @@ function dailyAverageMinutes(
 }
 
 export function aggregate(input: AggregateInput): Metrics {
-  const { today, snapshots, workouts, months } = input;
+  const { today, snapshots, workouts, months, plan } = input;
 
   // ---- physical ----------------------------------------------------------
   const byDay = minutesByDay(workouts);
@@ -223,6 +258,86 @@ export function aggregate(input: AggregateInput): Metrics {
     ? financeMonths.at(-1)!.totalHuf
     : null;
 
+  // ---- nutrition -----------------------------------------------------------
+  const intake = snapshots
+    .filter((s) => typeof s.dietKcal === "number")
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const lastIntakeDate = intake.at(-1)?.date ?? null;
+  const firstIntakeDate = intake[0]?.date ?? null;
+  // Days since the FIRST intake, not the whole history: nothing was skipped
+  // before the phone started reporting it, and dividing by the full history
+  // would turn "we only started logging in September" into "you log one day
+  // in thirty-six".
+  const windowDays = firstIntakeDate === null ? 0 : dayGap(firstIntakeDate, today) + 1;
+
+  let longestStreak: NutritionMetrics["longestStreak"] = null;
+  let streak = 0;
+  let previousIntakeDate: string | null = null;
+  for (const s of intake) {
+    streak = previousIntakeDate !== null && dayGap(previousIntakeDate, s.date) === 1
+      ? streak + 1
+      : 1;
+    if (longestStreak === null || streak > longestStreak.days) {
+      longestStreak = { days: streak, endedOn: s.date };
+    }
+    previousIntakeDate = s.date;
+  }
+
+  // A day is only usable when it carries intake AND both burn terms. A
+  // missing `moveKcal` is not a day without movement, and counting it as zero
+  // would overstate the surplus by however much was actually burned.
+  let balanceSum = 0;
+  let balanceN = 0;
+  let over = 0;
+  let under = 0;
+  let dropped = 0;
+  for (const s of intake) {
+    if (typeof s.basalKcal !== "number" || typeof s.moveKcal !== "number") {
+      dropped++;
+      continue;
+    }
+    const diff = s.dietKcal! - (s.basalKcal + s.moveKcal);
+    balanceSum += diff;
+    balanceN++;
+    if (diff > 0) over++;
+    else if (diff < 0) under++;
+  }
+
+  // A planned day counts only when every one of its items is fully priced —
+  // carrying BOTH kcal and protein — regardless of which figure is being
+  // totalled. A meal missing just its protein still makes the day's kcal
+  // total a partial sum standing where the day's real total belongs, so it
+  // is dropped from both, not only from the field it happens to be missing.
+  // Items are grouped by weekday first, so one unpriced item drops the whole
+  // day rather than being smuggled in as a partial total.
+  const byWeekday = new Map<number, PlannedMeal[]>();
+  for (const p of plan) {
+    const items = byWeekday.get(p.weekday);
+    if (items) items.push(p); else byWeekday.set(p.weekday, [p]);
+  }
+  const fullyPricedDays = [...byWeekday.values()].filter(
+    (items) => items.every((m) => typeof m.kcal === "number" && typeof m.proteinG === "number"),
+  );
+  function plannedTotal(key: "kcal" | "proteinG"): number | null {
+    if (fullyPricedDays.length === 0) return null;
+    const dayTotals = fullyPricedDays.map(
+      (items) => items.reduce((a, m) => a + (m[key] as number), 0),
+    );
+    return Math.round(dayTotals.reduce((a, b) => a + b, 0) / dayTotals.length);
+  }
+
+  const nutrition: NutritionMetrics = {
+    measuredDays: intake.length,
+    windowDays,
+    lastDate: lastIntakeDate,
+    longestStreak,
+    kcal: windowed(series(snapshots, "dietKcal"), today, Math.max(1, windowDays), `${windowDays}d`),
+    proteinG: windowed(series(snapshots, "dietProteinG"), today, Math.max(1, windowDays), `${windowDays}d`),
+    balance: { mean: balanceN === 0 ? null : Math.round(balanceSum / balanceN), n: balanceN, over, under, dropped },
+    plannedProteinG: plannedTotal("proteinG"),
+    plannedKcal: plannedTotal("kcal"),
+  };
+
   return {
     today,
     physical: {
@@ -265,5 +380,6 @@ export function aggregate(input: AggregateInput): Metrics {
       monthOverMonth,
       annualisedHuf: latestTotal === null ? null : latestTotal * 12,
     },
+    nutrition,
   };
 }

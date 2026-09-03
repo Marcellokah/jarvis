@@ -171,6 +171,7 @@ export async function buildTestApp(options: {
       months: subscriptionMonths.months().map((month) => ({
         month, subs: subscriptionMonths.forMonth(month),
       })),
+      plan: [0, 1, 2, 3, 4, 5, 6].flatMap((w) => meals.forWeekday(w)),
     });
   };
 

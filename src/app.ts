@@ -129,7 +129,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
     clock,
     conversations,
     context: (chatId, signal) => buildAskContext({
-      health, workouts,
+      health, workouts, meals,
       subscriptionMonths,
       analyses, conversations, briefs, clock, logger,
       historyDepth: config.groq.chatHistoryDepth,

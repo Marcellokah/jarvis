@@ -4,6 +4,7 @@ import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo, Turn } from "../../infra/db/repositories/conversations.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { WorkoutRepo } from "../../infra/db/repositories/workouts.ts";
+import type { MealRepo } from "../../infra/db/repositories/meals.ts";
 import type { SubscriptionMonthRepo } from "../../infra/db/repositories/subscription-months.ts";
 import type { BriefService } from "../brief-service.ts";
 import type { Clock } from "../../infra/clock.ts";
@@ -25,6 +26,7 @@ export interface AskContext {
 export interface AskContextDeps {
   health: HealthRepo;
   workouts: WorkoutRepo;
+  meals: MealRepo;
   subscriptionMonths: SubscriptionMonthRepo;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
@@ -106,6 +108,7 @@ export async function buildAskContext(
     months: deps.subscriptionMonths.months().map((month) => ({
       month, subs: deps.subscriptionMonths.forMonth(month),
     })),
+    plan: [0, 1, 2, 3, 4, 5, 6].flatMap((w) => deps.meals.forWeekday(w)),
   }));
 
   return {

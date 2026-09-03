@@ -25,7 +25,7 @@ function workout(date: string, durationMin: number, type = "Walking"): WorkoutRo
 }
 
 function input(p: Partial<AggregateInput> = {}): AggregateInput {
-  return { today: TODAY, snapshots: [], workouts: [], months: [], ...p };
+  return { today: TODAY, snapshots: [], workouts: [], months: [], plan: [], ...p };
 }
 
 describe("aggregate — physical", () => {

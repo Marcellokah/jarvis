@@ -21,7 +21,7 @@ function snap(date: string, p: Partial<HealthSnapshot> = {}): HealthSnapshot {
 }
 
 function input(snapshots: HealthSnapshot[]): AggregateInput {
-  return { today: TODAY, snapshots, workouts: [], months: [] };
+  return { today: TODAY, snapshots, workouts: [], months: [], plan: [] };
 }
 
 describe("relations", () => {
@@ -98,7 +98,7 @@ describe("relations", () => {
       return snap(date, { rhr: 100 - load / 28 });
     });
 
-    const pair = relations({ today: TODAY, snapshots, workouts, months: [] }, 30)
+    const pair = relations({ today: TODAY, snapshots, workouts, months: [], plan: [] }, 30)
       .find((r) => r.key === "load_vs_rhr");
     expect(pair).toBeDefined();
     expect(pair!.n).toBe(365);
@@ -125,7 +125,7 @@ describe("relations", () => {
       return snap(date, { hrv: 50 + load / 28 });
     });
 
-    const pair = relations({ today: TODAY, snapshots, workouts, months: [] }, 30)
+    const pair = relations({ today: TODAY, snapshots, workouts, months: [], plan: [] }, 30)
       .find((r) => r.key === "load_vs_hrv");
     expect(pair).toBeDefined();
     expect(pair!.n).toBe(365);

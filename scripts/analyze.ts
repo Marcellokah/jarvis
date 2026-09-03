@@ -54,6 +54,7 @@ const input = {
   months: app.subscriptionMonths.months().map((month) => ({
     month, subs: app.subscriptionMonths.forMonth(month),
   })),
+  plan: [0, 1, 2, 3, 4, 5, 6].flatMap((w) => app.meals.forWeekday(w)),
 };
 
 console.log(

@@ -58,6 +58,12 @@ function metricsFixture(over: { hrv7?: Metric } = {}): Metrics {
       awakenings: EMPTY, sleepByYear: [],
     },
     finance: { months: [], monthOverMonth: null, annualisedHuf: null },
+    nutrition: {
+      measuredDays: 0, windowDays: 0, lastDate: null, longestStreak: null,
+      kcal: EMPTY, proteinG: EMPTY,
+      balance: { mean: null, n: 0, over: 0, under: 0, dropped: 0 },
+      plannedProteinG: null, plannedKcal: null,
+    },
   };
 }
 

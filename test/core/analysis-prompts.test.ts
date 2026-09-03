@@ -45,6 +45,13 @@ const metrics: Metrics = {
     monthOverMonth: null,
     annualisedHuf: null,
   },
+  nutrition: {
+    measuredDays: 0, windowDays: 0, lastDate: null, longestStreak: null,
+    kcal: { value: null, n: 0, coverage: 0, window: "0d" },
+    proteinG: { value: null, n: 0, coverage: 0, window: "0d" },
+    balance: { mean: null, n: 0, over: 0, under: 0, dropped: 0 },
+    plannedProteinG: null, plannedKcal: null,
+  },
 };
 
 describe("buildDomainPrompt", () => {
