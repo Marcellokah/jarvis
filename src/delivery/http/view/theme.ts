@@ -50,11 +50,20 @@ nav a.menu[aria-current="page"] { color: var(--vaz); background: var(--hatter); 
 nav a.menu.jelzo::after { content: ""; display: block; width: 4px; height: 4px;
   border-radius: 50%; margin: .35rem auto 0; background: var(--racs); }
 nav a.menu.jelzo.el::after { background: var(--jel); }
+/* Az almenü kizárólag az asztali sávban él: telefonon az alsó sor négy
+   eleme a teljes hely, és a hub a belépő a területekre. */
+.almenu { display: none; }
 @media (min-width: 46rem) {
   nav { inset: 0 auto 0 0; width: 8.5rem; flex-direction: column; justify-content: flex-start;
     border-top: 0; border-right: 1px solid var(--racs); padding: 2rem .5rem; gap: .15rem; }
   nav a.menu { flex: 0 0 auto; text-align: left; padding: .55rem .7rem; }
   nav a.menu.jelzo::after { display: inline-block; margin: 0 0 .15rem .5rem; }
+  .almenu { display: block; margin: .1rem 0 .4rem .7rem;
+    border-left: 1px solid var(--racs); }
+  .almenu a.alelem { display: block; padding: .3rem .7rem; color: var(--halvany);
+    text-decoration: none; font: .64rem/1.4 var(--mono); letter-spacing: .12em;
+    text-transform: uppercase; }
+  .almenu a.alelem:hover { color: var(--vaz); }
 }
 
 /* ---- lap ---- */
@@ -156,6 +165,9 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .lap > *:nth-child(3) { --i: 2; }
 .lap > *:nth-child(4) { --i: 3; }
 .lap > *:nth-child(5) { --i: 4; }
+.lap > *:nth-child(6) { --i: 5; }
+.lap > *:nth-child(7) { --i: 6; }
+.lap > *:nth-child(8) { --i: 7; }
 .rail::after { animation: rail-in .7s cubic-bezier(.2,.8,.2,1) both;
   animation-delay: calc(320ms + var(--i, 0) * 45ms); }
 @media (prefers-reduced-motion: reduce) {

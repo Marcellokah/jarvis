@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { layout, SCRUB_SCRIPT, type ShellData } from "../../src/delivery/http/view/shell.ts";
+import { STYLE } from "../../src/delivery/http/view/theme.ts";
 
 const base: ShellData = {
   section: "ma",
   dateLabel: "2026. szeptember 2., szerda",
   briefAge: "2 órája",
   channels: { arrived: 3, waiting: 3, missing: 0, missingLabels: [], total: 6 },
-  nav: { ma: true, elemzes: true, kerdes: false },
+  nav: { ma: true, terulet: true, kerdes: false },
   body: "<p>törzs</p>",
 };
 
@@ -61,7 +62,7 @@ describe("oldalkeret", () => {
     // bármelyik oldalra mutathat — nem csak a kérdés-dobozéra, ahová a script
     // korábban került. A szerver már sütire cserélte a tokent, mire ez lefut;
     // ami marad, az a címsor (és vele az előzmény meg a könyvjelző) takarítása.
-    for (const section of ["ma", "elemzes", "szamok", "kerdes"] as const) {
+    for (const section of ["ma", "terulet", "szamok", "kerdes"] as const) {
       const html = layout({ ...base, section });
       expect(html, section).toContain(SCRUB_SCRIPT);
     }
@@ -80,5 +81,63 @@ describe("oldalkeret", () => {
     const html = layout({ ...base, dateLabel: "<script>x()</script>" });
     expect(html).not.toContain("<script>x()</script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("navigáció a területekkel", () => {
+  const base = {
+    dateLabel: "2026. szeptember 3., csütörtök",
+    briefAge: null,
+    channels: { arrived: 0, waiting: 0, missing: 0, missingLabels: [], total: 6 },
+    body: "<p>törzs</p>",
+  };
+
+  it("négy menüpont van, és az Elemzés nincs köztük", () => {
+    // Telefonon a menü alsó sor. Hét-nyolc elem ott elemenként ~14%
+    // szélesség, vágott címkékkel — ezért marad négy, és ezért olvad fel az
+    // /elemzes a területekbe.
+    const html = layout({
+      ...base, section: "ma",
+      nav: { ma: true, terulet: true, kerdes: true },
+    });
+    const menu = [...html.matchAll(/class="menu[^"]*"[^>]*>([^<]+)</g)].map((m) => m[1]);
+    expect(menu).toEqual(["Ma", "Terület", "Számok", "Kérdés"]);
+    expect(html).not.toContain('href="/elemzes"');
+  });
+
+  it("a Terület jelzője kialszik, ha nincs friss elemzés", () => {
+    // Egy jelző, ami nem tud kikapcsolni, dekoráció — az /elemzes régi
+    // jelzője („van legalább egy elemzés") az első elemzés után soha többé
+    // nem aludt ki.
+    const el = layout({ ...base, section: "ma", nav: { ma: true, terulet: true, kerdes: false } });
+    const holt = layout({ ...base, section: "ma", nav: { ma: true, terulet: false, kerdes: false } });
+    expect(/href="\/terulet" class="menu jelzo el"/.test(el)).toBe(true);
+    expect(/href="\/terulet" class="menu jelzo holt"/.test(holt)).toBe(true);
+  });
+
+  it("a területi oldalon a Terület az aktív elem, és csak az", () => {
+    const html = layout({
+      ...base, section: "terulet",
+      nav: { ma: false, terulet: true, kerdes: false },
+    });
+    const current = [...html.matchAll(/href="([^"]+)"[^>]*aria-current="page"/g)].map((m) => m[1]);
+    expect(current).toEqual(["/terulet"]);
+  });
+
+  it("az almenü csak a terulet szekcióban jelenik meg", () => {
+    // A Ma és a Számok oldalán a menü ugyanaz a négy elem, mint eddig.
+    const inside = layout({ ...base, section: "terulet", nav: { ma: false, terulet: true, kerdes: false } });
+    const outside = layout({ ...base, section: "ma", nav: { ma: false, terulet: true, kerdes: false } });
+    expect(inside).toContain('href="/terulet/terheles"');
+    expect(inside).toContain('href="/terulet/regeneracio"');
+    expect(inside).toContain('href="/terulet/taplalkozas"');
+    expect(inside).toContain('href="/terulet/penzugy"');
+    expect(outside).not.toContain('href="/terulet/terheles"');
+  });
+
+  it("az almenü telefonon nem látszik", () => {
+    // Az alsó sor négy eleme marad; az almenü kizárólag az asztali sávban él.
+    expect(/\.almenu \{[^}]*display:\s*none/.test(STYLE)).toBe(true);
+    expect(/min-width:\s*46rem\s*\)\s*\{[\s\S]*\.almenu \{[^}]*display:\s*block/.test(STYLE)).toBe(true);
   });
 });

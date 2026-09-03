@@ -2,7 +2,7 @@ import { escapeHtml } from "../markdown.ts";
 import { STYLE } from "./theme.ts";
 import type { ChannelSummary } from "./channels.ts";
 
-export type Section = "ma" | "elemzes" | "szamok" | "kerdes";
+export type Section = "ma" | "terulet" | "szamok" | "kerdes";
 
 /**
  * Removes `?token=` from the address bar.
@@ -32,7 +32,7 @@ export const SCRUB_SCRIPT = `
 `;
 
 /** Whether each section has anything live to show right now. */
-export interface NavState { ma: boolean; elemzes: boolean; kerdes: boolean }
+export interface NavState { ma: boolean; terulet: boolean; kerdes: boolean }
 
 export interface ShellData {
   section: Section;
@@ -48,21 +48,48 @@ export interface ShellData {
  * `szamok` carries no indicator on purpose.
  *
  * It always has history behind it, so its lamp could never go dark — and an
- * indicator that cannot turn off is decoration, not information.
+ * indicator that cannot turn off is decoration, not information. `terulet`'s
+ * lamp CAN go dark, which is why it has one: it is lit while the deep
+ * analysis is fresh, and the analysis is started by hand (`npm run analyze`),
+ * so a dark lamp is an actionable state rather than a permanent decoration.
+ * This is exactly what the old `/elemzes` lamp ("there is at least one
+ * analysis") could never be — after the first run it stayed lit forever.
  */
 const ITEMS: { section: Section; href: string; label: string; lamp: keyof NavState | null }[] = [
   { section: "ma", href: "/", label: "Ma", lamp: "ma" },
-  { section: "elemzes", href: "/elemzes", label: "Elemzés", lamp: "elemzes" },
+  { section: "terulet", href: "/terulet", label: "Terület", lamp: "terulet" },
   { section: "szamok", href: "/szamok", label: "Számok", lamp: null },
   { section: "kerdes", href: "/kerdes", label: "Kérdés", lamp: "kerdes" },
+];
+
+/**
+ * The four areas, listed under "Terület" — on the desktop rail only.
+ *
+ * On a phone the nav is the bottom row, and the four top-level items already
+ * fill it; a sub-list there would either shrink every label past reading or
+ * push the row off the thumb's reach. The hub page is the phone's way in, and
+ * it carries the same four as cards.
+ */
+const TERULETEK: { href: string; label: string }[] = [
+  { href: "/terulet/terheles", label: "Terhelés" },
+  { href: "/terulet/regeneracio", label: "Regeneráció" },
+  { href: "/terulet/taplalkozas", label: "Táplálkozás" },
+  { href: "/terulet/penzugy", label: "Pénzügy" },
 ];
 
 function nav(data: ShellData): string {
   const items = ITEMS.map((item) => {
     const active = item.section === data.section;
     const lamp = item.lamp === null ? "" : (data.nav[item.lamp] ? " jelzo el" : " jelzo holt");
-    return `<a href="${item.href}" class="menu${lamp}"${active ? ' aria-current="page"' : ""}>`
+    const link = `<a href="${item.href}" class="menu${lamp}"${active ? ' aria-current="page"' : ""}>`
       + `${escapeHtml(item.label)}</a>`;
+    // The sub-list is rendered only while the reader is inside the section:
+    // on every other page it would be four links to somewhere they did not
+    // ask about, in a rail that has held four items since F1.
+    if (item.section !== "terulet" || !active) return link;
+    const sub = TERULETEK.map((t) =>
+      `<a href="${t.href}" class="alelem">${escapeHtml(t.label)}</a>`).join("");
+    return `${link}<span class="almenu">${sub}</span>`;
   }).join("");
   return `<nav>${items}</nav>`;
 }
