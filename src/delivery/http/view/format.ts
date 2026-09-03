@@ -27,3 +27,18 @@ export function hu(n: number, digits = 0): string {
 export function huFt(n: number): string {
   return `${hu(n)} Ft`;
 }
+
+/**
+ * Duration in Hungarian: "1 óra 32 perc", or just "32 perc" if less than an hour.
+ *
+ * CRITICAL: Round to whole minutes FIRST, then split into hours and minutes.
+ * Apple's health export carries fractional durations (e.g., 119.5 minutes from
+ * a GPS record). If you floor the hours before rounding the minutes, a carry
+ * case like 119.5 becomes "1 óra 60 perc" — wrong. Rounding first gives "2 óra 0 perc".
+ */
+export function duration(min: number): string {
+  const total = Math.round(min);
+  const h = Math.floor(total / 60);
+  const m = total - h * 60;
+  return h === 0 ? `${m} perc` : `${h} óra ${m} perc`;
+}

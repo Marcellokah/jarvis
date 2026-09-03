@@ -1,5 +1,5 @@
 import { escapeHtml } from "../../markdown.ts";
-import { hu } from "../format.ts";
+import { hu, duration } from "../format.ts";
 import { bars, type BarRow } from "../chart/bars.ts";
 import {
   analysisBand, leadBand, seriesBand,
@@ -20,13 +20,6 @@ export interface LoadData {
 }
 
 const ORAK = { label: "Edzésóra", format: (v: number) => `${hu(v, 1)} óra` };
-
-/** "1 óra 32 perc" — minutes are what the record holds, hours are what a person reads. */
-function duration(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = Math.round(min - h * 60);
-  return h === 0 ? `${m} perc` : `${h} óra ${m} perc`;
-}
 
 /**
  * A type's calorie total, with how much of it is actually measured.

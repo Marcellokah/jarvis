@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hu, huFt } from "../../src/delivery/http/view/format.ts";
+import { hu, huFt, duration } from "../../src/delivery/http/view/format.ts";
 import { leadBand, seriesBand, analysisBand } from "../../src/delivery/http/view/area/frame.ts";
 
 describe("magyar számformázás", () => {
@@ -25,6 +25,29 @@ describe("magyar számformázás", () => {
   });
   it("a forintot mértékegységgel adja", () => {
     expect(huFt(64860)).toBe("64 860 Ft");
+  });
+  it("0 percet csak percként adja", () => {
+    expect(duration(0)).toBe("0 perc");
+  });
+  it("32 percet csak percként adja", () => {
+    expect(duration(32)).toBe("32 perc");
+  });
+  it("60 percet 1 óra 0 percként adja", () => {
+    expect(duration(60)).toBe("1 óra 0 perc");
+  });
+  it("59.5 percet kerekítve 1 óra 0 percként adja", () => {
+    // Apple exportja tört perceket hoz — ha a kerekítés előtt hasítunk, 59.5
+    // az 59 perc marad; ha utána, akkor 60 perc kerekít, és a szállító 1 óra.
+    // Ez a teszt őrzi a helyes sorrend: kerekítés előbb.
+    expect(duration(59.5)).toBe("1 óra 0 perc");
+  });
+  it("119.5 percet kerekítve 2 óra 0 percként adja", () => {
+    // Még kritikusabb a szállítási eset: 119.5 perc kerekít 120-ra, az 2 óra.
+    // Rossz sorrend (hasítás előbb) ezt "1 óra 60 percként" adná.
+    expect(duration(119.5)).toBe("2 óra 0 perc");
+  });
+  it("3760 percet 62 óra 40 percként adja", () => {
+    expect(duration(3760)).toBe("62 óra 40 perc");
   });
 });
 

@@ -27,15 +27,21 @@ describe("Terhelés oldal", () => {
   });
 
   it("a havi edzésórát oszlopdiagramként rajzolja", () => {
+    // Az óra, a munkavégzés és az erősítés mind más szám — a teszt azt
+    // biztosítja, hogy az óra (nem a munkavégzés) kerül a diagramra.
     const html = loadBody({
       ...empty,
       byMonth: [
-        { month: "2026-07", hours: 12.5, sessions: 20, strength: 8 },
-        { month: "2026-08", hours: 9, sessions: 15, strength: 6 },
+        { month: "2026-07", hours: 12.5, sessions: 400, strength: 900 },
+        { month: "2026-08", hours: 9, sessions: 350, strength: 850 },
       ],
     });
     expect(html).toContain('class="oszlopok"');
     expect(html).toContain("2026-07");
+    expect(html).toContain("12,5 óra");
+    // Sessions and strength must not appear as plotted values
+    expect(html).not.toContain("400,0 óra");
+    expect(html).not.toContain("900,0 óra");
   });
 
   it("a kalóriát nem hordozó típusnál nincs mérést ír, nem 0 kcal-t", () => {
@@ -73,7 +79,7 @@ describe("Terhelés oldal", () => {
     expect(html).toContain("Nincs rögzített edzés");
   });
 
-  it("escape-eli az edzés típusát és forrását", () => {
+  it("escape-eli az edzés típusát", () => {
     // A típus az Apple exportjából jön, nem ebből a kódból.
     const html = loadBody({ ...empty, recent: [w("2026-09-01", "<script>x</script>", 10, null)] });
     expect(html).not.toContain("<script>x");
@@ -83,5 +89,52 @@ describe("Terhelés oldal", () => {
   it("elemzés nélkül is teljes oldalt ad", () => {
     const html = loadBody({ ...empty, loadRatio: 1.2 });
     expect(html).toContain("Még nem futott");
+  });
+
+  it("az erősítési arányt a havi diagrammal jeleníti meg", () => {
+    // A strengthPerWeek28d a havi óra sáv mellett jelenik meg, nem
+    // önálló diagramként.
+    const html = loadBody({
+      ...empty,
+      strengthPerWeek28d: 2.5,
+      byMonth: [{ month: "2026-08", hours: 10, sessions: 20, strength: 5 }],
+    });
+    expect(html).toContain("Erősítés");
+    expect(html).toContain("2,5");
+    expect(html).toContain("alkalom hetente");
+  });
+
+  it("erősítés nélkül nem mutatja az erősítési sort", () => {
+    // Null strengthPerWeek28d azt jelenti, hogy nincs elég előzmény az
+    // erősítés kiszámításához.
+    const html = loadBody({
+      ...empty,
+      byMonth: [{ month: "2026-08", hours: 10, sessions: 20, strength: 5 }],
+    });
+    expect(html).not.toContain("Erősítés");
+  });
+
+  it("elemzésöt mutatja, ha van", () => {
+    // Az analysisBand(d.analysis) vezérlést tesztelni kell, hogy tényleg
+    // továbbítva van az adat, nem csak hardcoded undefined.
+    const html = loadBody({
+      ...empty,
+      analysis: { markdown: "**Fontos** megállapítás", createdAt: "2026-09-01T07:08:45.487Z" },
+    });
+    expect(html).toContain("<strong>Fontos</strong>");
+    expect(html).toContain("2026-09-01");
+  });
+
+  it("a típusneveket escape-eli", () => {
+    // A típus az Apple exportjából jön, és lehet HTML-szerű szöveg, így
+    // a típusbontás táblázatban is escape-elni kell.
+    const html = loadBody({
+      ...empty,
+      byType: [
+        { type: "<b>Malicious</b>", sessions: 10, minutes: 600, kcal: 5000, kcalFrom: 10, lastDate: "2026-09-01" },
+      ],
+    });
+    expect(html).not.toContain("<b>Malicious</b>");
+    expect(html).toContain("&lt;b&gt;");
   });
 });
