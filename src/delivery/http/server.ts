@@ -20,6 +20,7 @@ import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerPageRoutes } from "./routes/page.ts";
+import { registerAreaRoutes } from "./routes/areas.ts";
 
 export interface ServerDeps {
   token: string;
@@ -170,13 +171,14 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     health: deps.health, briefs: deps.briefs, clock: deps.clock, logger: deps.logger,
   });
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
-  registerPageRoutes(app, {
+  const pageDeps = {
     briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
     conversations: deps.conversations, health: deps.health,
     workouts: deps.workouts, meals: deps.meals, subscriptions: deps.subscriptions,
-    metrics: deps.metrics,
-    clock: deps.clock, logger: deps.logger,
-  });
+    metrics: deps.metrics, clock: deps.clock, logger: deps.logger,
+  };
+  registerPageRoutes(app, pageDeps);
+  registerAreaRoutes(app, pageDeps);
 
   return app;
 }

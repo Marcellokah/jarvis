@@ -38,9 +38,3 @@ export function analysesBlock(
     renderMarkdown(a.markdown),
   ].join("")).join("");
 }
-
-export function analysesBody(
-  items: readonly { domain: string; markdown: string; createdAt: string }[],
-): string {
-  return `<section><h2>Elemzés</h2>${analysesBlock(items)}</section>`;
-}

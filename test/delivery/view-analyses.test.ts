@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analysesBlock, analysesBody } from "../../src/delivery/http/view/analyses.ts";
+import { analysesBlock } from "../../src/delivery/http/view/analyses.ts";
 
 /**
  * The band `analysesBlock` is exported for.
@@ -47,13 +47,5 @@ describe("analysesBlock", () => {
     const html = analysesBlock([]);
     expect(html).toContain("Még nem futott mélyelemzés");
     expect(html).toContain("npm run analyze");
-  });
-
-  it("is what analysesBody wraps, heading and all", () => {
-    // Pins the composition too: a future `analysesBody` that stopped calling
-    // `analysesBlock` would otherwise leave every test above passing while
-    // the page itself rendered something else.
-    expect(analysesBody([one])).toContain(analysesBlock([one]));
-    expect(analysesBody([one])).toContain("<h2>Elemzés</h2>");
   });
 });

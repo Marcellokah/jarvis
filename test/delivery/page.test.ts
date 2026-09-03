@@ -468,50 +468,6 @@ describe("page routes", () => {
     await a.close();
   });
 
-  it("az Elemzés oldal dátumozza az elemzéseket", async () => {
-    const a = await boot();
-    // AnalysisRepo.save(row: Omit<AnalysisRow, "id">) — createdAt, domain,
-    // markdown, summary és metrics mind kötelező.
-    a.analyses.save({
-      createdAt: "2026-09-01T07:08:45.487Z", domain: "physical",
-      markdown: "### Fizikai\n- Magas.", summary: "Magas.", metrics: "{}",
-    });
-    const res = await a.server.inject({
-      method: "GET", url: "/elemzes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("2026-09-01");
-    // Strengthened beyond the brief's literal test, for the same reason the
-    // /szamok test above adds the aria-current check: "2026-09-01" alone
-    // would also appear if /elemzes reused the OLD `renderPage` wholesale
-    // (which also dates each analysis), proving nothing about the new route
-    // or the shared shell. This pins down what only the new wiring produces.
-    // Includes the "elemzes" nav lamp too, lit because this test just saved
-    // an analysis (see `navState`'s own `latestPerDomain().length > 0` check).
-    expect(res.body).toContain('<a href="/elemzes" class="menu jelzo el" aria-current="page">');
-    await a.close();
-  });
-
-  it("az Elemzés oldal megmondja, ha még nem futott elemzés", async () => {
-    const a = await boot();
-    const res = await a.server.inject({
-      method: "GET", url: "/elemzes", headers: { authorization: `Bearer ${TEST_TOKEN}` },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("Még nem futott mélyelemzés");
-    await a.close();
-  });
-
-  it("az Elemzés oldal hitelesítés nélkül elutasít", async () => {
-    // Not in the brief, but Task 5's auth hook is default-deny for anything
-    // outside `/api/*` and `PUBLIC_ROUTES` — this confirms the new route is
-    // actually guarded rather than assuming the hook covers it.
-    const a = await boot();
-    const res = await a.server.inject({ method: "GET", url: "/elemzes" });
-    expect(res.statusCode).toBe(401);
-    await a.close();
-  });
-
   it("a Kérdés oldal használható marad, ha a modell nem érhető el", async () => {
     const a = await boot();
     const res = await a.server.inject({
@@ -522,7 +478,7 @@ describe("page routes", () => {
     expect(res.body).toContain(`<button type="submit" disabled>`);
     expect(res.body).toContain("nem érhető el");
     // Strengthened beyond the brief's literal test, for the same reason the
-    // /szamok and /elemzes tests above add their own aria-current check: this
+    // /szamok test above adds its own aria-current check: this
     // text and these disabled controls would render identically if /kerdes
     // reused the OLD `renderPage` wholesale (its `chatBlock` renders the same
     // disabled state by default), proving nothing about the new route or the
@@ -596,7 +552,7 @@ describe("page routes", () => {
     // épp azon az oldalon nem futott, amit a README megnyittat — a token ott
     // maradt a címsorban, az előzményben és minden onnan mentett könyvjelzőben.
     const a = await boot();
-    for (const url of ["/", "/szamok", "/elemzes", "/kerdes"]) {
+    for (const url of ["/", "/szamok", "/terulet", "/kerdes"]) {
       const res = await a.server.inject({
         method: "GET", url, headers: { authorization: `Bearer ${TEST_TOKEN}` },
       });
