@@ -224,6 +224,29 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .plot .sav { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: 200ms; }
 @media (prefers-reduced-motion: reduce) { .plot .vonal, .plot .sav { animation: none; } }
 
+/* ---- teendők és írási műveletek ---- */
+.teendok { display: grid; gap: 1px; background: var(--racs);
+  border: 1px solid var(--racs); }
+.teendo { display: flex; justify-content: space-between; align-items: center;
+  gap: .8rem; padding: .7rem .8rem; background: var(--lap); }
+.teendo .cimke { display: block; font: .64rem/1.4 var(--mono); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--halvany); }
+.teendo .szoveg { display: block; }
+.teendo p.halk { margin: .25rem 0 0; font: .74rem/1.5 var(--mono); }
+.muveletek { display: flex; gap: .4rem; flex: 0 0 auto; }
+/* A kérdés-űrlapé egy elem-szintű \`form\` szabály flex elrendezéssel és 1,4rem
+   felső margóval; enélkül minden gomb lecsúszna a saját sorában. */
+.muvelet { display: inline; margin-top: 0; gap: 0; }
+.muvelet button { padding: .45rem .8rem; border: 1px solid var(--vaz);
+  border-radius: .3rem; background: transparent; color: var(--vaz); cursor: pointer;
+  font: 600 .66rem/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.muvelet button:hover { border-color: var(--jel); color: var(--jel); }
+.muvelet button:focus-visible { outline: 2px solid var(--jel); outline-offset: 2px; }
+.hibasav { margin: 0 0 1rem; padding: .6rem .8rem; border: 1px solid var(--racs);
+  border-radius: .3rem; color: var(--halvany);
+  font: .76rem/1.5 var(--mono); }
+.hibasav.riaszt { border-color: var(--riado); color: var(--riado); }
+
 /* ---- területi oldalak ---- */
 .vezeto { display: flex; flex-direction: column; gap: .2rem;
   padding: 1rem 0 1.2rem; border-bottom: 1px solid var(--racs); }
