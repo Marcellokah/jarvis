@@ -185,11 +185,66 @@ describe("írási útvonalak", () => {
     expect(a.actions.find(id)!.status).toBe("declined");
   });
 
+  it("egy már elfogadott javaslat elutasítása nem árvítja el a naptár-eseményt", async () => {
+    // A böngésző Vissza gombjával elérhető: elfogadás után egy régi, még
+    // élő gombokkal renderelt lapon "Elutasítom"-ra kattintva a teendő
+    // korábban csendben "declined"-re állt, miközben a naptárban és a
+    // visszavonás-sávban élve maradt az esemény — onnantól sem elutasítani,
+    // sem visszavonni nem lehetett. A rögzített naptár most sikeresen ír,
+    // hogy az elfogadás valódi eseményt hozzon létre, amit az elutasítás
+    // aztán megpróbál elárvítani.
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      calendar: {
+        listEvents: async () => [],
+        createEvent: async () => ({ uid: "jarvis-1", calendar: "Jarvis", url: "https://x/1.ics" }),
+        deleteEvent: async () => {},
+        healthCheck: async () => ({ ok: true }),
+      },
+    });
+    const rows = a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: {
+        id: "p4", kind: "proposal", text: "Kirándulás",
+        proposal: { title: "K", start: "2026-09-05T09:00:00+02:00", end: "2026-09-05T12:00:00+02:00" },
+      },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+    const id = rows[0]!.id;
+    const elfogad = await post(a, `/teendo/${id}/elfogad`);
+    expect(elfogad.statusCode).toBe(303);
+    expect(a.actions.find(id)!.status).toBe("accepted");
+
+    const elutasit = await post(a, `/teendo/${id}/elutasit`);
+    expect(elutasit.statusCode).toBe(303);
+    expect(elutasit.headers.location).toBe("/"); // already_resolved redirects clean, like a double tap
+    expect(a.actions.find(id)!.status).toBe("accepted"); // not "declined" — the event is not orphaned
+    expect(a.proposals.listUndoable(20).map((w) => w.eventUid)).toContain("jarvis-1");
+  });
+
   it("ismeretlen naptár-írás visszavonása hibakóddal tér vissza", async () => {
     const a = await boot();
     const res = await post(a, "/naptar/nincs-ilyen/visszavon");
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/?hiba=not_found");
+  });
+
+  it("egy nem modellezett hiba az író útvonalon HTML lapot ad, nem nyers JSON-t", async () => {
+    // Bármi, ami nem ProposalError — pl. egy adatbázis-hiba — a globális
+    // hibakezelőn (server.ts) átfutva egy nyers `{"error":"internal_error"}`
+    // JSON törzset adna vissza egy böngészőnek, amelyik épp egy HTML űrlapot
+    // küldött be. Az 500 helyes marad, de a törzs a lap saját hangján szóljon,
+    // és vezessen vissza a "/"-re.
+    const a = await boot();
+    const id = seedCheckbox(a);
+    (a as unknown as { proposals: { complete: () => never } }).proposals.complete = () => {
+      throw new Error("szándékos, nem ProposalError hiba");
+    };
+    const res = await post(a, `/teendo/${id}/kesz`);
+    expect(res.statusCode).toBe(500);
+    expect(res.headers["content-type"]).toContain("text/html");
+    expect(res.body).not.toContain('"error":"internal_error"');
+    expect(res.body).toContain('href="/"');
   });
 
   it("a JSON API változatlanul működik", async () => {

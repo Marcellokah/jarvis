@@ -15,7 +15,7 @@ const teendokSav = (html: string): string =>
 
 /** Only the undo band. */
 const visszavonSav = (html: string): string =>
-  /<h2>Visszavonható<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+  /<h2>Visszavonható naptár-írások<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
 
 describe("teendő-sáv", () => {
   it("nyitott teendő nélkül nem ad üres címet", () => {
@@ -104,7 +104,7 @@ describe("teendő-sáv", () => {
 describe("visszavonás-sáv", () => {
   it("visszavonható írás nélkül nincs ott", () => {
     const html = actionsBody({ ...empty, napok: [{ date: "2026-09-03", items: [row()] }] });
-    expect(html).not.toContain("Visszavonható");
+    expect(html).not.toContain("Visszavonható naptár-írások");
   });
 
   it("minden írás a saját visszavonó gombját kapja", () => {
@@ -160,6 +160,20 @@ describe("hibasáv", () => {
     // tartalom lenne.
     expect(errorBand("<script>alert(1)</script>")).toBe("");
     expect(errorBand("akarmi")).toBe("");
+  });
+
+  it("egy örökölt Object.prototype-kulcs nem dönti el a lapot", () => {
+    // A `HIBAK` egy sima objektum-literál, tehát egy zárójeles kikeresés a
+    // prototípuslánc mentén is keres: "toString", "constructor" és
+    // "__proto__" mind egy örökölt, IGAZ-nak számító értéket ad vissza egy
+    // sima `HIBAK[code]` kikeresésnél, ami átcsúszna az `undefined`-őrön, és
+    // az `escapeHtml` később egy tényleges `undefined`-on hívná a
+    // `.replace`-t — ez adta az 500-at egy `?hiba=toString`-re. `hasOwn`
+    // csak a saját kulcsokat látja, ezért ezek is üres sávot adnak, mint
+    // bármelyik más ismeretlen kód.
+    for (const kod of ["toString", "constructor", "__proto__", "valueOf", "hasOwnProperty"]) {
+      expect(errorBand(kod), kod).toBe("");
+    }
   });
 
   it("a riasztás színe csak a naptár-hibánál jelenik meg", () => {

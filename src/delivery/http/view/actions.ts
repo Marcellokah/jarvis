@@ -1,4 +1,5 @@
 import { escapeHtml } from "../markdown.ts";
+import type { ProposalError } from "../../../core/proposals.ts";
 
 export interface ActionRow {
   id: string;
@@ -76,7 +77,7 @@ export function actionsBody(d: ActionsData): string {
   ].join("");
 
   const vissza = d.undoable.length === 0 ? "" : [
-    "<section><h2>Visszavonható</h2><div class=\"teendok\">",
+    "<section><h2>Visszavonható naptár-írások</h2><div class=\"teendok\">",
     d.undoable.map((w) => [
       `<div class="teendo">`,
       `<div class="mit"><span class="cimke">${escapeHtml(w.calendar)}</span>`,
@@ -104,7 +105,12 @@ export function actionsBody(d: ActionsData): string {
  * holds — an alarm that fires when nothing is wrong is exactly the kind of
  * indicator this project refuses everywhere else.
  */
-const HIBAK: Record<string, { szoveg: string; riaszt: boolean }> = {
+// `Exclude<..., "already_resolved">` rather than `Record<string, ...>`: with
+// a plain `string` index, a fifth `ProposalError` code would compile silently
+// and fall through `errorBand` rendering nothing — a failed write reported as
+// success. This mirrors the exhaustive `STATUS` map in
+// `routes/actions.ts`, so the two stay in lockstep.
+const HIBAK: Record<Exclude<ProposalError["code"], "already_resolved">, { szoveg: string; riaszt: boolean }> = {
   calendar_failed: {
     szoveg: "Nem sikerült a naptárba írni. A teendő nyitva maradt, újra megpróbálhatod.",
     riaszt: true,
@@ -114,7 +120,17 @@ const HIBAK: Record<string, { szoveg: string; riaszt: boolean }> = {
 };
 
 export function errorBand(code: string | undefined): string {
-  const hiba = code === undefined ? undefined : HIBAK[code];
-  if (hiba === undefined) return "";
+  // `Object.hasOwn`, not a bracket lookup on `code` alone: `HIBAK` is a plain
+  // object literal, so `HIBAK[code]` walks the prototype chain too. For
+  // `code` values like "toString", "constructor", or "__proto__" that lookup
+  // returns a truthy *inherited* value (a function, or Object.prototype
+  // itself), the `undefined` guard below would never fire, and
+  // `escapeHtml(hiba.szoveg)` would throw on `.replace` of an actual
+  // `undefined` — turning a hand-typed or bookmarked `?hiba=toString` into a
+  // 500 for the whole page. `hasOwn` checks only the object's own keys, never
+  // the prototype chain, so an unrecognised code — inherited-property name or
+  // not — falls through to the same empty string as any other unknown code.
+  if (code === undefined || !Object.hasOwn(HIBAK, code)) return "";
+  const hiba = HIBAK[code as keyof typeof HIBAK];
   return `<p class="hibasav${hiba.riaszt ? " riaszt" : ""}">${escapeHtml(hiba.szoveg)}</p>`;
 }

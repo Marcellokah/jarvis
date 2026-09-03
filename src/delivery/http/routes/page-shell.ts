@@ -62,7 +62,7 @@ function ageWords(from: string, now: Date): string | null {
 }
 
 /** "2026. augusztus 30., vasárnap" — egy naptári nap a keret hangján. */
-function dayWords(day: string): string | null {
+export function dayWords(day: string): string | null {
   // Noon UTC, not midnight: a midnight instant read back in Europe/Budapest
   // lands on the neighbouring day, and the label would name the wrong date.
   const at = new Date(`${day}T12:00:00Z`);

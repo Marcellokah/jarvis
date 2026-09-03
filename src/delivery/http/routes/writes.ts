@@ -2,6 +2,32 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { ProposalError, type ProposalService } from "../../../core/proposals.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
+import { STYLE } from "../view/theme.ts";
+
+/**
+ * A minimal page in the app's own voice for an exception these routes never
+ * modelled — a database error, say, rather than a `ProposalError`.
+ *
+ * The global error handler (`server.ts`) would otherwise answer with a raw
+ * `{"error":"internal_error"}` JSON body. That is the right shape for the
+ * JSON API, but this route was reached by a browser submitting an HTML form,
+ * and a JSON blob rendered as a page is a wart no reader asked to see. The
+ * status stays 500 — a write that may not have happened must not come back
+ * looking like a 303 success — and this only replaces the body.
+ */
+function errorPage(): string {
+  return [
+    "<!doctype html>",
+    `<html lang="hu"><head><meta charset="utf-8">`,
+    `<meta name="viewport" content="width=device-width, initial-scale=1">`,
+    `<meta name="color-scheme" content="dark light">`,
+    "<title>Jarvis</title>",
+    `<style>${STYLE}</style></head><body>`,
+    `<main class="lap"><p>Váratlan hiba történt, a művelet nem történt meg.</p>`,
+    `<p><a href="/">Vissza a Ma oldalra</a></p></main>`,
+    "</body></html>",
+  ].join("");
+}
 
 /**
  * The page's own way in to the four writes the system already knows how to do.
@@ -33,7 +59,13 @@ export function registerWriteRoutes(
    */
   const back = (reply: FastifyReply, err?: unknown): FastifyReply => {
     if (err === undefined) return reply.code(303).header("location", "/").send();
-    if (!(err instanceof ProposalError)) throw err;
+    if (!(err instanceof ProposalError)) {
+      // Not a modelled write failure — logged here, not rethrown to the
+      // global handler, so this route can answer in HTML instead of that
+      // handler's raw JSON body (see `errorPage` above).
+      deps.logger.error({ err: String(err) }, "write from the page failed unexpectedly");
+      return reply.code(500).type("text/html; charset=utf-8").send(errorPage());
+    }
     if (err.code === "already_resolved") {
       return reply.code(303).header("location", "/").send();
     }

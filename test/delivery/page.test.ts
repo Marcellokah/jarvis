@@ -677,7 +677,9 @@ describe("Ma oldal — teendők", () => {
     const res = await get(a, "/");
     const sav = teendokSav(res.body);
     expect(sav).toContain("RÉGI-JELÖLŐ");
-    expect(sav).toContain("2026-08-30");
+    // Worded, not a bare ISO date — the same voice the status strip uses for
+    // "today", so the reader is not left doing date arithmetic themselves.
+    expect(sav).toContain("2026. augusztus 30., vasárnap");
     await a.close();
   });
 
@@ -726,6 +728,21 @@ describe("Ma oldal — teendők", () => {
     await a.close();
   });
 
+  it("egy örökölt kulcsnévvel írt ?hiba nem dönti el az egész lapot", async () => {
+    // A `HIBAK` sima objektum-literál a nézetben; egy `HIBAK[code]`
+    // zárójeles kikeresés a prototípuslánc mentén is keres, és
+    // "toString"/"constructor"/"__proto__" mind egy örökölt, IGAZ-nak
+    // számító értéket adna vissza — a lap élesben ezért 500-at adott egy
+    // kézzel beírt vagy könyvjelzőzött `?hiba=toString` linkre.
+    const a = await boot();
+    for (const kod of ["toString", "constructor", "__proto__"]) {
+      const res = await get(a, `/?hiba=${kod}`);
+      expect(res.statusCode, kod).toBe(200);
+      expect(res.body, kod).not.toContain('<p class="hibasav');
+    }
+    await a.close();
+  });
+
   it("a hibázó teendő-lekérdezés nem viszi el a briefinget", async () => {
     // Az F1 óta érvényes minta: minden darab magában bukik.
     const a = await boot();
@@ -768,7 +785,7 @@ describe("Ma oldal — teendők", () => {
     };
     const res = await get(a, "/");
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("Visszavonható");
+    expect(res.body).toContain("Visszavonható naptár-írások");
     expect(res.body).toContain("Kirándulás");
     await a.close();
   });
@@ -832,7 +849,10 @@ describe("Ma oldal — teendők", () => {
     }], new Date("2026-09-03T08:00:00.000Z"));
 
     const sav = teendokSav((await get(a, "/")).body);
-    expect(sav).toContain("2026-09-05T09:00:00+02:00");
+    // Worded — day plus clock time — not the raw ISO instant the module
+    // stores: a bare "2026-09-05T09:00:00+02:00" would put a second, machine
+    // voice for the same date on a page whose status strip already words it.
+    expect(sav).toContain("2026. szeptember 5., szombat, 09:00");
     expect(sav).toContain("Normafa");
     expect(sav).toContain("Vigyél vizet");
     await a.close();
@@ -857,7 +877,7 @@ describe("Ma oldal — teendők", () => {
     const res = await get(a, "/");
     expect(res.statusCode).toBe(200);
     const sav = teendokSav(res.body);
-    expect(sav).toContain("2026-09-06T09:00:00+02:00");
+    expect(sav).toContain("2026. szeptember 6., vasárnap, 09:00");
     expect(sav).not.toContain("undefined");
     await a.close();
   });

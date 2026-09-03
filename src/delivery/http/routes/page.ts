@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { MAX_QUESTION_CHARS } from "../../../core/chat.ts";
 import type { Turn } from "../../../infra/db/repositories/conversations.ts";
-import { addDays, isoDate, TZ } from "../../../shared/dates.ts";
+import { addDays, isoDate, isoTime, TZ } from "../../../shared/dates.ts";
 import { todayBody } from "../view/today.ts";
 import type { ActionRow, ActionsData } from "../view/actions.ts";
 import { metricsRowsFrom, numbersBody, type MetricRow } from "../view/numbers.ts";
@@ -12,7 +12,23 @@ import { SOROZATOK, valuesFrom } from "../view/chart/registry.ts";
 import { sparkline } from "../view/chart/sparkline.ts";
 import { plot } from "../view/chart/plot.ts";
 import { detailBody, parseRange } from "../view/chart/detail.ts";
-import { render, shellInputs, type PageDeps } from "./page-shell.ts";
+import { dayWords, render, shellInputs, type PageDeps } from "./page-shell.ts";
+
+/**
+ * The day plus the clock time, worded the way the rest of the page speaks.
+ *
+ * `proposal.start` is a raw ISO-8601 instant; printing it as-is put a
+ * machine date right next to the human one the status strip already uses for
+ * the same day, and gave the reader no way to tell "tomorrow" from "four
+ * days ago" without doing the arithmetic themselves. Falls back to the raw
+ * instant, never to a dropped line, when the date cannot be parsed.
+ */
+function proposalWhen(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const day = dayWords(isoDate(at, TZ)) ?? isoDate(at, TZ);
+  return `${day}, ${isoTime(at, TZ)}`;
+}
 
 export type { PageDeps } from "./page-shell.ts";
 
@@ -45,14 +61,17 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
           text: a.text,
           modul: cim(a.module),
           reszletek: a.proposal === null ? [] : [
-            a.proposal.start,
+            proposalWhen(a.proposal.start),
             ...(a.proposal.location ? [a.proposal.location] : []),
             ...(a.proposal.notes ? [a.proposal.notes] : []),
           ],
         });
         byDate.set(a.date, items);
       }
-      napok = [...byDate.entries()].map(([date, items]) => ({ date, items }));
+      // Worded the same way the status strip words today, with the raw ISO
+      // date as a fallback rather than a dropped heading: the same date must
+      // not speak in two voices on one page (see `proposalWhen` above).
+      napok = [...byDate.entries()].map(([date, items]) => ({ date: dayWords(date) ?? date, items }));
     } catch (err) {
       deps.logger.warn({ err: String(err) }, "page rendered without its actions");
     }

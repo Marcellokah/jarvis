@@ -43,9 +43,21 @@ export function createProposalService(deps: {
     /**
      * The only path that writes to your calendar.
      *
-     * Order matters: the event is created first and only then recorded as
-     * accepted. If iCloud rejects the write, the action stays open so it can
-     * be retried — marking it accepted first would lose the proposal entirely.
+     * Two requests can only interleave at an `await` — this app has one
+     * database connection and JavaScript is single-threaded — so the
+     * `status !== "open"` guard below is followed *immediately*, with no
+     * `await` between them, by claiming the action: its status is set to
+     * "accepted" right there, before the calendar is ever touched. That
+     * makes the guard-and-claim indivisible, so of two overlapping accept()
+     * calls the second always observes "accepted" and fails with
+     * already_resolved, instead of both reading "open" and both creating a
+     * calendar event.
+     *
+     * If the calendar write then fails, the claim is reverted — the status
+     * is set back to "open" before the `calendar_failed` error is thrown —
+     * so the action stays retryable exactly as before this change: claiming
+     * it and leaving it claimed on a failed write would lose the proposal
+     * entirely.
      */
     async accept(actionId, now) {
       const action = load(actionId);
@@ -56,11 +68,14 @@ export function createProposalService(deps: {
       if (action.status !== "open") {
         throw new ProposalError("already_resolved", `Ezt már elintézted (${action.status}).`);
       }
+      deps.actions.setStatus(action.id, "accepted", now);
 
       let created;
       try {
         created = await deps.calendar.createEvent(action.proposal);
       } catch (err) {
+        // Revert the claim: a failed write must not cost you the proposal.
+        deps.actions.setStatus(action.id, "open", now);
         deps.logger.error({ actionId, err: String(err) }, "calendar write failed; action left open");
         throw new ProposalError("calendar_failed", `Nem sikerült a naptárba írni: ${String(err)}`);
       }
@@ -73,18 +88,33 @@ export function createProposalService(deps: {
         startsAt: action.proposal.start,
         createdAt: now.toISOString(),
       });
-      deps.actions.setStatus(action.id, "accepted", now);
 
       deps.logger.info({ actionId, uid: created.uid }, "proposal accepted");
       return { action: { ...action, status: "accepted" }, eventUid: created.uid, calendar: created.calendar };
     },
 
+    /**
+     * Unlike accept(), this guards against an already-resolved action.
+     * Declining an accepted proposal reached via a stale page (the browser
+     * Back button after a successful accept, since `/` sends no
+     * Cache-Control) would silently orphan its calendar event: the write
+     * stays in the calendar and in the undo band, but the action vanishes
+     * from Teendők with no way back to it.
+     */
     async decline(actionId, now) {
       const action = load(actionId);
+      if (action.status !== "open") {
+        throw new ProposalError("already_resolved", `Ezt már elintézted (${action.status}).`);
+      }
       deps.actions.setStatus(action.id, "declined", now);
       return { ...action, status: "declined" };
     },
 
+    // No status guard here, deliberately, unlike decline(): ticking a
+    // checkbox twice is genuinely harmless — there is no side effect to
+    // orphan — and the write route already redirects cleanly on
+    // already_resolved, so a guard would only change the JSON API's answer
+    // for a case that was never actually a problem.
     async complete(actionId, now) {
       const action = load(actionId);
       deps.actions.setStatus(action.id, "done", now);

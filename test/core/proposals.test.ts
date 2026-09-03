@@ -92,6 +92,31 @@ describe("accepting a proposal", () => {
   it("reports an unknown action rather than silently doing nothing", async () => {
     await expect(service.accept("no-such-id", NOW)).rejects.toMatchObject({ code: "not_found" });
   });
+
+  it("of two overlapping accepts, only one creates an event — the other is already_resolved", async () => {
+    // A double-submit: two POSTs that both reach the server while the
+    // action is still "open", overlapping at the calendar write. The claim
+    // must happen synchronously, before the (slow) calendar call, so the
+    // second call sees "accepted" and never touches the calendar at all —
+    // proving mutual exclusion regardless of how long the write takes.
+    let resolveCreate!: (v: { uid: string; calendar: string; url: string }) => void;
+    createEvent.mockImplementation(
+      () => new Promise((resolve) => { resolveCreate = resolve; }),
+    );
+    const [stored] = seedActions([proposalAction]);
+
+    // Fired concurrently: the second call starts before the first is
+    // awaited, exactly like two overlapping HTTP requests would.
+    const first = service.accept(stored!.id, NOW);
+    const second = service.accept(stored!.id, NOW);
+
+    await expect(second).rejects.toMatchObject({ code: "already_resolved" });
+    expect(createEvent).toHaveBeenCalledTimes(1);
+
+    resolveCreate({ uid: "jarvis-1", calendar: "Jarvis", url: "u" });
+    await expect(first).resolves.toMatchObject({ eventUid: "jarvis-1" });
+    expect(actions.find(stored!.id)!.status).toBe("accepted");
+  });
 });
 
 describe("undo", () => {
@@ -126,6 +151,36 @@ describe("undo", () => {
 
     await expect(service.undo("jarvis-1", NOW)).rejects.toThrow(/network down/);
     expect(writes.recent(10)).toHaveLength(1);
+  });
+});
+
+describe("declining a proposal", () => {
+  it("declines an open proposal", async () => {
+    const [stored] = seedActions([proposalAction]);
+    const result = await service.decline(stored!.id, NOW);
+    expect(result.status).toBe("declined");
+    expect(actions.find(stored!.id)!.status).toBe("declined");
+  });
+
+  it("refuses to decline an already-accepted proposal, leaving its event intact", async () => {
+    // Reachable via the browser Back button on a stale page: accept, then
+    // land back on the old page and press "Elutasítom". Without a guard
+    // this silently orphaned a live calendar event — declining it here must
+    // fail loudly instead, and must not touch the accepted action or its
+    // undo trail.
+    createEvent.mockResolvedValue({ uid: "jarvis-1", calendar: "Jarvis", url: "u" });
+    const [stored] = seedActions([proposalAction]);
+    await service.accept(stored!.id, NOW);
+
+    await expect(service.decline(stored!.id, NOW)).rejects.toMatchObject({ code: "already_resolved" });
+    expect(actions.find(stored!.id)!.status).toBe("accepted");
+    expect(writes.recent(10)).toHaveLength(1);
+  });
+
+  it("refuses to decline an already-declined proposal", async () => {
+    const [stored] = seedActions([proposalAction]);
+    await service.decline(stored!.id, NOW);
+    await expect(service.decline(stored!.id, NOW)).rejects.toMatchObject({ code: "already_resolved" });
   });
 });
 
