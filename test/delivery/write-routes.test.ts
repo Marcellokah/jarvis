@@ -99,14 +99,37 @@ describe("írási útvonalak", () => {
   });
 
   it("kétszer elküldött kipipálás nem hibázik és nem jelez hibát", async () => {
-    // A kívánt állapot már fennáll. Egy piros sáv arról, hogy „ezt már
-    // elintézted", mindig szólna és semmit nem jelentene.
+    // A complete() nem őriz státuszt (proposals.ts), tehát ez a kétszeri
+    // POST nem az already_resolved ágat futtatja — az a kesz-en elérhetetlen.
+    // Ez a teszt azt rögzíti, hogy egy dupla tap ezen az útvonalon is
+    // ártalmatlan marad, nem pedig azt, hogy a hibakód-ág kimarad.
     const a = await boot();
     const id = seedCheckbox(a);
     await post(a, `/teendo/${id}/kesz`);
     const masodik = await post(a, `/teendo/${id}/kesz`);
     expect(masodik.statusCode).toBe(303);
     expect(masodik.headers.location).toBe("/");
+  });
+
+  it("kétszer elfogadott javaslat másodszorra is tisztán tér vissza", async () => {
+    // Az already_resolved ágat a kesz nem tudja elérni (complete() nem őriz
+    // státuszt) — csak accept() és undo() dobja. A harness naptára mindig
+    // elérhetetlen, ezért az első elfogadás nem tud sikerrel lezárulni; a már
+    // elfogadott állapotot közvetlenül a repón keresztül állítjuk be, hogy az
+    // accept() a saját already_resolved ágába fusson, naptár-hívás nélkül.
+    const a = await boot();
+    const rows = a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: {
+        id: "p3", kind: "proposal", text: "Kirándulás",
+        proposal: { title: "K", start: "2026-09-05T09:00:00+02:00", end: "2026-09-05T12:00:00+02:00" },
+      },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+    const id = rows[0]!.id;
+    a.actions.setStatus(id, "accepted", new Date("2026-09-03T08:00:00.000Z"));
+    const res = await post(a, `/teendo/${id}/elfogad`);
+    expect(res.statusCode).toBe(303);
+    expect(res.headers.location).toBe("/");
   });
 
   it("ismeretlen teendő hibakóddal irányít vissza, nem 404-gyel", async () => {
@@ -122,6 +145,7 @@ describe("írási útvonalak", () => {
     const a = await boot();
     const id = seedCheckbox(a);
     const res = await post(a, `/teendo/${id}/elfogad`);
+    expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/?hiba=wrong_kind");
   });
 
@@ -141,6 +165,7 @@ describe("írási útvonalak", () => {
     }], new Date("2026-09-03T08:00:00.000Z"));
     const id = rows[0]!.id;
     const res = await post(a, `/teendo/${id}/elfogad`);
+    expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/?hiba=calendar_failed");
     expect(a.actions.find(id)!.status).toBe("open");
   });
@@ -164,7 +189,7 @@ describe("írási útvonalak", () => {
     const a = await boot();
     const res = await post(a, "/naptar/nincs-ilyen/visszavon");
     expect(res.statusCode).toBe(303);
-    expect(res.headers.location).toMatch(/^\/\?hiba=/);
+    expect(res.headers.location).toBe("/?hiba=not_found");
   });
 
   it("a JSON API változatlanul működik", async () => {
