@@ -214,7 +214,19 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
         // the page can put the answer straight into the thread — rendering it
         // in the browser instead would mean a second markdown renderer, on
         // exactly the text a model wrote.
-        return reply.send({ answer, html: renderMarkdown(answer) });
+        //
+        // `questionHtml` runs the question through the same renderer: a
+        // reload renders BOTH turns with `renderMarkdown` (see `chatBlock`),
+        // so a live-inserted question that just escaped-and-wrapped it in a
+        // `<p>` would render markup literally on submit and reformat into
+        // headings/lists/bold on the next reload — the thread would visibly
+        // change shape. Sending the rendered question keeps both paths
+        // identical.
+        return reply.send({
+          answer,
+          html: renderMarkdown(answer),
+          questionHtml: renderMarkdown(parsed.data.question),
+        });
       } finally {
         clearTimeout(timer);
       }

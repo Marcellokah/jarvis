@@ -305,6 +305,41 @@ describe("page routes", () => {
     await a.close();
   });
 
+  it("a válasz a kérdést is renderelt HTML-ként adja vissza (questionHtml)", async () => {
+    // A reload mindkét szerepet ugyanazon a `renderMarkdown`-on vezeti át
+    // (lásd `chatBlock`) — ha a kérdés élőben csak nyers szövegként kerülne
+    // be, a fonál alakja megváltozna az újratöltés után. A szervernek ezért
+    // a kérdést is ugyanígy kell renderelnie, nem csak a választ.
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      chat: { available: async () => true, ask: async () => "Válasz." },
+    });
+    const res = await a.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "**félkövér** kérdés" },
+    });
+    const body = JSON.parse(res.body);
+    expect(body.questionHtml).toContain("<strong>félkövér</strong>");
+    await a.close();
+  });
+
+  it("a questionHtml escape-eli az ember gépelte jelöléseket", async () => {
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      chat: { available: async () => true, ask: async () => "Válasz." },
+    });
+    const res = await a.server.inject({
+      method: "POST", url: "/api/chat",
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      payload: { question: "<script>alert(1)</script>" },
+    });
+    expect(JSON.parse(res.body).questionHtml).not.toContain("<script>alert(1)</script>");
+    await a.close();
+  });
+
   it("a Ma oldal a mai méréseket mutatja, nullát soha", async () => {
     const a = await boot();
     const res = await a.server.inject({

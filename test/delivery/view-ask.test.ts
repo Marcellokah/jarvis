@@ -62,41 +62,51 @@ describe("a kérdés-script", () => {
 });
 
 describe("a chat scriptje", () => {
-  it("a fonál-építő ág nem tölti újra a lapot, ha van html", () => {
+  it("a fonál-építő ág nem tölti újra a lapot, ha van html és questionHtml", () => {
     // A görgetési pozíció, a briefing, a mérések és a diagramok mind
     // újraépültek egy kérdés miatt, miközben a szerver már a kezében
     // tartotta a választ.
     //
     // A brief eredeti csonkja `SCRIPT.split("catch")[0]`-t vizsgálta — de a
-    // hiányzó-html ág (lásd lentebb) szándékosan `location.reload()`-t hív, és
+    // hiányzó-mező ág (lásd lentebb) szándékosan `location.reload()`-t hív, és
     // az a hívás is a `catch` ELŐTT van (a `try` blokkban, a válasz feldolgozó
     // részén belül), tehát a csonk szó szerint véve minden válaszra bukna, nem
-    // csak a hibásra. Ezért a fonál-építő ágat a hiányzó-html elágazás UTÁNI
+    // csak a hibásra. Ezért a fonál-építő ágat a hiányzó-mező elágazás UTÁNI
     // részre szűkítjük: onnantól kezdve, hogy a kód eldöntötte, hogy a fonalat
     // építi (nem a reload-ot választja), nem szabad újra reload-ot hívnia.
-    const afterGuard = SCRIPT.split("if (!data.html) { location.reload(); return; }")[1] ?? "";
+    const guard = "if (!data.html || !data.questionHtml) { location.reload(); return; }";
+    const afterGuard = SCRIPT.split(guard)[1] ?? "";
     expect(afterGuard.length).toBeGreaterThan(0);
     const buildPath = afterGuard.split("catch")[0] ?? "";
     expect(buildPath).not.toContain("location.reload()");
   });
 
-  it("a kérdést szövegként, a választ HTML-ként teszi be", () => {
-    // Amit az ember gépel, az nem HTML. Amit a szerver renderelt, az igen —
-    // és már escape-elve.
+  it("mindkét fordulót a szerver renderelt HTML-jéből építi, ugyanazzal a renderelővel mint a reload", () => {
+    // A reload (`chatBlock`) MINDKÉT szerepet ugyanazon a `renderMarkdown`-on
+    // vezeti át — nem csak a válaszét. Ha a kérdés élőben nyers szövegként
+    // (`textContent`) kerülne be, egy "**félkövér**" vagy "- lista" kérdés
+    // szó szerint jelenne meg beküldéskor, majd formázottan a következő
+    // reloadnál — a fonál alakja megváltozna. Ezért a kérdésnek is a szerver
+    // által renderelt `data.questionHtml`-ből kell bekerülnie, a válaszéval
+    // azonos módon (`insertAdjacentHTML`), nem a nyers `question` változóból.
     //
-    // A brief eredeti csonkja `toContain("textContent")` /
-    // `toContain("innerHTML")` formában kérte ezt — de az a `textContent` szó
-    // magától a "who" mező beállításától (`name.textContent = who;`) is igaz
-    // lenne, és a válasz itt `insertAdjacentHTML`-lel kerül be (nem
-    // `innerHTML`-lel, mert az felülírná a már beillesztett "who" dobozt),
-    // szóval a szó szerinti "innerHTML" bele sem kerül a scriptbe. Ezért a
-    // KÖVETELMÉNYRE (kérdés = szöveg, válasz = renderelt HTML) szűkítjük a
-    // konkrét sorokra, nem a szavak puszta előfordulására.
-    expect(SCRIPT).toContain("p.textContent = question;");
+    // Konkrétan a beillesztő sorra szűkítünk, nem csak arra, hogy a
+    // "questionHtml" szó valahol szerepel a scriptben — az triviálisan igaz
+    // lenne akkor is, ha a nyers `question` kerülne be és a `data.questionHtml`
+    // csak holt kódban szerepelne. Ez a pontos sor bukik el, ha valaki
+    // visszacseréli nyers `question`-re (akár `textContent`-tel, akár
+    // `insertAdjacentHTML`-lel).
+    expect(SCRIPT).toContain(
+      `add("Te", "user", (box) => { box.insertAdjacentHTML("beforeend", data.questionHtml); });`,
+    );
     expect(SCRIPT).toContain(`box.insertAdjacentHTML("beforeend", data.html);`);
+    // A kérdés nem kerülhet be nyersen: sem `textContent`-tel a beillesztő
+    // sorban, sem a `question` változóból közvetlenül a fonálba.
+    expect(SCRIPT).not.toContain("p.textContent = question;");
+    expect(SCRIPT).not.toContain(`insertAdjacentHTML("beforeend", question)`);
   });
 
-  it("a html mező hiányában visszaesik az újratöltésre", () => {
+  it("a html vagy a questionHtml mező hiányában visszaesik az újratöltésre", () => {
     // Régi szerver vagy félbeszakadt telepítés: a válasz megvan, csak a
     // lapon keresztül jön elő. Az újratöltés a szerver igazságát mutatja.
     //
@@ -105,8 +115,11 @@ describe("a chat scriptje", () => {
     // (pl. `if (!data.html)` → `if (false)`) mellett is igaz marad, hiszen a
     // hívás szövege a holt ágban is ott marad, csak elérhetetlenné válik.
     // Ezért a teljes feltételt magával a hívással együtt rögzítjük, nem csak
-    // a hívás szavát.
-    expect(SCRIPT).toContain("if (!data.html) { location.reload(); return; }");
+    // a hívás szavát — és mindkét mezőt (html, questionHtml) is elvárjuk a
+    // feltételben, hogy az egyik hiánya se csússzon át észrevétlenül.
+    expect(SCRIPT).toContain(
+      "if (!data.html || !data.questionHtml) { location.reload(); return; }",
+    );
   });
 
   it("a hibaág változatlanul kezeli a hibát", () => {

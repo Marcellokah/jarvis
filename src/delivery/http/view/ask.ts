@@ -50,10 +50,13 @@ if (form) form.addEventListener("submit", async (e) => {
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
-    // No \`html\` means an older server than this page: the answer exists, it
-    // just has to come back through a reload. The reload shows the server's
-    // own truth, so nothing is lost by it.
-    if (!data.html) { location.reload(); return; }
+    // No \`html\` (or, inseparably, no \`questionHtml\`) means an older server
+    // than this page: the answer exists, it just has to come back through a
+    // reload. The reload shows the server's own truth, so nothing is lost by
+    // it. Checked together, not just \`html\` alone — a server new enough to
+    // send one always sends both, and inserting one field while the other is
+    // missing would splice the literal string "undefined" into the thread.
+    if (!data.html || !data.questionHtml) { location.reload(); return; }
 
     const thread = form.parentNode;
     const add = (who, cls, fill) => {
@@ -67,14 +70,16 @@ if (form) form.addEventListener("submit", async (e) => {
       thread.insertBefore(box, form);
       return box;
     };
-    // The question goes in as text, never as markup: what a person types is
-    // not HTML. The answer goes in as HTML because the server rendered it —
-    // through the same escaping renderer a reload would have used.
-    add("Te", "user", (box) => {
-      const p = document.createElement("p");
-      p.textContent = question;
-      box.appendChild(p);
-    });
+    // Both turns go in as HTML rendered by the SAME server-side renderer a
+    // reload would use (\`chatBlock\` runs both roles through \`renderMarkdown\`)
+    // — never one as raw \`textContent\` and the other as HTML, or the thread
+    // would change shape between the live insert and the next reload (a
+    // question typed with a leading "-" or wrapped in "**" would show as
+    // literal text now and reformat into a list or bold later).
+    // \`renderMarkdown\` escapes as it renders, on both fields, before any
+    // markup is added — that is what makes \`insertAdjacentHTML\` on
+    // person-typed and model-written text safe here.
+    add("Te", "user", (box) => { box.insertAdjacentHTML("beforeend", data.questionHtml); });
     add("Jarvis", "assistant", (box) => { box.insertAdjacentHTML("beforeend", data.html); });
 
     input.value = "";
