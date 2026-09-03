@@ -1,4 +1,5 @@
 import { escapeHtml } from "../markdown.ts";
+import { hu } from "./format.ts";
 import type { Metric } from "../../../core/analysis/stats.ts";
 import type { Metrics } from "../../../core/analysis/aggregate.ts";
 
@@ -66,8 +67,6 @@ export function readout(r: MetricRow, i: number, chart: string): string {
   ].join("");
 }
 
-const hu = (n: number, digits = 0) =>
-  n.toLocaleString("hu-HU", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 /**
  * One row per metric, formatted for a person.

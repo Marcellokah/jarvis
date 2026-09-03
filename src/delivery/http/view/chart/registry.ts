@@ -1,6 +1,7 @@
 import {
   SNAPSHOT_FIELDS, type HealthSnapshot,
 } from "../../../../infra/db/repositories/health.ts";
+import { hu } from "../format.ts";
 
 export interface SeriesSpec {
   column: string;
@@ -19,13 +20,6 @@ export interface SeriesSpec {
   format: (v: number) => string;
 }
 
-// Hungarian's default grouping only kicks in above four digits, and the
-// separator it does produce is a no-break space (U+00A0) — folded to a plain
-// space here to match how the rest of the UI renders numbers (see
-// view/channels.ts, which established this exact pattern).
-const hu = (n: number, digits = 0) =>
-  n.toLocaleString("hu-HU", { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: true })
-    .replace(/\u00a0/g, " ");
 
 const spec = (
   column: string, label: string, unit: string, zeroBased: boolean, digits = 0,

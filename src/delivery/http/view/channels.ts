@@ -1,5 +1,6 @@
 import type { HealthSnapshot } from "../../../infra/db/repositories/health.ts";
 import { isoDate, isoTime, TZ } from "../../../shared/dates.ts";
+import { hu } from "./format.ts";
 
 export type ChannelState = "erkezett" | "varakozik" | "elmaradt";
 
@@ -19,18 +20,6 @@ export interface Channel {
   dueHour: number;
   format: (v: number) => string;
 }
-
-// Hungarian's default grouping only kicks in above four digits (CLDR
-// suppresses it when the leading group is a single digit, so 6753 renders as
-// "6753" and only 12345 gets a separator) — wrong for a step count that
-// crosses that boundary daily. `useGrouping: true` forces it on for every
-// size, and the separator it produces is a no-break space (U+00A0), which we
-// fold to a plain space to match how the rest of the UI renders numbers.
-const hu = (n: number, digits = 0) =>
-  n
-    .toLocaleString("hu-HU", { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: true })
-    .replace(/\u00a0/g, " ");
-
 /**
  * What the daily channel delivers EVERY day, and when.
  *

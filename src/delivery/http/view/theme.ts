@@ -224,6 +224,24 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .plot .sav { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: 200ms; }
 @media (prefers-reduced-motion: reduce) { .plot .vonal, .plot .sav { animation: none; } }
 
+/* ---- területi oldalak ---- */
+.vezeto { display: flex; flex-direction: column; gap: .2rem;
+  padding: 1rem 0 1.2rem; border-bottom: 1px solid var(--racs); }
+.vezeto .cimke { font: .68rem/1.4 var(--mono); letter-spacing: .18em;
+  text-transform: uppercase; color: var(--vaz); }
+.vezeto .szam { font: 600 2.2rem/1.15 var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--jel); }
+/* Ami nincs mérve, annak nincs színe: a hiány színtelen és kisebb, mert nem
+   szám — a szöveg maga a tartalom. */
+.vezeto.hianyzik .szam { color: var(--halvany); font-size: 1.1rem; font-weight: 400; }
+.csempek { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px; background: var(--racs); border: 1px solid var(--racs); }
+.csempe { display: flex; flex-direction: column; gap: .4rem; padding: .7rem .8rem;
+  background: var(--lap); text-decoration: none; color: var(--szoveg); }
+.csempe .cimke { font: .68rem/1.4 var(--mono); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--halvany); }
+.csempe:hover .cimke { color: var(--vaz); }
+
 /* ---- havi oszlopdiagram ---- */
 .oszlopok { display: block; width: 100%; height: auto; }
 .oszlopok .racs { stroke: var(--vaz); stroke-width: .5; opacity: .35; }
