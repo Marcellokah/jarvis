@@ -85,7 +85,7 @@ A 2. szabály szándékosan **ugyanolyan hangon** szól, mint az 1.: a lefelé
 tartó HRV információ, nem riasztás. `--riado` itt nem jelenik meg; ez a szín
 az elmaradt csatornáé és a naptár-hibáé marad.
 
-A küszöbök (`1` szórás, `1,5×`, `2×`) és a mintaszám-minimumok (`n7 ≥ 3`,
+A küszöbök (`1` szórás, `1,5×`) és a mintaszám-minimumok (`n7 ≥ 3`,
 `14 nap`) **kimondottan konzervatívak**. Egy kiemelés, ami minden nap
 megszólal, elveszti az értékét; jobb, ha a legtöbb napon csend van.
 
