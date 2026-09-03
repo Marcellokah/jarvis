@@ -139,6 +139,30 @@ describe("területi útvonalak", () => {
     expect(res.body).toMatch(/href="\/terulet" class="menu jelzo el"/);
   });
 
+  it("a hét napos határ zárt: pontosan hét napos elemzésnél még világít", async () => {
+    // boot()'s clock is fixed at 2026-09-03T08:00:00.000Z; the lamp rule is
+    // "legfeljebb 7 napos" (at most seven days), so an analysis exactly
+    // 7 * 86_400_000 ms old sits ON the boundary and must still be lit —
+    // a <= vs < mutation here would not otherwise show up in any test.
+    const a = await boot();
+    a.analyses.save({
+      createdAt: "2026-08-27T08:00:00.000Z", domain: "physical",
+      markdown: "pont hét napos", summary: "s", metrics: "{}",
+    });
+    const res = await get(a, "/terulet");
+    expect(res.body).toMatch(/href="\/terulet" class="menu jelzo el"/);
+  });
+
+  it("a hét napos határon egy perccel túl már kialszik", async () => {
+    const a = await boot();
+    a.analyses.save({
+      createdAt: "2026-08-27T07:59:00.000Z", domain: "physical",
+      markdown: "hét napnál egy perccel régebbi", summary: "s", metrics: "{}",
+    });
+    const res = await get(a, "/terulet");
+    expect(res.body).toMatch(/href="\/terulet" class="menu jelzo holt"/);
+  });
+
   it("a modell által írt elemzés escape-elve jelenik meg", async () => {
     const a = await boot();
     a.analyses.save({
@@ -147,5 +171,51 @@ describe("területi útvonalak", () => {
     });
     const res = await get(a, "/terulet/penzugy");
     expect(res.body).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("a típustábla hibája nem viszi el a legutóbbi edzések listáját", async () => {
+    // byType() and page() are two independent reads on the Terhelés page;
+    // one failing must dim only its own table, per this app's isolation
+    // rule. Stubbing the method on the app's own repo object works because
+    // buildTestApp hands the server the very same WorkoutRepo instance it
+    // returns as `a.workouts` — not a copy.
+    const a = await boot();
+    a.workouts.save([{
+      date: "2026-09-01", type: "Cycling", startedAt: "2026-09-01T06:00:00.000Z",
+      durationMin: 42, energyKcal: 310, source: "Watch",
+    }]);
+    (a.workouts as unknown as { byType: () => never }).byType = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/terulet/terheles");
+    expect(res.statusCode).toBe(200);
+    // "Teljes napló" only renders when recentTable() got real rows (its
+    // empty-state branch omits the link entirely), so its presence proves
+    // that table survived byType()'s failure.
+    expect(res.body).toContain("Teljes napló");
+    // The type table's own heading only renders when byType() returned rows;
+    // its absence here confirms the failure actually dimmed that table
+    // rather than the mutation being a no-op.
+    expect(res.body).not.toContain("Típusok");
+  });
+
+  it("a legutóbbi edzések hibája nem viszi el a típustáblát", async () => {
+    const a = await boot();
+    a.workouts.save([{
+      date: "2026-09-01", type: "Cycling", startedAt: "2026-09-01T06:00:00.000Z",
+      durationMin: 42, energyKcal: 310, source: "Watch",
+    }]);
+    (a.workouts as unknown as { page: () => never }).page = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/terulet/terheles");
+    expect(res.statusCode).toBe(200);
+    // The type table's heading only renders when byType() succeeded.
+    expect(res.body).toContain("Típusok");
+    // The recent-workouts table falls back to its own empty state when
+    // page() fails, so the "Teljes napló" link (only rendered alongside
+    // real rows) must not appear.
+    expect(res.body).not.toContain("Teljes napló");
+    expect(res.body).toContain("Nincs rögzített edzés.");
   });
 });

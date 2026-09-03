@@ -136,12 +136,17 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     const m = metricsOf();
 
     let byType: ReturnType<typeof deps.workouts.byType> = [];
-    let recent: ReturnType<typeof deps.workouts.page>["rows"] = [];
     try {
       byType = deps.workouts.byType();
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "load page rendered without its type table");
+    }
+
+    let recent: ReturnType<typeof deps.workouts.page>["rows"] = [];
+    try {
       recent = deps.workouts.page(0, 20).rows;
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "load page rendered without its workouts");
+      deps.logger.warn({ err: String(err) }, "load page rendered without its recent workouts");
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, loadBody({
