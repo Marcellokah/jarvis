@@ -5,7 +5,13 @@ import type { WorkoutRow } from "../../../../infra/health-export/rollup.ts";
 
 export const OLDAL_MERET = 50;
 
-/** How many pages `total` workouts make, never fewer than one. */
+/** How many pages `total` workouts make, never fewer than one.
+ *
+ * The `Math.max(1, …)` floor is a backstop guarantee of the function itself,
+ * not something the test suite observes — worklogBody returns early on an empty
+ * log and never calls the pager, so no test ever reaches total=0. Keep the floor
+ * because oldalak's own invariant is that a page count is never zero.
+ */
 function oldalak(total: number): number {
   return Math.max(1, Math.ceil(total / OLDAL_MERET));
 }
