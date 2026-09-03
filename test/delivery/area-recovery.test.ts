@@ -12,6 +12,12 @@ const empty = {
   analysis: undefined,
 };
 
+/** Csak az „Alvás lefedettsége" sáv törzse — a fázistábla dead sávjai nem
+ *  számítanak bele. Enélkül az állítást a lap egy másik része is kielégíti,
+ *  és a teszt akkor is zöld, ha az alvássáv rosszul rajzol. */
+const alvasSav = (html: string): string =>
+  /Alvás lefedettsége<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+
 describe("Regeneráció oldal", () => {
   it("a HRV-eltérést mutatja vezető számként, a mintaszámokkal", () => {
     // Egy nyers ms-érték semmihez nem viszonyítható. A szórás annyit ér,
@@ -29,27 +35,32 @@ describe("Regeneráció oldal", () => {
   });
 
   it("az alvás lefedettségét évenként mutatja, sávval", () => {
-    const html = recoveryBody({
+    const sav = alvasSav(recoveryBody({
       ...empty,
       sleepByYear: [
         { year: "2022", days: 365, withSleep: 217 },
         { year: "2026", days: 245, withSleep: 43 },
       ],
-    });
-    expect(html).toContain("2022");
-    expect(html).toContain("217");
-    expect(html).toContain('class="rail"');
-    expect(html).toContain("59%");
+    }));
+    expect(sav).toContain("2022");
+    expect(sav).toContain("217");
+    expect(sav).toContain('class="rail"');
+    expect(sav).toContain("59%");
   });
 
-  it("a nulla lefedettségű évet kihaltnak jelöli, nem 0%-os mért sávnak", () => {
-    // Egy 0%-ra kitöltött sáv úgy néz ki, mint egy mérés, ami rosszul sült
-    // el. A nulla mérés nem rossz mérés — nincs mérés.
-    const html = recoveryBody({
+  it("a nulla lefedettségű évet kihaltnak jelöli, a mértet nem", () => {
+    // Egy 0%-ra kitöltött sáv úgy néz ki, mint egy mérés, ami rosszul sült el.
+    // A nulla mérés nem rossz mérés — nincs mérés. A két irányt egyszerre kell
+    // állítani: egyetlen sorból nem derül ki, hogy a sáv mindig kihalt-e.
+    const sav = alvasSav(recoveryBody({
       ...empty,
-      sleepByYear: [{ year: "2021", days: 365, withSleep: 0 }],
-    });
-    expect(html).toContain('class="rail dead"');
+      sleepByYear: [
+        { year: "2021", days: 365, withSleep: 0 },
+        { year: "2022", days: 365, withSleep: 217 },
+      ],
+    }));
+    expect((sav.match(/class="rail dead"/g) ?? [])).toHaveLength(1);
+    expect((sav.match(/class="rail"/g) ?? [])).toHaveLength(1);
   });
 
   it("a nem mért alvásfázist hiányként írja, nem 0 percként", () => {
