@@ -96,8 +96,8 @@ export function createActionRepo(db: Db): ActionRepo {
     listAllOpen() {
       return db
         .all<Row>(
-          "SELECT * FROM action_items WHERE status = 'open' ORDER BY date DESC, created_at DESC, id",
-          )
+          "SELECT * FROM action_items WHERE status = 'open' ORDER BY date DESC, created_at DESC, id"
+        )
         .map(toStored);
     },
 

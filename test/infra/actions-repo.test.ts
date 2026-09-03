@@ -74,4 +74,47 @@ describe("ActionRepo.listAllOpen", () => {
     expect(only.proposal?.location).toBe("Szentendre");
     db.close();
   });
+
+  it("a kimeneti sorrend teljes a (date, created_at, id) kulcs szerint", () => {
+    // Egy futás minden teendője ugyanabban a pillanatban születik, tehát a
+    // (date, created_at) pár nem egyedi; nem teljes rendezés fölött az SQLite
+    // hívásonként más elrendezést is adhat, és akkor a lap két megnyitás közt
+    // más sorrendben mutatná ugyanazokat a teendőket.
+    const db = memoryDb();
+    const repo = createActionRepo(db);
+    // ID-ket nem alfabetikus sorrendben szúrjuk be, hogy a hiányzó tie-break
+    // rowid/insertion-order visszaesés nélkül nem lenne látható.
+    const idOrder = ["zulu", "yankee", "x-ray", "whiskey", "victor"];
+
+    repo.replaceForDate("2026-09-05", [
+      { module: "A", action: { id: idOrder[2]!, kind: "checkbox", text: "a1" } },
+      { module: "B", action: { id: idOrder[4]!, kind: "checkbox", text: "a2" } },
+      { module: "C", action: { id: idOrder[0]!, kind: "checkbox", text: "a3" } },
+      { module: "D", action: { id: idOrder[1]!, kind: "checkbox", text: "a4" } },
+    ], NOW);
+    repo.replaceForDate("2026-09-04", [
+      { module: "E", action: { id: idOrder[3]!, kind: "checkbox", text: "b1" } },
+      { module: "F", action: { id: idOrder[0]!, kind: "checkbox", text: "b2" } },
+    ], NOW);
+
+    const result = repo.listAllOpen();
+    expect(result).toHaveLength(6);
+
+    // Assert strict monotonicity: each adjacent pair must satisfy
+    // (date DESC, created_at DESC, id ASC).
+    for (let i = 0; i < result.length - 1; i++) {
+      const curr = result[i]!;
+      const next = result[i + 1]!;
+
+      // Date descending
+      if (curr.date !== next.date) {
+        expect(curr.date > next.date).toBe(true);
+      } else {
+        // Same date: id must be ascending (created_at is same in single replaceForDate)
+        expect(curr.id <= next.id).toBe(true);
+      }
+    }
+
+    db.close();
+  });
 });
