@@ -257,7 +257,7 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .lapozo { display: flex; align-items: baseline; gap: 1rem; padding: .8rem 0;
   font: .72rem/1.5 var(--mono); }
 .lapozo a { color: var(--vaz); text-decoration: none; }
-.lapozo a:hover { color: var(--jel); }
+.lapozo a:hover { color: var(--vaz); }
 
 /* ---- havi oszlopdiagram ---- */
 .oszlopok { display: block; width: 100%; height: auto; }

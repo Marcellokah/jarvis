@@ -34,11 +34,17 @@ describe("parseOldal", () => {
 
 describe("edzésnapló", () => {
   it("kiírja az edzés minden oszlopát", () => {
-    const html = worklogBody([w("2026-09-01")], 1, 1);
-    expect(html).toContain("2026-09-01");
-    expect(html).toContain("Walking");
-    expect(html).toContain("140 kcal");
-    expect(html).toContain("iPhone");
+    // UTC 04:12 becomes 06:12 Budapest time in September (CEST, UTC+2).
+    const html = worklogBody([{
+      date: "2026-09-01", type: "Walking", startedAt: "2026-09-01T04:12:00.000Z",
+      durationMin: 32, energyKcal: 140, source: "iPhone"
+    }], 1, 1);
+    expect(html).toContain("2026-09-01");  // date
+    expect(html).toContain("06:12");       // local time (converted from UTC)
+    expect(html).toContain("Walking");     // type
+    expect(html).toContain("32 perc");     // duration
+    expect(html).toContain("140 kcal");    // energy
+    expect(html).toContain("iPhone");      // source
   });
 
   it("a kalória nélküli edzésnél nincs mérést ír", () => {
@@ -74,12 +80,16 @@ describe("edzésnapló", () => {
   it("üres naplónál kimondja a hiányt, nem üres táblát ad", () => {
     const html = worklogBody([], 1, 0);
     expect(html).toContain("Nincs rögzített edzés");
+    expect(html).not.toContain("<table>");
   });
 
   it("escape-eli a típust és a forrást", () => {
     const html = worklogBody([{ ...w("2026-09-01"), type: "<b>x</b>", source: "<i>y</i>" }], 1, 1);
     expect(html).not.toContain("<b>x</b>");
     expect(html).not.toContain("<i>y</i>");
+    // Verify the escaped forms are actually present.
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+    expect(html).toContain("&lt;i&gt;y&lt;/i&gt;");
   });
 
   it("az oldalméret ötven", () => {

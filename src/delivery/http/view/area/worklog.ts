@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../markdown.ts";
 import { hu, duration } from "../format.ts";
+import { isoTime } from "../../../../shared/dates.ts";
 import type { WorkoutRow } from "../../../../infra/health-export/rollup.ts";
 
 export const OLDAL_MERET = 50;
@@ -54,20 +55,27 @@ export function worklogBody(
     return `<section><h2>Edzésnapló</h2>`
       + `<p class="halk">Nincs rögzített edzés.</p></section>`;
   }
-  const body = rows.map((w, i) => [
-    `<tr class="live" style="--i:${Math.min(i, 7)}">`,
-    `<td>${escapeHtml(w.date)}</td>`,
-    // The stored instant is UTC; only its clock time is shown, which is what
-    // "when did I start" means to a reader looking at their own day.
-    `<td class="ev"><span class="note">${escapeHtml(w.startedAt.slice(11, 16))}</span></td>`,
-    `<td>${escapeHtml(w.type)}</td>`,
-    `<td class="value">${escapeHtml(duration(w.durationMin))}</td>`,
-    `<td class="ev">${w.energyKcal === null
+  const body = rows.map((w, i) => {
+    const date = new Date(w.startedAt);
+    const time = Number.isNaN(date.getTime())
       ? `<span class="halk">nincs mérés</span>`
-      : `${hu(w.energyKcal)} kcal`}</td>`,
-    `<td class="ev"><span class="note">${escapeHtml(w.source)}</span></td>`,
-    "</tr>",
-  ].join("")).join("");
+      : escapeHtml(isoTime(date));
+    return [
+      `<tr class="live" style="--i:${Math.min(i, 7)}">`,
+      `<td>${escapeHtml(w.date)}</td>`,
+      // The stored instant is UTC; this column converts it to Europe/Budapest
+      // because "when did I start" means the reader's own clock. The date cell
+      // beside it is already local, and the two must not disagree across midnight.
+      `<td class="ev"><span class="note">${time}</span></td>`,
+      `<td>${escapeHtml(w.type)}</td>`,
+      `<td class="value">${escapeHtml(duration(w.durationMin))}</td>`,
+      `<td class="ev">${w.energyKcal === null
+        ? `<span class="halk">nincs mérés</span>`
+        : `${hu(w.energyKcal)} kcal`}</td>`,
+      `<td class="ev"><span class="note">${escapeHtml(w.source)}</span></td>`,
+      "</tr>",
+    ].join("");
+  }).join("");
 
   return `<section><h2>Edzésnapló</h2><table>${body}</table>`
     + `${pager(oldal, total)}</section>`;
