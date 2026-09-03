@@ -254,6 +254,11 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
 .kartya .kor { font: .62rem/1.4 var(--mono); color: var(--halvany); }
 .kartya:hover { background: var(--hatter); }
 
+.lapozo { display: flex; align-items: baseline; gap: 1rem; padding: .8rem 0;
+  font: .72rem/1.5 var(--mono); }
+.lapozo a { color: var(--vaz); text-decoration: none; }
+.lapozo a:hover { color: var(--jel); }
+
 /* ---- havi oszlopdiagram ---- */
 .oszlopok { display: block; width: 100%; height: auto; }
 .oszlopok .racs { stroke: var(--vaz); stroke-width: .5; opacity: .35; }
