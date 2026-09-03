@@ -59,16 +59,15 @@ if (form) form.addEventListener("submit", async (e) => {
     if (!data.html || !data.questionHtml) { location.reload(); return; }
 
     const thread = form.parentNode;
-    const add = (who, cls, fill) => {
+    const add = (who, cls, html) => {
       const box = document.createElement("div");
       box.className = "turn " + cls;
       const name = document.createElement("div");
       name.className = "who";
       name.textContent = who;
       box.appendChild(name);
-      fill(box);
+      box.insertAdjacentHTML("beforeend", html);
       thread.insertBefore(box, form);
-      return box;
     };
     // Both turns go in as HTML rendered by the SAME server-side renderer a
     // reload would use (\`chatBlock\` runs both roles through \`renderMarkdown\`)
@@ -79,8 +78,15 @@ if (form) form.addEventListener("submit", async (e) => {
     // \`renderMarkdown\` escapes as it renders, on both fields, before any
     // markup is added — that is what makes \`insertAdjacentHTML\` on
     // person-typed and model-written text safe here.
-    add("Te", "user", (box) => { box.insertAdjacentHTML("beforeend", data.questionHtml); });
-    add("Jarvis", "assistant", (box) => { box.insertAdjacentHTML("beforeend", data.html); });
+    add("Te", "user", data.questionHtml);
+    add("Jarvis", "assistant", data.html);
+
+    // A previous submit's error note (below) names a failure that this
+    // success now overrides — a full page reload used to wipe it for free;
+    // nothing does that any more, so the success path must remove it itself
+    // or the page keeps claiming a question never went through.
+    const oldNote = form.parentNode.querySelector(".ask-error");
+    if (oldNote) oldNote.remove();
 
     input.value = "";
     form.classList.remove("busy");

@@ -357,6 +357,10 @@ describe("elemzés-előzmény az oldalakon", () => {
   const elemzesSav = (html: string): string =>
     /<h2>Elemzés[^<]*<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
 
+  /** A hub saját sávja — ott „Összegzés" a címsor, nem „Elemzés". */
+  const osszegzesSav = (html: string): string =>
+    /<h2>Összegzés[^<]*<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+
   it("a korábbi elemzések a saját területükön jelennek meg", async () => {
     const a = await boot();
     a.analyses.save(ANALIZIS("physical", "10", "FIZIKAI-RÉGI"));
@@ -415,9 +419,9 @@ describe("elemzés-előzmény az oldalakon", () => {
     const a = await boot();
     a.analyses.save(ANALIZIS("synthesis", "10", "ÖSSZKÉP-RÉGI"));
     a.analyses.save(ANALIZIS("synthesis", "20", "ÖSSZKÉP-ÚJ"));
-    const body = (await get(a, "/terulet")).body;
-    expect(body).toContain("1 korábbi elemzés");
-    expect(body).toContain("ÖSSZKÉP-RÉGI");
+    const sav = osszegzesSav((await get(a, "/terulet")).body);
+    expect(sav).toContain("1 korábbi elemzés");
+    expect(sav).toContain("ÖSSZKÉP-RÉGI");
   });
 
   it("a hibázó elemzés-lekérdezés nem viszi el a lapot", async () => {

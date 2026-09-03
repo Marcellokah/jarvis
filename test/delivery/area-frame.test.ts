@@ -183,6 +183,25 @@ describe("elemzés-előzmény", () => {
     expect(sav).toContain("összefoglaló 1");
   });
 
+  it("a dátum a saját tételéhez tartozó összefoglalóval párban jelenik meg", () => {
+    // Unscoped `toContain`s over the whole block pass even if the dates and
+    // summaries come from two independently-ordered lists (e.g. a reversed
+    // date list against an unreversed summary list) — every date and every
+    // summary is still present SOMEWHERE in the markup, just paired wrong.
+    // A page whose whole point is "the date tells you how old this claim
+    // is" cannot tolerate that, so each `<div class="tetel">` is pulled out
+    // on its own and checked for its own pair.
+    const sav = elozmeny(historyBlock(earlier(3)));
+    const items = [...sav.matchAll(/<div class="tetel">([\s\S]*?)<\/div>/g)].map((m) => m[1]);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain("2026-08-20");
+    expect(items[0]).toContain("összefoglaló 0");
+    expect(items[1]).toContain("2026-08-19");
+    expect(items[1]).toContain("összefoglaló 1");
+    expect(items[2]).toContain("2026-08-18");
+    expect(items[2]).toContain("összefoglaló 2");
+  });
+
   it("a dátumot napra csonkítja, nem a teljes időbélyeget írja ki", () => {
     const sav = elozmeny(historyBlock(earlier(1)));
     expect(sav).not.toContain("T07:00:00");
@@ -217,7 +236,12 @@ describe("elemzés-előzmény", () => {
 
   it("a details alapból csukva van", () => {
     // Nyitva ugyanaz a hosszú lista lenne, csak összecsukható kerettel.
-    expect(historyBlock(earlier(3))).not.toContain("<details class=\"elozmeny\" open");
+    // A tulajdonságot nézzük, nem egyetlen írásmódot: `<details open
+    // class="elozmeny">` (más attribútum-sorrend) átcsúszna egy puszta
+    // `not.toContain("<details class=\"elozmeny\" open")` ellenőrzésen.
+    const tag = /<details[^>]*>/.exec(historyBlock(earlier(3)))?.[0] ?? "";
+    expect(tag.length).toBeGreaterThan(0);
+    expect(tag).not.toMatch(/\bopen\b/);
   });
 
   it("a stíluslap kezeli az elozmeny osztályt", () => {

@@ -150,7 +150,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     try {
       earlierSynthesis = earlierFor(deps, inputs.analyses, "synthesis");
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+      deps.logger.warn({ err: String(err) }, "hub page rendered without its analysis history");
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, hubBody({
@@ -183,7 +183,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     try {
       earlier = earlierFor(deps, inputs.analyses, "physical");
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+      deps.logger.warn({ err: String(err) }, "load page rendered without its analysis history");
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, loadBody({
@@ -244,7 +244,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     try {
       earlier = earlierFor(deps, inputs.analyses, "recovery");
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+      deps.logger.warn({ err: String(err) }, "recovery page rendered without its analysis history");
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, recoveryBody({
@@ -321,7 +321,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     try {
       earlier = earlierFor(deps, inputs.analyses, "finance");
     } catch (err) {
-      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+      deps.logger.warn({ err: String(err) }, "finance page rendered without its analysis history");
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, financeBody({

@@ -120,8 +120,8 @@ describe("Terhelés oldal", () => {
   });
 
   it("elemzést mutatja, ha van", () => {
-    // Az analysisBand(d.analysis) vezérlést tesztelni kell, hogy tényleg
-    // továbbítva van az adat, nem csak hardcoded undefined.
+    // Az analysisBand(d.analysis, d.earlier) vezérlést tesztelni kell, hogy
+    // tényleg továbbítva van az adat, nem csak hardcoded undefined.
     const html = loadBody({
       ...empty,
       analysis: { markdown: "**Fontos** megállapítás", createdAt: "2026-09-01T07:08:45.487Z" },

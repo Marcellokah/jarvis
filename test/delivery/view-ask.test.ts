@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { chatBlock, askBody, SCRIPT, type AskData } from "../../src/delivery/http/view/ask.ts";
+import { renderMarkdown } from "../../src/delivery/http/markdown.ts";
 import type { Turn } from "../../src/infra/db/repositories/conversations.ts";
 
 const base: AskData = { history: [], chatAvailable: true };
@@ -7,6 +8,128 @@ const base: AskData = { history: [], chatAvailable: true };
 function turn(over: Partial<Turn> & Pick<Turn, "role" | "content">): Turn {
   return { id: 1, chatId: "web", createdAt: "2026-09-01T08:00:00.000Z", ...over };
 }
+
+// A minimal DOM shim, just enough for `SCRIPT` (executed for real, via
+// `new Function`, not re-typed by hand) to run against — no npm dependency
+// added for it, per this project's pledge that the client-side surface does
+// not grow. It supports exactly what `SCRIPT` touches: element creation,
+// `className`/`classList`, `textContent`/`value`/`disabled`, `appendChild`/
+// `insertBefore`/`insertAdjacentHTML`/`remove`, and a `querySelector` that
+// understands the handful of selectors `SCRIPT` actually uses
+// (`"form"`, `"input[type=text]"`, `"button"`, `".ask-error"`).
+class El {
+  tag: string;
+  attrs: Record<string, string> = {};
+  children: El[] = [];
+  htmlChunks: string[] = [];
+  parentNode: El | null = null;
+  textContent = "";
+  value = "";
+  disabled = false;
+  className = "";
+
+  constructor(tag: string) { this.tag = tag; }
+
+  get classList() {
+    const self = this;
+    const list = () => self.className.split(/\s+/).filter(Boolean);
+    return {
+      contains: (c: string) => list().includes(c),
+      add: (c: string) => { if (!list().includes(c)) self.className = [...list(), c].join(" "); },
+      remove: (c: string) => { self.className = list().filter((x) => x !== c).join(" "); },
+    };
+  }
+
+  appendChild(child: El): El { child.parentNode = this; this.children.push(child); return child; }
+
+  insertBefore(child: El, ref: El): El {
+    child.parentNode = this;
+    const i = this.children.indexOf(ref);
+    if (i === -1) this.children.push(child); else this.children.splice(i, 0, child);
+    return child;
+  }
+
+  insertAdjacentHTML(_pos: string, html: string): void { this.htmlChunks.push(html); }
+
+  remove(): void {
+    if (this.parentNode) {
+      const i = this.parentNode.children.indexOf(this);
+      if (i !== -1) this.parentNode.children.splice(i, 1);
+    }
+    this.parentNode = null;
+  }
+
+  querySelector(sel: string): El | null { return find(this, sel); }
+  focus(): void {}
+}
+
+function matches(el: El, sel: string): boolean {
+  if (sel.startsWith(".")) return el.classList.contains(sel.slice(1));
+  const attr = /^([a-z]+)\[([a-z]+)=([a-z]+)\]$/.exec(sel);
+  if (attr) {
+    const [, tag, name, value] = attr;
+    return el.tag === tag && el.attrs[name ?? ""] === value;
+  }
+  return el.tag === sel;
+}
+
+function find(root: El, sel: string): El | null {
+  for (const child of root.children) {
+    if (matches(child, sel)) return child;
+    const nested = find(child, sel);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/** Renders an `El` subtree back to an HTML string, for comparing against `chatBlock`'s own output. */
+function serialize(el: El): string {
+  const cls = el.className ? ` class="${el.className}"` : "";
+  const inner = el.children.map(serialize).join("") + el.htmlChunks.join("");
+  return `<${el.tag}${cls}>${el.textContent}${inner}</${el.tag}>`;
+}
+
+interface Harness {
+  document: { createElement: (tag: string) => El; querySelector: (sel: string) => El | null };
+  thread: El;
+  form: El;
+  input: El;
+  listeners: Record<string, (e: { preventDefault(): void }) => unknown>;
+}
+
+/** Builds the one-form page `SCRIPT` expects: a thread `<div>` holding the form. */
+function buildHarness(): Harness {
+  const thread = new El("div");
+  const form = new El("form");
+  const input = new El("input");
+  input.attrs.type = "text";
+  const button = new El("button");
+  form.appendChild(input);
+  form.appendChild(button);
+  thread.appendChild(form);
+  const listeners: Harness["listeners"] = {};
+  (form as unknown as { addEventListener: (t: string, fn: (e: { preventDefault(): void }) => unknown) => void })
+    .addEventListener = (type, fn) => { listeners[type] = fn; };
+  const document = {
+    createElement: (tag: string) => new El(tag),
+    querySelector: (sel: string) => find(thread, sel),
+  };
+  return { document, thread, form, input, listeners };
+}
+
+/** Runs `SCRIPT` (the real, unmodified source string) against a fresh harness. */
+function runScript(h: Harness, fetchStub: (...args: unknown[]) => Promise<unknown>): void {
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval -- executing the real client script under test
+  const attach = new Function("document", "fetch", "location", SCRIPT) as
+    (document: unknown, fetch: unknown, location: unknown) => void;
+  attach(h.document, fetchStub, { reload: () => { throw new Error("unexpected reload() in this test"); } });
+}
+
+const submit = (h: Harness) => {
+  const handler = h.listeners.submit;
+  if (!handler) throw new Error("submit listener was not attached");
+  return handler({ preventDefault() {} });
+};
 
 // A conversation turn is the one place in the whole app where a language
 // model's own output, and the owner's own typing, become HTML — `chatBlock`
@@ -96,10 +219,9 @@ describe("a chat scriptje", () => {
     // csak holt kódban szerepelne. Ez a pontos sor bukik el, ha valaki
     // visszacseréli nyers `question`-re (akár `textContent`-tel, akár
     // `insertAdjacentHTML`-lel).
-    expect(SCRIPT).toContain(
-      `add("Te", "user", (box) => { box.insertAdjacentHTML("beforeend", data.questionHtml); });`,
-    );
-    expect(SCRIPT).toContain(`box.insertAdjacentHTML("beforeend", data.html);`);
+    expect(SCRIPT).toContain(`add("Te", "user", data.questionHtml);`);
+    expect(SCRIPT).toContain(`add("Jarvis", "assistant", data.html);`);
+    expect(SCRIPT).toContain(`box.insertAdjacentHTML("beforeend", html);`);
     // A kérdés nem kerülhet be nyersen: sem `textContent`-tel a beillesztő
     // sorban, sem a `question` változóból közvetlenül a fonálba.
     expect(SCRIPT).not.toContain("p.textContent = question;");
@@ -125,6 +247,93 @@ describe("a chat scriptje", () => {
   it("a hibaág változatlanul kezeli a hibát", () => {
     expect(SCRIPT).toContain("Újra");
     expect(SCRIPT).toContain("A fenti tartalom teljes.");
+  });
+
+  it("a sikeres ág eltávolítja a korábbi hibaüzenetet (szöveges rögzítés)", () => {
+    // `location.reload()` used to wipe the `.ask-error` note for free — the
+    // success path never had to know it existed. Now that nothing reloads,
+    // the success path must clear it itself. This assertion only proves the
+    // removal CODE is present in the build path (a typo'd class name or a
+    // no-op instead of `.remove()` would still pass a bare `toContain`); the
+    // execution test below ("a hibaüzenet…" in the next `describe`) is what
+    // actually proves the note disappears from a live DOM.
+    const guard = "if (!data.html || !data.questionHtml) { location.reload(); return; }";
+    const buildPath = (SCRIPT.split(guard)[1] ?? "").split("catch")[0] ?? "";
+    expect(buildPath).toContain(`querySelector(".ask-error")`);
+    expect(buildPath).toContain(".remove()");
+  });
+});
+
+describe("a script futtatva — alak-egyezés egy reloaddal (I2)", () => {
+  it("az élőben beszúrt fordulók bájtra ugyanazok, mint `chatBlock` reload-kimenete", async () => {
+    // The reviewer verified this by hand: run `SCRIPT` for real against a
+    // DOM, and compare its output to `chatBlock`'s own reload markup for the
+    // same turns. Both `questionHtml` and `html` are produced by the SAME
+    // `renderMarkdown` `chatBlock` uses internally — this is what the real
+    // `/api/chat` route sends — so the comparison is not circular: it fails
+    // the moment either side's element shape, class name, or role label
+    // diverges from the other's.
+    const questionContent = "Mikor **alszom** eleget?";
+    const answerContent = "- Ma korán\n- Holnap később";
+    const questionHtml = renderMarkdown(questionContent);
+    const html = renderMarkdown(answerContent);
+
+    const h = buildHarness();
+    runScript(h, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ html, questionHtml }),
+    }));
+    h.input.value = questionContent;
+    await submit(h);
+
+    const liveTurns = h.thread.children.filter((c) => c !== h.form).map(serialize).join("");
+
+    // Derived from `chatBlock`, not hardcoded: a class rename, a swapped
+    // element, or a reordered field on EITHER side breaks this without
+    // anyone updating a literal string here.
+    const reloadHtml = chatBlock({
+      history: [
+        turn({ role: "user", content: questionContent }),
+        turn({ role: "assistant", content: answerContent }),
+      ],
+      chatAvailable: true,
+    });
+    const reloadTurns = reloadHtml.slice(0, reloadHtml.indexOf("<form"));
+
+    expect(liveTurns).toBe(reloadTurns);
+  });
+});
+
+describe("a script futtatva — hibaüzenet egy sikeres újrapróbálkozás után (I1)", () => {
+  it("egy 502 után egy sikeres kérdés eltünteti a korábbi hibaüzenetet", async () => {
+    // The exact scenario the reviewer ran by hand: a failed request leaves
+    // the `.ask-error` note in the thread (the real `catch` branch, not a
+    // manually inserted stand-in), then a second, successful submit must
+    // make it disappear — a page that still says "a kérdés nem ment át"
+    // after the answer arrived is stating something false.
+    const h = buildHarness();
+    let call = 0;
+    runScript(h, async () => {
+      call++;
+      if (call === 1) return { ok: false, status: 502 };
+      return {
+        ok: true, status: 200,
+        json: async () => ({ html: renderMarkdown("Jó válasz."), questionHtml: renderMarkdown("Kérdés?") }),
+      };
+    });
+
+    h.input.value = "Kérdés?";
+    await submit(h);
+    const failedNote = h.thread.querySelector(".ask-error");
+    expect(failedNote).not.toBeNull();
+    expect(failedNote?.textContent).toContain("502");
+
+    h.input.value = "Kérdés?";
+    await submit(h);
+    expect(h.thread.querySelector(".ask-error")).toBeNull();
+    const liveTurns = h.thread.children.filter((c) => c !== h.form).map(serialize).join("");
+    expect(liveTurns).toContain("Jó válasz.");
   });
 });
 
