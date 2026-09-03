@@ -6,6 +6,8 @@ const base: TodayData = {
   readings: [],
   lastSeen: null,
   writtenAge: null,
+  hibaKod: undefined,
+  actions: { napok: [], undoable: [] },
 };
 
 // This module is `renderPage`'s successor for the "/" page's brief block —

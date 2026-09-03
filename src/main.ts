@@ -31,6 +31,7 @@ const server = await buildServer({
   token: apiToken,
   briefs: app.briefs,
   proposals: app.proposals,
+  actions: app.actions,
   chat: app.chat,
   health: app.health,
   analyses: app.analyses,

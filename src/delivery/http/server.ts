@@ -7,6 +7,7 @@ import type { JarvisModule } from "../../core/module.ts";
 import type { RunnerDeps } from "../../core/runner.ts";
 import type { Clock } from "../../infra/clock.ts";
 import type { HealthRepo } from "../../infra/db/repositories/health.ts";
+import type { ActionRepo } from "../../infra/db/repositories/actions.ts";
 import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
@@ -27,6 +28,7 @@ export interface ServerDeps {
   token: string;
   briefs: BriefService;
   proposals: ProposalService;
+  actions: ActionRepo;
   chat: ChatService;
   health: HealthRepo;
   analyses: AnalysisRepo;
@@ -196,6 +198,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     conversations: deps.conversations, health: deps.health,
     workouts: deps.workouts, meals: deps.meals, subscriptions: deps.subscriptions,
     metrics: deps.metrics, clock: deps.clock, logger: deps.logger,
+    actions: deps.actions, proposals: deps.proposals, modules: deps.modules,
   };
   registerPageRoutes(app, pageDeps);
   registerAreaRoutes(app, pageDeps);

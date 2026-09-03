@@ -1,5 +1,6 @@
 import { escapeHtml, renderMarkdown } from "../markdown.ts";
 import type { ChannelReading } from "./channels.ts";
+import { actionsBody, errorBand, type ActionsData } from "./actions.ts";
 
 export interface TodayData {
   briefMarkdown: string | null;
@@ -12,6 +13,9 @@ export interface TodayData {
   lastSeen: string | null;
   /** When today's row was last written, already worded — null when there is none. */
   writtenAge: string | null;
+  /** The write error carried back through the redirect, if any. */
+  hibaKod: string | undefined;
+  actions: ActionsData;
 }
 
 /** A measured channel is lit; a waiting or missing one has no hue and no motion. */
@@ -44,8 +48,10 @@ export function todayBody(data: TodayData): string {
     : `<p class="halk">A mai sor ${escapeHtml(data.writtenAge)} íródott.</p>`;
 
   return [
+    errorBand(data.hibaKod),
     `<section><h2>Briefing</h2>${brief}</section>`,
     `<section><h2>A mai nap</h2>${stale}${written}`,
     `<div class="csatornak">${data.readings.map(channelRow).join("")}</div></section>`,
+    actionsBody(data.actions),
   ].join("");
 }

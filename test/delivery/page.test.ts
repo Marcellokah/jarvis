@@ -652,3 +652,143 @@ function cookieFrom(res: { headers: Record<string, unknown> }): string {
   const header = Array.isArray(raw) ? String(raw[0]) : String(raw);
   return header.split(";")[0]!;
 }
+
+describe("Ma oldal — teendők", () => {
+  const boot = () => buildTestApp({
+    modules: [stubModule({ name: "Teszt", title: "🧪 Teszt" })],
+    now: "2026-09-03T08:00:00.000Z",
+  });
+  const get = (a: Awaited<ReturnType<typeof boot>>, url: string) =>
+    a.server.inject({ method: "GET", url, headers: { authorization: `Bearer ${TEST_TOKEN}` } });
+
+  /** Only the Teendők band — the rest of the page also renders text. */
+  const teendokSav = (html: string): string =>
+    /<h2>Teendők<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+
+  it("a nem mai nyitott teendőt is mutatja", async () => {
+    // Ez a bekötés egyetlen valódi kockázata: a listOpen(ma) a valódi
+    // adatbázison üres listát ad, és a lap azt állítaná, hogy nincs teendő.
+    const a = await boot();
+    a.actions.replaceForDate("2026-08-30", [{
+      module: "Teszt",
+      action: { id: "r1", kind: "checkbox", text: "RÉGI-JELÖLŐ" },
+    }], new Date("2026-08-30T08:00:00.000Z"));
+
+    const res = await get(a, "/");
+    const sav = teendokSav(res.body);
+    expect(sav).toContain("RÉGI-JELÖLŐ");
+    expect(sav).toContain("2026-08-30");
+    await a.close();
+  });
+
+  it("a modul saját címét használja címkének", async () => {
+    const a = await boot();
+    a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: { id: "c1", kind: "checkbox", text: "x" },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+    expect(teendokSav((await get(a, "/")).body)).toContain("🧪 Teszt");
+    await a.close();
+  });
+
+  it("ismeretlen modulnál a nyers nevet mutatja", async () => {
+    // Egy eltűnt modulhoz kitalálni egy szép nevet hazugság volna.
+    const a = await boot();
+    a.actions.replaceForDate("2026-09-03", [{
+      module: "MarNincsIlyen",
+      action: { id: "c2", kind: "checkbox", text: "x" },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+    expect(teendokSav((await get(a, "/")).body)).toContain("MarNincsIlyen");
+    await a.close();
+  });
+
+  it("teendő nélkül nincs Teendők sáv", async () => {
+    const a = await boot();
+    expect((await get(a, "/")).body).not.toContain("<h2>Teendők</h2>");
+    await a.close();
+  });
+
+  it("a hibakódot a query stringből veszi", async () => {
+    const a = await boot();
+    const res = await get(a, "/?hiba=calendar_failed");
+    expect(res.body).toContain("Nem sikerült a naptárba írni");
+    await a.close();
+  });
+
+  it("ismeretlen hibakódot nem visszhangoz", async () => {
+    // A `.hibasav` CSS-szabály minden lapon ott van a <style>-ban, tehát a
+    // puszta "hibasav" alszöveg mindig megtalálható — a tényleges kérdés az,
+    // hogy megjelenik-e a <p class="hibasav"> elem maga.
+    const a = await boot();
+    const res = await get(a, "/?hiba=%3Cscript%3Ealert(1)%3C%2Fscript%3E");
+    expect(res.body).not.toContain("<script>alert(1)</script>");
+    expect(res.body).not.toContain('<p class="hibasav');
+    await a.close();
+  });
+
+  it("a hibázó teendő-lekérdezés nem viszi el a briefinget", async () => {
+    // Az F1 óta érvényes minta: minden darab magában bukik.
+    const a = await boot();
+    (a.actions as unknown as { listAllOpen: () => never }).listAllOpen = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("A mai nap");
+    await a.close();
+  });
+
+  it("a hibázó teendő-lekérdezés nem viszi el a visszavonható sávot sem", async () => {
+    // A brief két KÜLÖN try/catch-et ír elő, nem csak azt, hogy a briefing
+    // életben marad — az egyik olvasás bukása a másikat sem viheti el. Egy
+    // egyetlen közös try/catch-be összevont változat is 200-at adna vissza
+    // "A mai nap" szöveggel, tehát az előző teszt önmagában nem látná ezt a
+    // hibát; ez a teszt pontosan azt a csatolást fogja meg.
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt", title: "🧪 Teszt" })],
+      now: "2026-09-03T08:00:00.000Z",
+      calendar: {
+        listEvents: async () => [],
+        createEvent: async () => ({ uid: "u1", calendar: "Jarvis", url: "https://x/1.ics" }),
+        deleteEvent: async () => {},
+        healthCheck: async () => ({ ok: true }),
+      },
+    });
+    const rows = a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: {
+        id: "p1", kind: "proposal", text: "Kirándulás",
+        proposal: { title: "Kirándulás", start: "2026-09-05T09:00:00+02:00", end: "2026-09-05T12:00:00+02:00" },
+      },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+    await a.proposals.accept(rows[0]!.id, new Date("2026-09-03T08:00:00.000Z"));
+
+    (a.actions as unknown as { listAllOpen: () => never }).listAllOpen = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Visszavonható");
+    expect(res.body).toContain("Kirándulás");
+    await a.close();
+  });
+
+  it("a hibázó visszavonás-lekérdezés nem viszi el a teendő sávot sem", async () => {
+    // Ugyanaz a csatolási kockázat a másik irányból: a `proposals.listUndoable`
+    // bukása nem viheti el a nyitott teendőket.
+    const a = await boot();
+    a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: { id: "c1", kind: "checkbox", text: "KIPIPÁLANDÓ" },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+
+    (a.proposals as unknown as { listUndoable: () => never }).listUndoable = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/");
+    expect(res.statusCode).toBe(200);
+    const sav = teendokSav(res.body);
+    expect(sav).toContain("KIPIPÁLANDÓ");
+    await a.close();
+  });
+});

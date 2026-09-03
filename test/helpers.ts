@@ -175,7 +175,7 @@ export async function buildTestApp(options: {
   };
 
   const server = await buildServer({
-    token: TEST_TOKEN, briefs, proposals, chat, health, analyses, conversations,
+    token: TEST_TOKEN, briefs, proposals, actions, chat, health, analyses, conversations,
     workouts, meals, subscriptions, metrics, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
   });

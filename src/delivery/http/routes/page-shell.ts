@@ -6,6 +6,9 @@ import type { HealthRepo, HealthSnapshot } from "../../../infra/db/repositories/
 import type { WorkoutRepo } from "../../../infra/db/repositories/workouts.ts";
 import type { MealRepo } from "../../../infra/db/repositories/meals.ts";
 import type { SubscriptionRepo } from "../../../infra/db/repositories/subscriptions.ts";
+import type { ActionRepo } from "../../../infra/db/repositories/actions.ts";
+import type { ProposalService } from "../../../core/proposals.ts";
+import type { JarvisModule } from "../../../core/module.ts";
 import type { Metrics } from "../../../core/analysis/aggregate.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
@@ -24,6 +27,10 @@ export interface PageDeps {
   workouts: WorkoutRepo;
   meals: MealRepo;
   subscriptions: SubscriptionRepo;
+  actions: ActionRepo;
+  proposals: ProposalService;
+  /** For turning a stored module NAME into that module's own title. */
+  modules: readonly JarvisModule[];
   /**
    * The freshest aggregate, rebuilt per request.
    *

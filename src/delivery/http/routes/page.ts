@@ -4,6 +4,7 @@ import { MAX_QUESTION_CHARS } from "../../../core/chat.ts";
 import type { Turn } from "../../../infra/db/repositories/conversations.ts";
 import { addDays, isoDate, TZ } from "../../../shared/dates.ts";
 import { todayBody } from "../view/today.ts";
+import type { ActionRow, ActionsData } from "../view/actions.ts";
 import { metricsRowsFrom, numbersBody, type MetricRow } from "../view/numbers.ts";
 import { askBody } from "../view/ask.ts";
 import { buildSeries } from "../view/chart/series.ts";
@@ -21,13 +22,57 @@ export const WEB_CHAT_ID = "web";
 const body = z.object({ question: z.string().trim().min(1).max(MAX_QUESTION_CHARS) });
 
 export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
-  app.get("/", async (_request, reply) => {
-    const inputs = await shellInputs(deps, deps.clock.now());
+  app.get<{ Querystring: { hiba?: string } }>("/", async (request, reply) => {
+    const now = deps.clock.now();
+    const inputs = await shellInputs(deps, now);
+
+    // A module's own title, or its raw name when the module is gone. Inventing
+    // a nicer label for a module that no longer exists would be a lie about
+    // where the action came from.
+    const cim = (name: string) =>
+      deps.modules.find((m) => m.name === name)?.title ?? name;
+
+    // Its own try/catch, like every other input this page assembles: a
+    // failing action repo must drop the todo band, never the briefing.
+    let napok: ActionsData["napok"] = [];
+    try {
+      const byDate = new Map<string, ActionRow[]>();
+      for (const a of deps.actions.listAllOpen()) {
+        const items = byDate.get(a.date) ?? [];
+        items.push({
+          id: a.id,
+          kind: a.kind,
+          text: a.text,
+          modul: cim(a.module),
+          reszletek: a.proposal === null ? [] : [
+            a.proposal.start,
+            ...(a.proposal.location ? [a.proposal.location] : []),
+            ...(a.proposal.notes ? [a.proposal.notes] : []),
+          ],
+        });
+        byDate.set(a.date, items);
+      }
+      napok = [...byDate.entries()].map(([date, items]) => ({ date, items }));
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its actions");
+    }
+
+    // Separately guarded: a failing calendar-write repo must not take the
+    // todo band with it.
+    let undoable: ActionsData["undoable"] = [];
+    try {
+      undoable = deps.proposals.listUndoable(20);
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "page rendered without its undoable writes");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("ma", inputs, todayBody({
       briefMarkdown: inputs.briefMarkdown,
       readings: inputs.readings,
       lastSeen: inputs.lastSeen,
       writtenAge: inputs.writtenAge,
+      hibaKod: request.query.hiba,
+      actions: { napok, undoable },
     })));
   });
 
