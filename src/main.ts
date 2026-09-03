@@ -5,7 +5,6 @@ import { buildBot, sendTo } from "./delivery/telegram/bot.ts";
 import { acquireInstanceLock } from "./infra/instance-lock.ts";
 import { startScheduler } from "./infra/scheduler.ts";
 import { aggregate } from "./core/analysis/aggregate.ts";
-import { metricsRowsFrom } from "./delivery/http/view/numbers.ts";
 import { isoDate, TZ } from "./shared/dates.ts";
 import { createGatherMark, runNotifyTick } from "./core/notify/tick.ts";
 import { gatherCandidates } from "./core/notify/gather.ts";
@@ -36,18 +35,21 @@ const server = await buildServer({
   health: app.health,
   analyses: app.analyses,
   conversations: app.conversations,
+  workouts: app.workouts,
+  meals: app.meals,
+  subscriptions: app.subscriptions,
   // Rebuilt per request rather than cached: the page must show tonight's
   // sleep the moment it is ingested, not the value at process start-up.
-  metricsRows: () => {
+  metrics: () => {
     const today = isoDate(app.clock.now(), TZ);
-    return metricsRowsFrom(aggregate({
+    return aggregate({
       today,
       snapshots: app.health.between("1970-01-01", today),
       workouts: app.workouts.between("1970-01-01", today),
       months: app.subscriptionMonths.months().map((month) => ({
         month, subs: app.subscriptionMonths.forMonth(month),
       })),
-    }));
+    });
   },
   modules: app.modules,
   runner: app.runner,

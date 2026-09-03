@@ -7,13 +7,17 @@ import type { ConversationRepo, Turn } from "../../../infra/db/repositories/conv
 import type { HealthRepo, HealthSnapshot } from "../../../infra/db/repositories/health.ts";
 import type { Clock } from "../../../infra/clock.ts";
 import type { Logger } from "../../../infra/logger.ts";
+import type { Metrics } from "../../../core/analysis/aggregate.ts";
+import type { WorkoutRepo } from "../../../infra/db/repositories/workouts.ts";
+import type { MealRepo } from "../../../infra/db/repositories/meals.ts";
+import type { SubscriptionRepo } from "../../../infra/db/repositories/subscriptions.ts";
 import { addDays, huLongDate, isoDate, TZ } from "../../../shared/dates.ts";
 import {
   readChannels, summarise, type ChannelReading, type ChannelSummary,
 } from "../view/channels.ts";
 import { layout, type NavState, type Section } from "../view/shell.ts";
 import { todayBody } from "../view/today.ts";
-import { numbersBody, type MetricRow } from "../view/numbers.ts";
+import { metricsRowsFrom, numbersBody, type MetricRow } from "../view/numbers.ts";
 import { analysesBody } from "../view/analyses.ts";
 import { askBody } from "../view/ask.ts";
 import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
@@ -32,7 +36,19 @@ export interface PageDeps {
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
   health: HealthRepo;
-  metricsRows: () => MetricRow[];
+  workouts: WorkoutRepo;
+  meals: MealRepo;
+  subscriptions: SubscriptionRepo;
+  /**
+   * The freshest aggregate, rebuilt per request.
+   *
+   * Raw `Metrics` rather than the finished `MetricRow[]` the Számok page
+   * shows: the area pages want `physical.byMonth`, `recovery.sleepByYear`
+   * and `finance.monthOverMonth`, none of which survive the formatting into
+   * rows. `/szamok` applies `metricsRowsFrom` itself, inside the same
+   * try/catch that already guarded it.
+   */
+  metrics: () => Metrics;
   clock: Clock;
   logger: Logger;
 }
@@ -193,7 +209,7 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
     // a corrupt row or a bad query must dim the numbers, not the page.
     let metricsRows: MetricRow[] = [];
     try {
-      metricsRows = deps.metricsRows();
+      metricsRows = metricsRowsFrom(deps.metrics());
     } catch (err) {
       deps.logger.warn({ err: String(err) }, "page rendered without its metrics");
     }

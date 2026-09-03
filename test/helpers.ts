@@ -3,7 +3,7 @@ import { silentLogger, type Logger } from "../src/infra/logger.ts";
 import { nullSeenStore } from "../src/infra/db/repositories/seen.ts";
 import { staticSecrets } from "../src/infra/secrets.ts";
 import { fixtureFetcher } from "../src/infra/http-client.ts";
-import { createMealRepo, type PlannedMeal } from "../src/infra/db/repositories/meals.ts";
+import { createMealRepo, type MealRepo, type PlannedMeal } from "../src/infra/db/repositories/meals.ts";
 import { createModuleCache } from "../src/infra/db/repositories/cache.ts";
 import type { ModuleContext } from "../src/core/module.ts";
 import { TZ } from "../src/shared/dates.ts";
@@ -71,13 +71,13 @@ import { createCalendarWriteRepo } from "../src/infra/db/repositories/calendar-w
 import { createProposalService, type ProposalService } from "../src/core/proposals.ts";
 import { createBriefRepo } from "../src/infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "../src/infra/db/repositories/health.ts";
-import { createWorkoutRepo } from "../src/infra/db/repositories/workouts.ts";
+import { createWorkoutRepo, type WorkoutRepo } from "../src/infra/db/repositories/workouts.ts";
 import { createSubscriptionMonthRepo } from "../src/infra/db/repositories/subscription-months.ts";
+import { createSubscriptionRepo, type SubscriptionRepo } from "../src/infra/db/repositories/subscriptions.ts";
 import { createAnalysisRepo, type AnalysisRepo } from "../src/infra/db/repositories/analyses.ts";
 import { createConversationRepo, type ConversationRepo } from "../src/infra/db/repositories/conversations.ts";
 import { unavailableChat, type ChatService } from "../src/core/chat.ts";
 import { aggregate } from "../src/core/analysis/aggregate.ts";
-import { metricsRowsFrom } from "../src/delivery/http/view/numbers.ts";
 import { isoDate } from "../src/shared/dates.ts";
 import { buildServer } from "../src/delivery/http/server.ts";
 import type { JarvisModule } from "../src/core/module.ts";
@@ -91,6 +91,9 @@ export interface TestApp {
   health: HealthRepo;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
+  workouts: WorkoutRepo;
+  meals: MealRepo;
+  subscriptions: SubscriptionRepo;
   server: FastifyInstance;
   runner: RunnerDeps;
   modules: readonly JarvisModule[];
@@ -152,30 +155,34 @@ export async function buildTestApp(options: {
   const subscriptionMonths = createSubscriptionMonthRepo(db);
   const chat = options.chat ?? unavailableChat("teszt: nincs modell bekötve");
 
+  const meals = createMealRepo(db);
+  const subscriptions = createSubscriptionRepo(db);
+
   // Same construction the real ask-context assembler and main.ts use: the
   // page's numbers table is always the freshest `aggregate()` over an
   // in-memory (here, empty-unless-seeded) database.
-  const metricsRows = () => {
+  const metrics = () => {
     const today = isoDate(clock.now());
-    return metricsRowsFrom(aggregate({
+    return aggregate({
       today,
       snapshots: health.between("1970-01-01", today),
       workouts: workouts.between("1970-01-01", today),
       months: subscriptionMonths.months().map((month) => ({
         month, subs: subscriptionMonths.forMonth(month),
       })),
-    }));
+    });
   };
 
   const server = await buildServer({
     token: TEST_TOKEN, briefs, proposals, chat, health, analyses, conversations,
-    metricsRows, modules: options.modules,
+    workouts, meals, subscriptions, metrics, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
   });
 
   let closed = false;
   return {
-    db, briefs, proposals, chat, health, analyses, conversations, server, runner,
+    db, briefs, proposals, chat, health, analyses, conversations,
+    workouts, meals, subscriptions, server, runner,
     modules: options.modules,
     setNow: (iso) => { current = new Date(iso); },
     // Idempotent: tests close explicitly and afterEach closes again.

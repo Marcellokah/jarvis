@@ -23,6 +23,7 @@ import { recordSubscriptionMonth } from "./core/subscription-snapshot.ts";
 import { createBriefRepo } from "./infra/db/repositories/briefs.ts";
 import { createHealthRepo, type HealthRepo } from "./infra/db/repositories/health.ts";
 import { createWorkoutRepo, type WorkoutRepo } from "./infra/db/repositories/workouts.ts";
+import { createMealRepo, type MealRepo } from "./infra/db/repositories/meals.ts";
 import { createAnalysisRepo, type AnalysisRepo } from "./infra/db/repositories/analyses.ts";
 import { createConversationRepo, type ConversationRepo } from "./infra/db/repositories/conversations.ts";
 import { createNotificationRepo, type NotificationRepo } from "./infra/db/repositories/notifications.ts";
@@ -51,6 +52,7 @@ export interface App {
   subscriptionMonths: SubscriptionMonthRepo;
   health: HealthRepo;
   workouts: WorkoutRepo;
+  meals: MealRepo;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
   notifications: NotificationRepo;
@@ -86,6 +88,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   const synthesizers = buildSynthesisChain(env, logger, secrets);
   const health = createHealthRepo(db);
   const workouts = createWorkoutRepo(db);
+  const meals = createMealRepo(db);
   const actions = createActionRepo(db);
   const subscriptionMonths = createSubscriptionMonthRepo(db);
   const analyses = createAnalysisRepo(db);
@@ -134,7 +137,7 @@ export function createApp(overrides: { env?: Env; clock?: Clock } = {}): App {
   });
 
   return {
-    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, workouts, runner,
+    env, db, logger, clock, briefs, synthesizers, proposals, chat, health, workouts, meals, runner,
     actions,
     subscriptions: createSubscriptionRepo(db),
     subscriptionMonths,

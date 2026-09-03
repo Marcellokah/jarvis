@@ -10,13 +10,16 @@ import type { HealthRepo } from "../../infra/db/repositories/health.ts";
 import type { AnalysisRepo } from "../../infra/db/repositories/analyses.ts";
 import type { ConversationRepo } from "../../infra/db/repositories/conversations.ts";
 import type { Logger } from "../../infra/logger.ts";
+import type { Metrics } from "../../core/analysis/aggregate.ts";
+import type { WorkoutRepo } from "../../infra/db/repositories/workouts.ts";
+import type { MealRepo } from "../../infra/db/repositories/meals.ts";
+import type { SubscriptionRepo } from "../../infra/db/repositories/subscriptions.ts";
 import { bearerAuth, chatAuth, pageAuth } from "./auth.ts";
 import { registerBriefRoutes } from "./routes/brief.ts";
 import { registerIngestRoutes } from "./routes/ingest.ts";
 import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerPageRoutes } from "./routes/page.ts";
-import type { MetricRow } from "./view/numbers.ts";
 
 export interface ServerDeps {
   token: string;
@@ -26,8 +29,10 @@ export interface ServerDeps {
   health: HealthRepo;
   analyses: AnalysisRepo;
   conversations: ConversationRepo;
-  /** Builds the numbers table's rows from the freshest `aggregate()` output. */
-  metricsRows: () => MetricRow[];
+  workouts: WorkoutRepo;
+  meals: MealRepo;
+  subscriptions: SubscriptionRepo;
+  metrics: () => Metrics;
   modules: readonly JarvisModule[];
   runner: RunnerDeps;
   clock: Clock;
@@ -167,7 +172,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
   registerPageRoutes(app, {
     briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
-    conversations: deps.conversations, health: deps.health, metricsRows: deps.metricsRows,
+    conversations: deps.conversations, health: deps.health,
+    workouts: deps.workouts, meals: deps.meals, subscriptions: deps.subscriptions,
+    metrics: deps.metrics,
     clock: deps.clock, logger: deps.logger,
   });
 
