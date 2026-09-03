@@ -211,4 +211,22 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
   animation: vonal-be .7s cubic-bezier(.2,.8,.2,1) both; }
 .plot .sav { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: 200ms; }
 @media (prefers-reduced-motion: reduce) { .plot .vonal, .plot .sav { animation: none; } }
+
+/* ---- havi oszlopdiagram ---- */
+.oszlopok { display: block; width: 100%; height: auto; }
+.oszlopok .racs { stroke: var(--vaz); stroke-width: .5; opacity: .35; }
+.oszlopok .tengely { fill: var(--vaz); font: .62rem var(--mono); }
+/* Ugyanaz a szókincs, mint a nagy diagramé: a nem rögzített hónap talaj,
+   nem adat — tehát nincs saját színe és nem is mozdul. */
+.oszlopok .hezag { fill: var(--racs); }
+.oszlopok .oszlop { fill: var(--jel); }
+.oszlopok .celpont { fill: transparent; outline: none; }
+.oszlopok .olvaso { opacity: 0; pointer-events: none; }
+.oszlopok .olvaso rect { fill: var(--racs); }
+.oszlopok .olvaso text { fill: var(--szoveg); font: .66rem var(--mono); }
+.oszlopok .celpont:hover + .olvaso,
+.oszlopok .celpont:focus + .olvaso { opacity: 1; }
+.oszlopok .celpont:focus-visible { stroke: var(--jel); stroke-width: 1; }
+.oszlopok .oszlop { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .oszlopok .oszlop { animation: none; } }
 `;
