@@ -1,6 +1,6 @@
 import type { Db } from "../index.ts";
 
-export type Domain = "physical" | "recovery" | "finance" | "synthesis";
+export type Domain = "physical" | "recovery" | "finance" | "nutrition" | "synthesis";
 
 export interface AnalysisRow {
   id: number;

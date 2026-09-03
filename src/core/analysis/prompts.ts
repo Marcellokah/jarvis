@@ -9,6 +9,7 @@ const TITLE: Record<Domain, string> = {
   physical: "Fizikai fejlődés",
   recovery: "Regenerálódás és alvás",
   finance: "Pénzügy",
+  nutrition: "Táplálkozás",
   synthesis: "Összegzés",
 };
 
@@ -22,6 +23,13 @@ const BRIEF: Record<Exclude<Domain, "synthesis">, string> = {
   finance:
     "Előfizetések havi képe. A tábla az S2-ben született, előtte nincs "
     + "történet, és visszamenőleg szándékosan nem gyártunk.",
+  nutrition:
+    "Energiaegyensúly, fehérjefedezet és a mérés következetessége. A "
+    + "`balance` csak azokból a napokból számol, ahol a bevitel ÉS az "
+    + "alapanyagcsere ÉS az aktív kalória is megvan; a `dropped` azt mondja, "
+    + "hány mért nap maradt ki emiatt. A `plannedProteinG` a heti étrend "
+    + "napi fehérjéje — ehhez mérd a mértet, mert TESTSÚLY-ADAT NINCS a "
+    + "rendszerben, tehát testtömeg-kilogrammra vetített állítást ne írj.",
 };
 
 /**

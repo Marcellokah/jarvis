@@ -7,7 +7,7 @@ import { GROQ_KEY_VAR, groqComplete } from "../../infra/groq.ts";
 import { withTimeout } from "../../infra/abort.ts";
 import { buildDomainPrompt, buildSynthesisPrompt, extractSummary } from "./prompts.ts";
 
-const DOMAINS = ["physical", "recovery", "finance"] as const;
+const DOMAINS = ["physical", "recovery", "finance", "nutrition"] as const;
 
 export interface AnalystOptions {
   fetcher: Fetcher;

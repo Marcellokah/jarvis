@@ -76,19 +76,39 @@ function options(fetcher: Fetcher, over: Partial<AnalystOptions> = {}): AnalystO
 const signal = () => new AbortController().signal;
 
 describe("runAnalysis", () => {
-  it("runs the three domains and then the synthesis", async () => {
-    const fetcher = scriptedFetcher([answer("fizikai"), answer("regen"), answer("pénz"), answer("össze")]);
+  it("runs the four domains and then the synthesis", async () => {
+    const fetcher = scriptedFetcher([
+      answer("fizikai"), answer("regen"), answer("pénz"), answer("táplálkozás"), answer("össze"),
+    ]);
     const run = await runAnalysis(metrics, relations, options(fetcher), signal());
 
     expect(run.outcomes.map((o) => o.domain))
-      .toEqual(["physical", "recovery", "finance", "synthesis"]);
+      .toEqual(["physical", "recovery", "finance", "nutrition", "synthesis"]);
     expect(run.outcomes.every((o) => o.error === null)).toBe(true);
-    expect(fetcher.calls).toHaveLength(4);
+    expect(fetcher.calls).toHaveLength(5);
+  });
+
+  it("a táplálkozás is végigmegy a futtatáson", async () => {
+    // nutrition is the fourth domain in the pipeline; it must both appear in
+    // the outcomes and be persisted like any other domain.
+    const db = memoryDb();
+    const analyses = createAnalysisRepo(db);
+    const fetcher = scriptedFetcher([
+      answer("fizikai"), answer("regen"), answer("pénz"), answer("táplálkozás"), answer("össze"),
+    ]);
+    const run = await runAnalysis(metrics, relations, options(fetcher, { analyses }), signal());
+
+    expect(run.outcomes.map((o) => o.domain)).toContain("nutrition");
+    const stored = analyses.recent("nutrition", 1)[0]!;
+    expect(stored.summary).toBe("táplálkozás összegzés.");
+    db.close();
   });
 
   it("keeps the other domains when one fails, and names the failure", async () => {
     // The finance call throws; physical and recovery must survive it.
-    const fetcher = scriptedFetcher([answer("fizikai"), answer("regen"), null, answer("össze")]);
+    const fetcher = scriptedFetcher([
+      answer("fizikai"), answer("regen"), null, answer("táplálkozás"), answer("össze"),
+    ]);
     const run = await runAnalysis(metrics, relations, options(fetcher), signal());
 
     const finance = run.outcomes.find((o) => o.domain === "finance")!;
@@ -98,31 +118,50 @@ describe("runAnalysis", () => {
     expect(run.outcomes.find((o) => o.domain === "synthesis")!.markdown).not.toBeNull();
   });
 
+  it("egy elszálló táplálkozás-elemzés nem viszi el a többit", async () => {
+    // The nutrition call throws; physical, recovery and finance must still
+    // write their findings, and the failure must land on the nutrition
+    // outcome specifically.
+    const fetcher = scriptedFetcher([
+      answer("fizikai"), answer("regen"), answer("pénz"), null, answer("össze"),
+    ]);
+    const run = await runAnalysis(metrics, relations, options(fetcher), signal());
+
+    const nutrition = run.outcomes.find((o) => o.domain === "nutrition")!;
+    expect(nutrition.markdown).toBeNull();
+    expect(nutrition.error).toContain("groq exploded");
+
+    const domainOutcomes = run.outcomes.filter((o) => o.domain !== "synthesis");
+    expect(domainOutcomes.filter((o) => o.error === null)).toHaveLength(3);
+  });
+
   it("skips the synthesis when fewer than two domains succeeded", async () => {
-    const fetcher = scriptedFetcher([answer("fizikai"), null, null]);
+    const fetcher = scriptedFetcher([answer("fizikai"), null, null, null]);
     const run = await runAnalysis(metrics, relations, options(fetcher), signal());
 
     // One domain has nothing to be related to; a synthesis call would spend
     // tokens restating it.
     expect(run.outcomes.find((o) => o.domain === "synthesis")).toBeUndefined();
-    expect(fetcher.calls).toHaveLength(3);
+    expect(fetcher.calls).toHaveLength(4);
   });
 
   it("waits between calls, because two in one minute breaks the token ceiling", async () => {
     const waits: number[] = [];
-    const fetcher = scriptedFetcher([answer("a"), answer("b"), answer("c"), answer("d")]);
+    const fetcher = scriptedFetcher([answer("a"), answer("b"), answer("c"), answer("d"), answer("e")]);
     await runAnalysis(metrics, relations, options(fetcher, {
       sleep: async (ms: number) => { waits.push(ms); },
     }), signal());
 
-    // Three gaps between four calls, and never before the first.
-    expect(waits).toEqual([60_000, 60_000, 60_000]);
+    // Four gaps between five calls, and never before the first.
+    expect(waits).toEqual([60_000, 60_000, 60_000, 60_000]);
   });
 
   it("stores every successful domain with its summary and metrics", async () => {
     const db = memoryDb();
     const analyses = createAnalysisRepo(db);
-    const fetcher = scriptedFetcher([answer("fizikai"), answer("regen"), answer("pénz"), answer("össze")]);
+    const fetcher = scriptedFetcher([
+      answer("fizikai"), answer("regen"), answer("pénz"), answer("táplálkozás"), answer("össze"),
+    ]);
     await runAnalysis(metrics, relations, options(fetcher, { analyses }), signal());
 
     const stored = analyses.recent("physical", 1)[0]!;
@@ -138,7 +177,7 @@ describe("runAnalysis", () => {
       createdAt: "2026-07-01T08:00:00.000Z", domain: "physical",
       markdown: "#", summary: "MÚLTKORI MEGÁLLAPÍTÁS", metrics: "{}",
     });
-    const fetcher = scriptedFetcher([answer("a"), answer("b"), answer("c"), answer("d")]);
+    const fetcher = scriptedFetcher([answer("a"), answer("b"), answer("c"), answer("d"), answer("e")]);
     await runAnalysis(metrics, relations, options(fetcher, { analyses }), signal());
 
     expect(fetcher.calls[0]).toContain("MÚLTKORI MEGÁLLAPÍTÁS");
@@ -152,7 +191,7 @@ describe("runAnalysis", () => {
     }), signal());
 
     expect(fetcher.calls).toHaveLength(0);
-    expect(run.outcomes).toHaveLength(3);
+    expect(run.outcomes).toHaveLength(4);
     for (const o of run.outcomes) expect(o.error).toContain("GROQ_API_KEY");
   });
 });

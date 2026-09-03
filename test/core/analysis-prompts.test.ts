@@ -101,6 +101,31 @@ describe("buildDomainPrompt", () => {
   });
 });
 
+describe("táplálkozási prompt", () => {
+  it("a saját szeletét küldi, nem a teljes Metrics-et", () => {
+    const { user } = buildDomainPrompt("nutrition", metrics, []);
+    expect(user).toContain("measuredDays");
+    expect(user).not.toContain("loadRatio"); // the physical slice's field
+  });
+
+  it("kimondja, hogy nincs testsúly-adat", () => {
+    // Without this, the model would write a g/bodyweight-kg claim, which
+    // means inventing a weight to divide by — exactly what this system
+    // refuses to do.
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    // Case-insensitive: the rule text says "TESTSÚLY-ADAT NINCS", matching
+    // this file's existing convention for rule-presence checks (see the
+    // `lefedettség` check above) rather than a case-sensitive `toContain`,
+    // which would fail against the brief's own verbatim wording.
+    expect(system).toMatch(/testsúly/i);
+  });
+
+  it("a területnek van magyar címe", () => {
+    const { system } = buildDomainPrompt("nutrition", metrics, []);
+    expect(system).toContain("Táplálkozás");
+  });
+});
+
 describe("buildSynthesisPrompt", () => {
   it("passes correlations through with n, and forbids inventing others", () => {
     const { system, user } = buildSynthesisPrompt(
