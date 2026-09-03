@@ -87,11 +87,48 @@ describe("WorkoutRepo.page", () => {
   });
 
   it("negatív eltolást és nulla méretet is épen kezel", () => {
-    // Ezek nem a felhasználótól jönnek, hanem egy elszámolt hívótól — és egy
-    // negatív OFFSET SQLite-ban csendben mást csinál, mint amit a hívó hitt.
+    // Ezek nem a felhasználótól jönnek, hanem egy elszámolt hívótól. A negatív OFFSET
+    // clampolása egy defensive backstop: SQLite 3.31.0+ már csinál ebből 0-t, de ez az
+    // sor az ígéret, hogy az engaged a kitakarított verzióktól függetlenül helyes. A
+    // nulla méret clampolása viszont valódi: a LIMIT 0 valóban semmit nem ad vissza.
     const { db, repo } = seed(10);
     expect(repo.page(-5, 50).rows).toHaveLength(10);
     expect(repo.page(0, 0).rows).toHaveLength(1);
+    db.close();
+  });
+
+  it("a lapozás hézagmentesen osztja fel a naplót, azonos időbélyegnél is", () => {
+    // A (started_at, type) a tábla kulcsa: két különböző típusú edzés ugyanabban a
+    // pillanatban indulhat. Ha a rendezés nem teljes, az SQLite lapokként más sorrendet
+    // is adhat — és akkor a lapváltásnál egy edzés kimarad, egy másik kétszer jelenik
+    // meg. 2392 sorból egy csendben eltűnő edzés pontosan az a hiba, amit ez a rendszer
+    // nem enged meg.
+    const db = memoryDb();
+    const repo = createWorkoutRepo(db);
+    const types = ["Walking", "Cycling", "Cooldown", "CoreTraining"];
+    // Create 120 rows with unique (started_at, type) pairs: 30 days × 4 types = 120 rows.
+    // Multiple rows share the same date to exercise the page-split stability across
+    // same-started_at ties.
+    const rows = Array.from({ length: 120 }, (_, i) => {
+      const dayNum = (i % 30) + 1;
+      const typeIdx = Math.floor(i / 30);
+      return w(
+        `2026-01-${String(dayNum).padStart(2, "0")}`,
+        types[typeIdx]!, 30, null,
+      );
+    });
+    repo.save(rows);
+
+    const total = repo.page(0, 1).total;
+    expect(total).toBe(120);
+    const seen: string[] = [];
+    for (let offset = 0; offset < total; offset += 50) {
+      for (const r of repo.page(offset, 50).rows) {
+        seen.push(`${r.startedAt}|${r.type}`);
+      }
+    }
+    expect(seen).toHaveLength(total);
+    expect(new Set(seen).size).toBe(total);
     db.close();
   });
 });

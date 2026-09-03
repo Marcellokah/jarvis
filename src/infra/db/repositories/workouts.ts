@@ -110,15 +110,20 @@ export function createWorkoutRepo(db: Db): WorkoutRepo {
     },
 
     page(offset, limit) {
-      // Clamped here rather than trusted: a negative OFFSET is not an error in
-      // SQLite, it quietly behaves as something the caller did not ask for,
-      // and a zero LIMIT returns nothing at all — both would look like "there
-      // are no workouts" to a page that has 2392 of them.
+      // Offset and limit are clamped here rather than trusted: a negative OFFSET is not
+      // an error in SQLite (it has been clamped to 0 since 3.31.0), and a zero LIMIT
+      // returns nothing at all — both would look like "there are no workouts" to a
+      // caller. This method's contract is to return a consistent partition regardless of
+      // SQLite version.
       const from = Math.max(0, Math.floor(offset));
       const size = Math.max(1, Math.floor(limit));
       const total = db.get<{ n: number }>("SELECT COUNT(*) AS n FROM workouts")?.n ?? 0;
+      // Order by the table's natural key: (started_at, type). Without type, two different
+      // workouts on the same start time can appear in any order across page boundaries,
+      // causing rows to be skipped or duplicated when paging. A total order ensures the
+      // page split is gapless.
       const rows = db.all<Row>(
-        "SELECT * FROM workouts ORDER BY date DESC, started_at DESC LIMIT ? OFFSET ?",
+        "SELECT * FROM workouts ORDER BY date DESC, started_at DESC, type LIMIT ? OFFSET ?",
         size, from,
       ).map(toWorkout);
       return { rows, total };
