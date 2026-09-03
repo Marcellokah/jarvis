@@ -163,17 +163,20 @@ describe("hibasáv", () => {
   });
 
   it("a riasztás színe csak a naptár-hibánál jelenik meg", () => {
-    // A filter().every() önmagában tautológia lenne (a szűrt halmaz
-    // definíció szerint teljesíti a szűrőt); az alap `.hibasav` szabálynak
-    // KÜLÖN kell hiányoznia a `--riado`-ból, míg a `.riaszt` változatnak
-    // tartalmaznia kell — ez a két állítás tud ténylegesen bukni.
-    const rules = STYLE.split("\n").filter((l) => l.trimStart().startsWith(".hibasav"));
-    expect(rules.length).toBeGreaterThan(0);
-    const alap = rules.filter((l) => !l.includes(".riaszt"));
-    const riaszt = rules.filter((l) => l.includes(".riaszt"));
+    // Soronkénti szűrés hamis biztonságot adna: ez a fájl a szabályokat
+    // több sorra töri, és egy folytatósoron lévő `--riado` (pl. a
+    // `.hibasav` alapszabály `color:` sorában) nem kezdődik `.hibasav`-val,
+    // tehát egy sor-alapú szűrő némán kihagyná — pontosan azt a hibát nem
+    // látná, amit ez a teszt hivatott elkapni. Ezért a teljes szabály-
+    // blokkokat (a szelektortól a záró `}`-ig) vizsgáljuk, nem sorokat.
+    const blocks = [...STYLE.matchAll(/\.hibasav[^{]*\{[^}]*\}/g)].map((m) => m[0]);
+    expect(blocks.length).toBeGreaterThan(0);
+    const alap = blocks.filter((b) => !b.startsWith(".hibasav.riaszt"));
+    const riaszt = blocks.filter((b) => b.startsWith(".hibasav.riaszt"));
+    expect(alap.length).toBeGreaterThan(0);
     expect(riaszt.length).toBeGreaterThan(0);
-    expect(alap.some((l) => l.includes("riado"))).toBe(false);
-    expect(riaszt.some((l) => l.includes("riado"))).toBe(true);
+    expect(alap.some((b) => b.includes("riado"))).toBe(false);
+    expect(riaszt.some((b) => b.includes("riado"))).toBe(true);
   });
 
   it("az űrlapgomb nem örökli a kérdés-űrlap flex elrendezését", () => {

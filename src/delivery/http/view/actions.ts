@@ -110,7 +110,7 @@ const HIBAK: Record<string, { szoveg: string; riaszt: boolean }> = {
     riaszt: true,
   },
   not_found: { szoveg: "Ez a teendő már nincs meg.", riaszt: false },
-  wrong_kind: { szoveg: "Ezt a műveletet nem erre a fajta teendőre lehet.", riaszt: false },
+  wrong_kind: { szoveg: "Ez a művelet nem erre a fajta teendőre való.", riaszt: false },
 };
 
 export function errorBand(code: string | undefined): string {
