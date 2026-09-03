@@ -242,6 +242,18 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
   text-transform: uppercase; color: var(--halvany); }
 .csempe:hover .cimke { color: var(--vaz); }
 
+.kartyak { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1px; background: var(--racs); border: 1px solid var(--racs); }
+.kartya { display: flex; flex-direction: column; gap: .35rem; padding: 1rem;
+  background: var(--lap); text-decoration: none; color: var(--szoveg); }
+.kartya .cimke { font: .68rem/1.4 var(--mono); letter-spacing: .18em;
+  text-transform: uppercase; color: var(--vaz); }
+.kartya .szam { font: 600 1.5rem/1.2 var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--jel); }
+.kartya.hianyzik .szam { color: var(--halvany); font-size: 1rem; font-weight: 400; }
+.kartya .kor { font: .62rem/1.4 var(--mono); color: var(--halvany); }
+.kartya:hover { background: var(--hatter); }
+
 /* ---- havi oszlopdiagram ---- */
 .oszlopok { display: block; width: 100%; height: auto; }
 .oszlopok .racs { stroke: var(--vaz); stroke-width: .5; opacity: .35; }
