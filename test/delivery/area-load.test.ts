@@ -3,7 +3,7 @@ import { loadBody } from "../../src/delivery/http/view/area/load.ts";
 
 const empty = {
   loadRatio: null, strengthPerWeek28d: null,
-  byMonth: [], byType: [], recent: [], tiles: [], analysis: undefined,
+  byMonth: [], byType: [], recent: [], tiles: [], analysis: undefined, earlier: [],
 };
 
 const w = (date: string, type: string, min: number, kcal: number | null) => ({

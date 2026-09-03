@@ -1,6 +1,6 @@
 import { escapeHtml } from "../../markdown.ts";
 import { hu, huFt } from "../format.ts";
-import { analysisBand, leadBand, type AreaAnalysis } from "./frame.ts";
+import { analysisBand, leadBand, type AreaAnalysis, type EarlierAnalysis } from "./frame.ts";
 import { bars, type BarRow } from "../chart/bars.ts";
 import type { Subscription } from "../../../../infra/db/repositories/subscriptions.ts";
 
@@ -17,6 +17,8 @@ export interface FinanceData {
   /** Today, so the view can say "in N days" without reading a clock itself. */
   today: string;
   analysis: AreaAnalysis | undefined;
+  /** Earlier analyses for this domain, newest first, without the one in the band. */
+  earlier: readonly EarlierAnalysis[];
 }
 
 const FORINT = { label: "Havi teher", format: (v: number) => huFt(v) };
@@ -95,5 +97,5 @@ export function financeBody(d: FinanceData): string {
       : escapeHtml(huFt(d.annualisedHuf)))
     + "</p></section>";
 
-  return [lead, chart, subTable(d), annual, analysisBand(d.analysis, [])].join("");
+  return [lead, chart, subTable(d), annual, analysisBand(d.analysis, d.earlier)].join("");
 }

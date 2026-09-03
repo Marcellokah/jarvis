@@ -1,5 +1,5 @@
 import { escapeHtml, renderMarkdown } from "../../markdown.ts";
-import type { AreaAnalysis } from "./frame.ts";
+import { historyBlock, type AreaAnalysis, type EarlierAnalysis } from "./frame.ts";
 
 export interface HubCard {
   href: string;
@@ -20,6 +20,8 @@ export interface HubCard {
 
 export interface HubData {
   synthesis: AreaAnalysis | undefined;
+  /** Earlier synthesis analyses, newest first, without the one shown above. */
+  earlierSynthesis: readonly EarlierAnalysis[];
   cards: readonly HubCard[];
 }
 
@@ -35,7 +37,7 @@ export function hubBody(d: HubData): string {
   const synthesis = d.synthesis === undefined
     ? ""
     : `<section><h2>Összegzés · ${escapeHtml(d.synthesis.createdAt.slice(0, 10))}</h2>`
-      + `${renderMarkdown(d.synthesis.markdown)}</section>`;
+      + `${renderMarkdown(d.synthesis.markdown)}${historyBlock(d.earlierSynthesis)}</section>`;
 
   const cards = d.cards.map((c) => [
     // hrefs are this module's own literal route strings (e.g. "/terulet/terheles"), never caller-supplied

@@ -2,7 +2,7 @@ import { escapeHtml } from "../../markdown.ts";
 import { hu } from "../format.ts";
 import {
   analysisBand, leadBand, seriesBand,
-  type AreaAnalysis, type SeriesTile,
+  type AreaAnalysis, type EarlierAnalysis, type SeriesTile,
 } from "./frame.ts";
 import type { Metric } from "../../../../core/analysis/stats.ts";
 
@@ -14,6 +14,8 @@ export interface RecoveryData {
   awakenings: Metric;
   tiles: readonly SeriesTile[];
   analysis: AreaAnalysis | undefined;
+  /** Earlier analyses for this domain, newest first, without the one in the band. */
+  earlier: readonly EarlierAnalysis[];
 }
 
 /**
@@ -92,6 +94,6 @@ export function recoveryBody(d: RecoveryData): string {
     seriesBand("Regeneráció", d.tiles),
     sleepBlock(d.sleepByYear),
     `<section><h2>Fázisok és ébredés</h2><table>${stages}</table></section>`,
-    analysisBand(d.analysis, []),
+    analysisBand(d.analysis, d.earlier),
   ].join("");
 }

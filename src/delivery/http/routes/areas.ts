@@ -4,7 +4,7 @@ import { buildSeries } from "../view/chart/series.ts";
 import { SOROZATOK, valuesFrom } from "../view/chart/registry.ts";
 import { sparkline } from "../view/chart/sparkline.ts";
 import { hu, huFt } from "../view/format.ts";
-import type { SeriesTile, AreaAnalysis } from "../view/area/frame.ts";
+import type { SeriesTile, AreaAnalysis, EarlierAnalysis } from "../view/area/frame.ts";
 import { hubBody, type HubCard } from "../view/area/hub.ts";
 import { loadBody } from "../view/area/load.ts";
 import { recoveryBody } from "../view/area/recovery.ts";
@@ -13,7 +13,7 @@ import { financeBody } from "../view/area/finance.ts";
 import { OLDAL_MERET, parseOldal, worklogBody } from "../view/area/worklog.ts";
 import { render, shellInputs, type PageDeps } from "./page-shell.ts";
 import type { Metrics } from "../../../core/analysis/aggregate.ts";
-import type { AnalysisRow } from "../../../infra/db/repositories/analyses.ts";
+import type { AnalysisRow, Domain } from "../../../infra/db/repositories/analyses.ts";
 import type { HealthSnapshot } from "../../../infra/db/repositories/health.ts";
 
 /** How many recorded months an annual projection needs — mirrors aggregate.ts. */
@@ -31,6 +31,28 @@ const TILE_DAYS = 365;
 function analysisFor(rows: readonly AnalysisRow[], domain: string): AreaAnalysis | undefined {
   const hit = rows.find((a) => a.domain === domain);
   return hit === undefined ? undefined : { markdown: hit.markdown, createdAt: hit.createdAt };
+}
+
+/** Five shown plus the one the band already carries, which is filtered out. */
+const ELOZMENY_LEKERES = 6;
+
+/**
+ * The earlier analyses for one domain, newest first, without the one the band
+ * already shows.
+ *
+ * Filtered by id rather than by dropping the first row: `latestPerDomain()`
+ * answers with MAX(id) per domain and `recent()` orders by created_at DESC,
+ * id DESC, so the two agree today — but an id comparison stays correct if
+ * either ever stops agreeing, and it costs one comparison.
+ */
+function earlierFor(
+  deps: PageDeps, rows: readonly AnalysisRow[], domain: Domain,
+): EarlierAnalysis[] {
+  const latest = rows.find((a) => a.domain === domain);
+  if (latest === undefined) return [];
+  return deps.analyses.recent(domain, ELOZMENY_LEKERES)
+    .filter((r) => r.id !== latest.id)
+    .map((r) => ({ createdAt: r.createdAt, summary: r.summary }));
 }
 
 export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
@@ -124,8 +146,16 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       },
     ];
 
+    let earlierSynthesis: EarlierAnalysis[] = [];
+    try {
+      earlierSynthesis = earlierFor(deps, inputs.analyses, "synthesis");
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, hubBody({
       synthesis: analysisFor(inputs.analyses, "synthesis"),
+      earlierSynthesis,
       cards,
     }), "/terulet"));
   });
@@ -149,6 +179,13 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "load page rendered without its recent workouts");
     }
 
+    let earlier: EarlierAnalysis[] = [];
+    try {
+      earlier = earlierFor(deps, inputs.analyses, "physical");
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, loadBody({
       loadRatio: m?.physical.loadRatio ?? null,
       strengthPerWeek28d: m?.physical.strengthPerWeek28d ?? null,
@@ -157,6 +194,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       recent,
       tiles: tilesFor(["steps", "distance_km", "move_kcal", "exercise_min"], now),
       analysis: analysisFor(inputs.analyses, "physical"),
+      earlier,
     }), "/terulet/terheles"));
   });
 
@@ -202,6 +240,13 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     const m = metricsOf();
     const EMPTY = { value: null, n: 0, coverage: 0, window: "365d" };
 
+    let earlier: EarlierAnalysis[] = [];
+    try {
+      earlier = earlierFor(deps, inputs.analyses, "recovery");
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, recoveryBody({
       deviation: m?.recovery.hrvDeviation ?? null,
       sleepByYear: m?.recovery.sleepByYear ?? [],
@@ -209,6 +254,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       awakenings: m?.recovery.awakenings ?? EMPTY,
       tiles: tilesFor(["hrv", "rhr", "hr_recovery", "sleep_h"], now),
       analysis: analysisFor(inputs.analyses, "recovery"),
+      earlier,
     }), "/terulet/regeneracio"));
   });
 
@@ -271,6 +317,13 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "finance page rendered without its subscriptions");
     }
 
+    let earlier: EarlierAnalysis[] = [];
+    try {
+      earlier = earlierFor(deps, inputs.analyses, "finance");
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "area page rendered without its analysis history");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, financeBody({
       months: m?.finance.months ?? [],
       monthOverMonth: m?.finance.monthOverMonth ?? null,
@@ -279,6 +332,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       subscriptions,
       today: isoDate(now, TZ),
       analysis: analysisFor(inputs.analyses, "finance"),
+      earlier,
     }), "/terulet/penzugy"));
   });
 }

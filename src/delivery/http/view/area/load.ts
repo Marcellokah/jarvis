@@ -3,7 +3,7 @@ import { hu, duration } from "../format.ts";
 import { bars, type BarRow } from "../chart/bars.ts";
 import {
   analysisBand, leadBand, seriesBand,
-  type AreaAnalysis, type SeriesTile,
+  type AreaAnalysis, type EarlierAnalysis, type SeriesTile,
 } from "./frame.ts";
 import type { WorkoutTypeTotal } from "../../../../infra/db/repositories/workouts.ts";
 import type { WorkoutRow } from "../../../../infra/health-export/rollup.ts";
@@ -17,6 +17,8 @@ export interface LoadData {
   recent: readonly WorkoutRow[];
   tiles: readonly SeriesTile[];
   analysis: AreaAnalysis | undefined;
+  /** Earlier analyses for this domain, newest first, without the one in the band. */
+  earlier: readonly EarlierAnalysis[];
 }
 
 const ORAK = { label: "Edzésóra", format: (v: number) => `${hu(v, 1)} óra` };
@@ -97,6 +99,6 @@ export function loadBody(d: LoadData): string {
     monthly,
     typeTable(d.byType),
     recentTable(d.recent),
-    analysisBand(d.analysis, []),
+    analysisBand(d.analysis, d.earlier),
   ].join("");
 }

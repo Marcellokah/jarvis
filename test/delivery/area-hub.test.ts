@@ -10,6 +10,7 @@ describe("terület-hub", () => {
   it("az Összegzés elemzést a dátumával mutatja", () => {
     const html = hubBody({
       synthesis: { markdown: "**Összkép**", createdAt: "2026-09-01T07:11:50.124Z" },
+      earlierSynthesis: [],
       cards: [],
     });
     // Exact heading format to verify .slice(0, 10) truncation
@@ -22,12 +23,12 @@ describe("terület-hub", () => {
   it("Összegzés nélkül nem ad üres címet", () => {
     // Egy "Összegzés" fejléc semmivel alatta hiányzó adat, ami nem látszik
     // hiányzónak.
-    const html = hubBody({ synthesis: undefined, cards: [card()] });
+    const html = hubBody({ synthesis: undefined, earlierSynthesis: [], cards: [card()] });
     expect(html).not.toContain("Összegzés");
   });
 
   it("minden kártya a saját területére visz", () => {
-    const html = hubBody({ synthesis: undefined, cards: [card()] });
+    const html = hubBody({ synthesis: undefined, earlierSynthesis: [], cards: [card()] });
     // Extract the card to verify its content (scoped to prevent false positives from other cards)
     const cardMatch = html.match(/<a class="kartya"[^>]*>.*?<\/a>/);
     expect(cardMatch).toBeTruthy();
@@ -39,7 +40,7 @@ describe("terület-hub", () => {
   it("a kártyán ott a forrás kora", () => {
     // Egy két hete készült elemzés összefoglalója akkor is két hetes, ha
     // magabiztosan hangzik.
-    const html = hubBody({ synthesis: undefined, cards: [card({ noteDate: "2026-08-20" })] });
+    const html = hubBody({ synthesis: undefined, earlierSynthesis: [], cards: [card({ noteDate: "2026-08-20" })] });
     // Extract the card to verify date is wrapped in .kor span, not bare text
     const cardMatch = html.match(/<a class="kartya"[^>]*>.*?<\/a>/);
     expect(cardMatch).toBeTruthy();
@@ -49,6 +50,7 @@ describe("terület-hub", () => {
   it("vezető szám nélküli kártya nem nullát mutat", () => {
     const html = hubBody({
       synthesis: undefined,
+      earlierSynthesis: [],
       cards: [card({ figure: null, note: "Nincs elég előzmény.", noteDate: null })],
     });
     // Extract the card to verify missing-figure handling (scoped to prevent ambiguity with multiple cards)
@@ -62,6 +64,7 @@ describe("terület-hub", () => {
   it("escape-eli a kártya szövegét", () => {
     const html = hubBody({
       synthesis: undefined,
+      earlierSynthesis: [],
       cards: [card({
         title: "<b>T</b>",
         note: "<i>n</i>",

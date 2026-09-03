@@ -9,7 +9,7 @@ const sub = (p: Partial<Subscription> & Pick<Subscription, "name" | "amountHuf">
 
 const empty = {
   months: [], monthOverMonth: null, annualisedHuf: null, minMonths: 6,
-  subscriptions: [], today: "2026-09-03", analysis: undefined,
+  subscriptions: [], today: "2026-09-03", analysis: undefined, earlier: [],
 };
 
 const extractLeadBand = (html: string): string =>

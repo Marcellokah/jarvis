@@ -10,6 +10,7 @@ const empty = {
   awakenings: NINCS,
   tiles: [],
   analysis: undefined,
+  earlier: [],
 };
 
 /** Csak az „Alvás lefedettsége" sáv törzse — a fázistábla dead sávjai nem

@@ -346,3 +346,87 @@ describe("területi útvonalak", () => {
     expect(res.body).toContain("Nincs rögzített edzés.");
   });
 });
+
+describe("elemzés-előzmény az oldalakon", () => {
+  const ANALIZIS = (domain: string, nap: string, summary: string) => ({
+    createdAt: `2026-08-${nap}T07:00:00.000Z`, domain: domain as never,
+    markdown: `# ${domain} ${nap}`, summary, metrics: "{}",
+  });
+
+  /** Csak az elemzés-sáv — a lap többi része is rendel szöveget. */
+  const elemzesSav = (html: string): string =>
+    /<h2>Elemzés[^<]*<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+
+  it("a korábbi elemzések a saját területükön jelennek meg", async () => {
+    const a = await boot();
+    a.analyses.save(ANALIZIS("physical", "10", "FIZIKAI-RÉGI"));
+    a.analyses.save(ANALIZIS("physical", "20", "FIZIKAI-ÚJ"));
+    const sav = elemzesSav((await get(a, "/terulet/terheles")).body);
+    expect(sav).toContain("1 korábbi elemzés");
+    expect(sav).toContain("FIZIKAI-RÉGI");
+  });
+
+  it("a legfrissebb nem jelenik meg kétszer", async () => {
+    // A sávban a markdownja van; az előzményben nem szabad ott lennie.
+    const a = await boot();
+    a.analyses.save(ANALIZIS("physical", "10", "RÉGI-ÖSSZEFOGLALÓ"));
+    a.analyses.save(ANALIZIS("physical", "20", "LEGFRISSEBB-ÖSSZEFOGLALÓ"));
+    const sav = elemzesSav((await get(a, "/terulet/terheles")).body);
+    expect(sav).not.toContain("LEGFRISSEBB-ÖSSZEFOGLALÓ");
+    expect(sav).toContain("RÉGI-ÖSSZEFOGLALÓ");
+  });
+
+  it("nem szivárog át másik terület előzménye", async () => {
+    // Két domain, hogy a keresztbe-szivárgás kiderüljön.
+    const a = await boot();
+    a.analyses.save(ANALIZIS("physical", "10", "FIZIKAI-RÉGI"));
+    a.analyses.save(ANALIZIS("physical", "20", "FIZIKAI-ÚJ"));
+    a.analyses.save(ANALIZIS("finance", "11", "PÉNZ-RÉGI"));
+    a.analyses.save(ANALIZIS("finance", "21", "PÉNZ-ÚJ"));
+    const terheles = elemzesSav((await get(a, "/terulet/terheles")).body);
+    expect(terheles).toContain("FIZIKAI-RÉGI");
+    expect(terheles).not.toContain("PÉNZ-RÉGI");
+  });
+
+  it("egyetlen elemzésnél nincs előzmény-doboz", async () => {
+    const a = await boot();
+    a.analyses.save(ANALIZIS("recovery", "20", "EGYETLEN"));
+    expect(elemzesSav((await get(a, "/terulet/regeneracio")).body))
+      .not.toContain("<details");
+  });
+
+  it("a hub az Összegzés korábbi darabjait mutatja", async () => {
+    const a = await boot();
+    a.analyses.save(ANALIZIS("synthesis", "10", "ÖSSZKÉP-RÉGI"));
+    a.analyses.save(ANALIZIS("synthesis", "20", "ÖSSZKÉP-ÚJ"));
+    const body = (await get(a, "/terulet")).body;
+    expect(body).toContain("1 korábbi elemzés");
+    expect(body).toContain("ÖSSZKÉP-RÉGI");
+  });
+
+  it("a hibázó elemzés-lekérdezés nem viszi el a lapot", async () => {
+    const a = await boot();
+    (a.analyses as unknown as { recent: () => never }).recent = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a, "/terulet/terheles");
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Terhelési arány");
+  });
+
+  // Beyond the brief: ELOZMENY_LEKERES (6 = 5 shown + 1 filtered) is a
+  // routing constant separate from frame.ts's own ELOZMENY_MAX=5 cap, and
+  // no brief test exercises it — every brief fixture uses only two rows.
+  // Six saved rows means the oldest survives only if the route fetches at
+  // least six; fetching fewer (e.g. 5) would silently drop it and the
+  // count would read "4" instead of "5".
+  it("hat mentett elemzésből mind az öt megjelenítendő korábbi látszik", async () => {
+    const a = await boot();
+    for (const nap of ["10", "20", "30", "40", "50", "60"]) {
+      a.analyses.save(ANALIZIS("physical", nap, `FIZIKAI-${nap}`));
+    }
+    const sav = elemzesSav((await get(a, "/terulet/terheles")).body);
+    expect(sav).toContain("5 korábbi elemzés");
+    expect(sav).toContain("FIZIKAI-10");
+  });
+});
