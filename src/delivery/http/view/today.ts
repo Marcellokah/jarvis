@@ -1,8 +1,12 @@
 import { escapeHtml, renderMarkdown } from "../markdown.ts";
 import type { ChannelReading } from "./channels.ts";
 import { actionsBody, errorBand, type ActionsData } from "./actions.ts";
+import { greetingBand, type GreetingData, type HighlightInput } from "./greeting.ts";
 
 export interface TodayData {
+  greeting: GreetingData;
+  /** Null when the aggregate could not be built — the greeting still shows. */
+  highlight: HighlightInput | null;
   briefMarkdown: string | null;
   readings: readonly ChannelReading[];
   /**
@@ -48,6 +52,7 @@ export function todayBody(data: TodayData): string {
     : `<p class="halk">A mai sor ${escapeHtml(data.writtenAge)} íródott.</p>`;
 
   return [
+    greetingBand(data.greeting, data.highlight),
     errorBand(data.hibaKod),
     `<section><h2>Briefing</h2>${brief}</section>`,
     `<section><h2>A mai nap</h2>${stale}${written}`,

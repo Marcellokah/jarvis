@@ -92,6 +92,13 @@ export interface ShellInputs {
   readings: readonly ChannelReading[];
   /** The latest analysis per domain: one read for the lamp and the band alike. */
   analyses: AnalysisRow[];
+  /**
+   * Today's row, or undefined when there is none.
+   *
+   * Already computed here for the readings and the freshness line; exposed so
+   * the Ma page can build its highlight from it without a second read.
+   */
+  snapshot: HealthSnapshot | undefined;
 }
 
 /**
@@ -172,6 +179,7 @@ export async function shellInputs(deps: PageDeps, now: Date): Promise<ShellInput
     lastSeen,
     readings,
     analyses,
+    snapshot,
   };
 }
 

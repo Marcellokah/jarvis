@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { todayBody, type TodayData } from "../../src/delivery/http/view/today.ts";
 
 const base: TodayData = {
+  greeting: { hour: 8, name: "" },
+  highlight: null,
   briefMarkdown: "## Nap\n- [ ] Ebéd kivétele",
   readings: [],
   lastSeen: null,

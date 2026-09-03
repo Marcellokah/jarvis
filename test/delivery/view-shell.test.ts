@@ -177,3 +177,25 @@ describe("navigáció a területekkel", () => {
     expect(/min-width:\s*46rem\s*\)\s*\{[\s\S]*\.almenu \{[^}]*display:\s*block/.test(STYLE)).toBe(true);
   });
 });
+
+describe("oldalkeret — a Ma oldal törzs/állapotsáv sorrendje", () => {
+  // F6: a Ma oldal törzse a köszönéssel kezdődik (view/greeting.ts), és annak
+  // a dátumsáv elé kell kerülnie — ld. `page.test.ts`, "a köszönés a lap
+  // legelső eleme". A törzs és az `.allapot` sáv sorrendjét itt közvetlenül
+  // rögzítjük, mert a stíluslap maga is tartalmazza mindkét class nevet
+  // szó szerint (`.allapot { … }`, `.koszones { … }` theme.ts-ben), ezért a
+  // bare "allapot"/"koszones" substring önmagában nem bizonyítana semmit —
+  // csak a tényleges elemek (`<div class="allapot">`, illetve itt a törzs
+  // szó szerinti szövege) sorrendje számít.
+  it("a Ma oldalon a törzs — vele a köszönés — megelőzi az állapotsávot", () => {
+    const html = layout(base);
+    expect(html.indexOf("<p>törzs</p>")).toBeLessThan(html.indexOf('<div class="allapot">'));
+  });
+
+  it("minden más oldalon az állapotsáv marad elöl", () => {
+    for (const section of ["terulet", "szamok", "kerdes"] as const) {
+      const html = layout({ ...base, section });
+      expect(html.indexOf('<div class="allapot">'), section).toBeLessThan(html.indexOf("<p>törzs</p>"));
+    }
+  });
+});

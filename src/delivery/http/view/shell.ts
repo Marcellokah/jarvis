@@ -138,6 +138,12 @@ function statusStrip(data: ShellData): string {
 }
 
 export function layout(data: ShellData): string {
+  const strip = statusStrip(data);
+  // On the Ma page the greeting (the body's own first element) is meant to
+  // be the very first thing the owner reads every morning — before even the
+  // date. Every other page keeps the status strip up top, right under the
+  // nav, because there the body has no such opening line of its own.
+  const main = data.section === "ma" ? [data.body, strip] : [strip, data.body];
   return [
     "<!doctype html>",
     `<html lang="hu"><head><meta charset="utf-8">`,
@@ -150,8 +156,7 @@ export function layout(data: ShellData): string {
     `<script>${SCRUB_SCRIPT}</script></head><body>`,
     nav(data),
     `<main class="lap">`,
-    statusStrip(data),
-    data.body,
+    ...main,
     "</main></body></html>",
   ].join("");
 }

@@ -14,6 +14,8 @@ import { sparkline } from "../view/chart/sparkline.ts";
 import { plot } from "../view/chart/plot.ts";
 import { detailBody, parseRange } from "../view/chart/detail.ts";
 import { dayWords, render, shellInputs, type PageDeps } from "./page-shell.ts";
+import type { HighlightInput } from "../view/greeting.ts";
+import { config } from "../../../../config/config.ts";
 
 /**
  * The day plus the clock time, worded the way the rest of the page speaks.
@@ -86,7 +88,25 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "page rendered without its undoable writes");
     }
 
+    // The highlight needs baselines, which only the aggregate has. Its own
+    // try/catch: a failing aggregate must drop the sentence, never the
+    // greeting — and never the page. This is the first time the Ma page
+    // builds an aggregate; the Számok and area pages already do.
+    let highlight: HighlightInput | null = null;
+    try {
+      const m = deps.metrics();
+      highlight = {
+        hrvDeviation: m.recovery.hrvDeviation,
+        todaySteps: inputs.snapshot?.steps ?? null,
+        steps28: m.physical.steps.d28,
+      };
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "today page rendered without its highlight");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("ma", inputs, todayBody({
+      greeting: { hour: Number(isoTime(now, TZ).slice(0, 2)), name: config.owner.name },
+      highlight,
       briefMarkdown: inputs.briefMarkdown,
       readings: inputs.readings,
       lastSeen: inputs.lastSeen,

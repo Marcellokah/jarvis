@@ -957,3 +957,62 @@ describe("Ma oldal — teendők", () => {
     await a.close();
   });
 });
+
+describe("Ma oldal — köszönés", () => {
+  const boot = (now: string) => buildTestApp({
+    modules: [stubModule({ name: "Teszt" })], now,
+  });
+  const get = (a: Awaited<ReturnType<typeof boot>>) =>
+    a.server.inject({ method: "GET", url: "/", headers: { authorization: `Bearer ${TEST_TOKEN}` } });
+
+  it("a köszönés a lap legelső eleme", async () => {
+    // Ez az, amit reggel elsőként lát — a dátum előtt.
+    const a = await boot("2026-09-03T06:00:00.000Z"); // 08:00 Budapesten
+    const body = (await get(a)).body;
+    expect(body).toContain("Jó reggelt");
+    // Bare "koszones"/"allapot" substrings also match the embedded
+    // stylesheet's own `.koszones`/`.allapot` selectors in <head>, which
+    // always precede <body> regardless of how the two are ordered inside
+    // <main> — so the comparison has to anchor on the actual elements.
+    expect(body.indexOf('<section class="koszones">'))
+      .toBeLessThan(body.indexOf('<div class="allapot">'));
+    await a.close();
+  });
+
+  it("a napszakot a helyi idő adja, nem az UTC", async () => {
+    // 20:00 UTC = 22:00 Budapesten (CEST, UTC+2). A `greeting()` óránkénti
+    // sávjai 22-től "Jó éjt"-et adnak, 18–21 közt "Szép estét"-et — a két
+    // órázás itt tényleg két KÜLÖNBÖZŐ szót ad, nem csak elvileg különbözik.
+    // (22:00 UTC = 00:00 Budapesten volt az eredeti próba, de az mindkét
+    // órázással "Jó éjt"-et ad — 0 a "h < 4" ágba esik, 22 pedig az utolsó,
+    // "else" ágba, ami szintén "Jó éjt": a hibát véletlenül nem fogta volna
+    // meg egyik mutáció sem.)
+    const a = await boot("2026-09-03T20:00:00.000Z");
+    const body = (await get(a)).body;
+    expect(body).toContain("Jó éjt");
+    expect(body).not.toContain("Szép estét");
+    await a.close();
+  });
+
+  it("mérés nélkül is köszön", async () => {
+    // A köszönés soha nem múlik adaton.
+    const a = await boot("2026-09-03T06:00:00.000Z");
+    const body = (await get(a)).body;
+    expect(body).toContain("Jó reggelt");
+    expect(body).not.toContain('class="mondat"');
+    await a.close();
+  });
+
+  it("a hibázó aggregátum nem viszi el a köszönést", async () => {
+    const a = await boot("2026-09-03T06:00:00.000Z");
+    // A metrics() a szerver saját closure-je; a legegyszerűbb hibaforrás a
+    // health repó, amin keresztül épül.
+    (a.health as unknown as { between: () => never }).between = () => {
+      throw new Error("szándékos hiba");
+    };
+    const res = await get(a);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("Jó reggelt");
+    await a.close();
+  });
+});

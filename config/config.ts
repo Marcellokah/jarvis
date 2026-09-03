@@ -11,6 +11,15 @@ export interface ModuleToggle {
 }
 
 export const config = {
+  /**
+   * Who the pages greet.
+   *
+   * Empty by default on purpose: the repository is private, but a personal
+   * name still does not belong in code. The greeting works without it — it
+   * simply drops the name rather than leaving a dangling comma.
+   */
+  owner: { name: "" },
+
   modules: {
     HealthAndMealPrep: {
       enabled: true,
