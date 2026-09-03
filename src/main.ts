@@ -57,6 +57,7 @@ const server = await buildServer({
   runner: app.runner,
   clock: app.clock,
   logger: app.logger,
+  ownerName: config.owner.name,
 });
 
 // Long polling from two processes makes Telegram return 409 and both start

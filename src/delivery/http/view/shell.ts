@@ -54,6 +54,15 @@ export interface ShellData {
    */
   path?: string;
   body: string;
+  /**
+   * Rendered before the status strip, on the Ma page only — where the
+   * greeting band lives (`view/greeting.ts`'s `greetingBand`), so it is the
+   * very first thing the owner reads, above even the strip's own alarm
+   * locus (`.elmaradt`, `--riado`; see `theme.ts`). Every other section
+   * ignores this field: their body has no opening line of its own, so the
+   * strip leads there as it always has.
+   */
+  lead?: string;
 }
 
 /**
@@ -139,11 +148,18 @@ function statusStrip(data: ShellData): string {
 
 export function layout(data: ShellData): string {
   const strip = statusStrip(data);
-  // On the Ma page the greeting (the body's own first element) is meant to
-  // be the very first thing the owner reads every morning — before even the
-  // date. Every other page keeps the status strip up top, right under the
-  // nav, because there the body has no such opening line of its own.
-  const main = data.section === "ma" ? [data.body, strip] : [strip, data.body];
+  // On the Ma page the greeting is meant to be the very first thing the
+  // owner reads every morning — before even the date. It does NOT push the
+  // strip down with it: the strip carries this page's one alarm locus (the
+  // `.elmaradt` span, `--riado` — see `theme.ts`'s header comment), and
+  // burying that below the briefing, the channel rows and the todo band
+  // would put the whole page's single alarm below the fold on the one
+  // morning it actually fires. So the shape is greeting, then strip, then
+  // everything else. Every other page has no opening line of its own
+  // (`lead` stays unset there), so the strip simply leads as it always has.
+  const main = data.section === "ma"
+    ? [data.lead ?? "", strip, data.body]
+    : [strip, data.body];
   return [
     "<!doctype html>",
     `<html lang="hu"><head><meta charset="utf-8">`,

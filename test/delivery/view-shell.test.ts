@@ -178,24 +178,31 @@ describe("navigáció a területekkel", () => {
   });
 });
 
-describe("oldalkeret — a Ma oldal törzs/állapotsáv sorrendje", () => {
-  // F6: a Ma oldal törzse a köszönéssel kezdődik (view/greeting.ts), és annak
-  // a dátumsáv elé kell kerülnie — ld. `page.test.ts`, "a köszönés a lap
-  // legelső eleme". A törzs és az `.allapot` sáv sorrendjét itt közvetlenül
-  // rögzítjük, mert a stíluslap maga is tartalmazza mindkét class nevet
-  // szó szerint (`.allapot { … }`, `.koszones { … }` theme.ts-ben), ezért a
-  // bare "allapot"/"koszones" substring önmagában nem bizonyítana semmit —
-  // csak a tényleges elemek (`<div class="allapot">`, illetve itt a törzs
-  // szó szerinti szövege) sorrendje számít.
-  it("a Ma oldalon a törzs — vele a köszönés — megelőzi az állapotsávot", () => {
-    const html = layout(base);
-    expect(html.indexOf("<p>törzs</p>")).toBeLessThan(html.indexOf('<div class="allapot">'));
+describe("oldalkeret — a Ma oldal köszönés/állapotsáv/törzs sorrendje", () => {
+  // F6: a Ma oldal a köszönéssel kezdődik (view/greeting.ts, `greetingBand`),
+  // ami az állapotsáv ELÉ kerül — nem a törzs egészébe ágyazva, ami a sáv
+  // MÖGÉ vitte volna. A sáv az egyetlen `--riado` lokusz (a `.elmaradt`
+  // span), tehát a törzs többi eleme (briefing, csatornák, teendők) nem
+  // szoríthatja a hajtás alá. Lásd `page.test.ts`, "a köszönés a lap legelső
+  // eleme".
+  //
+  // A sorrendet itt közvetlenül a `lead`/`body` mezőkön keresztül rögzítjük,
+  // mert a stíluslap maga is tartalmazza mindhárom class nevet szó szerint
+  // (`.allapot { … }`, `.koszones { … }` theme.ts-ben), ezért a bare
+  // "allapot"/"koszones" substring önmagában nem bizonyítana semmit — csak a
+  // tényleges elemek (`<div class="allapot">`, illetve itt a lead/törzs saját
+  // szövege) sorrendje számít.
+  it("a Ma oldalon a lead (köszönés) megelőzi az állapotsávot, ami megelőzi a törzs többi részét", () => {
+    const html = layout({ ...base, lead: "<p>köszönés</p>" });
+    expect(html.indexOf("<p>köszönés</p>")).toBeLessThan(html.indexOf('<div class="allapot">'));
+    expect(html.indexOf('<div class="allapot">')).toBeLessThan(html.indexOf("<p>törzs</p>"));
   });
 
-  it("minden más oldalon az állapotsáv marad elöl", () => {
+  it("minden más oldalon az állapotsáv marad elöl, és a lead figyelmen kívül marad", () => {
     for (const section of ["terulet", "szamok", "kerdes"] as const) {
-      const html = layout({ ...base, section });
+      const html = layout({ ...base, section, lead: "<p>köszönés</p>" });
       expect(html.indexOf('<div class="allapot">'), section).toBeLessThan(html.indexOf("<p>törzs</p>"));
+      expect(html, section).not.toContain("<p>köszönés</p>");
     }
   });
 });

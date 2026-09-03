@@ -981,16 +981,16 @@ describe("Ma oldal — köszönés", () => {
 
   it("a napszakot a helyi idő adja, nem az UTC", async () => {
     // 20:00 UTC = 22:00 Budapesten (CEST, UTC+2). A `greeting()` óránkénti
-    // sávjai 22-től "Jó éjt"-et adnak, 18–21 közt "Szép estét"-et — a két
-    // órázás itt tényleg két KÜLÖNBÖZŐ szót ad, nem csak elvileg különbözik.
+    // sávjai 22-től "Szia"-t adnak, 18–21 közt "Jó estét"-et — a két órázás
+    // itt tényleg két KÜLÖNBÖZŐ szót ad, nem csak elvileg különbözik.
     // (22:00 UTC = 00:00 Budapesten volt az eredeti próba, de az mindkét
-    // órázással "Jó éjt"-et ad — 0 a "h < 4" ágba esik, 22 pedig az utolsó,
-    // "else" ágba, ami szintén "Jó éjt": a hibát véletlenül nem fogta volna
+    // órázással "Szia"-t ad — 0 a "h < 4" ágba esik, 22 pedig az utolsó,
+    // "else" ágba, ami szintén "Szia": a hibát véletlenül nem fogta volna
     // meg egyik mutáció sem.)
     const a = await boot("2026-09-03T20:00:00.000Z");
     const body = (await get(a)).body;
-    expect(body).toContain("Jó éjt");
-    expect(body).not.toContain("Szép estét");
+    expect(body).toContain("Szia");
+    expect(body).not.toContain("Jó estét");
     await a.close();
   });
 
@@ -1000,6 +1000,22 @@ describe("Ma oldal — köszönés", () => {
     const body = (await get(a)).body;
     expect(body).toContain("Jó reggelt");
     expect(body).not.toContain('class="mondat"');
+    await a.close();
+  });
+
+  it("a beállított tulajdonosnévvel köszön", async () => {
+    // M7: a route korábban a `config` szingletont olvasta közvetlenül
+    // (`config.owner.name`) — egy teszt, ami csak a `PageDeps`-et
+    // befolyásolja, ezt sosem tudta volna vezérelni, tehát a nevet mutató
+    // olvasás kimutatás nélkül maradt. `ownerName` most a `PageDeps`
+    // (`buildTestApp` → `ServerDeps` → `PageDeps`) saját mezője.
+    const a = await buildTestApp({
+      modules: [stubModule({ name: "Teszt" })],
+      now: "2026-09-03T06:00:00.000Z",
+      ownerName: "Marcell",
+    });
+    const body = (await get(a)).body;
+    expect(body).toContain("Jó reggelt, Marcell!");
     await a.close();
   });
 

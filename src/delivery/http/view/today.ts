@@ -1,12 +1,8 @@
 import { escapeHtml, renderMarkdown } from "../markdown.ts";
 import type { ChannelReading } from "./channels.ts";
 import { actionsBody, errorBand, type ActionsData } from "./actions.ts";
-import { greetingBand, type GreetingData, type HighlightInput } from "./greeting.ts";
 
 export interface TodayData {
-  greeting: GreetingData;
-  /** Null when the aggregate could not be built — the greeting still shows. */
-  highlight: HighlightInput | null;
   briefMarkdown: string | null;
   readings: readonly ChannelReading[];
   /**
@@ -33,6 +29,18 @@ function channelRow(r: ChannelReading): string {
   ].join("");
 }
 
+/**
+ * The rest of the Ma page's body — everything AFTER the greeting.
+ *
+ * The greeting band (`view/greeting.ts`'s `greetingBand`) used to be this
+ * function's own first element, but the shell renders the whole of `body`
+ * after its status strip (`layout()` in `view/shell.ts`), which buried the
+ * greeting's neighbour — the strip's own `.elmaradt`/`--riado` alarm —
+ * below the briefing, the channel rows and the todo band. The route now
+ * builds the greeting band itself and passes it to `render()` as a separate
+ * `lead`, ahead of the strip; this function no longer needs the greeting's
+ * own inputs at all.
+ */
 export function todayBody(data: TodayData): string {
   // Empty-after-trim counts as absent: an empty "Briefing" heading with
   // nothing under it is missing data that does not look missing.
@@ -52,7 +60,6 @@ export function todayBody(data: TodayData): string {
     : `<p class="halk">A mai sor ${escapeHtml(data.writtenAge)} íródott.</p>`;
 
   return [
-    greetingBand(data.greeting, data.highlight),
     errorBand(data.hibaKod),
     `<section><h2>Briefing</h2>${brief}</section>`,
     `<section><h2>A mai nap</h2>${stale}${written}`,

@@ -114,6 +114,8 @@ export async function buildTestApp(options: {
   freshnessMinutes?: number;
   maxWaitSeconds?: number;
   logger?: Logger;
+  /** Defaults to "", matching `config.owner.name`'s own empty default. */
+  ownerName?: string;
 }): Promise<TestApp> {
   const db = memoryDb();
   let current = new Date(options.now);
@@ -179,6 +181,7 @@ export async function buildTestApp(options: {
     token: TEST_TOKEN, briefs, proposals, actions, chat, health, analyses, conversations,
     workouts, meals, subscriptions, metrics, modules: options.modules,
     runner, clock, logger: options.logger ?? silentLogger(),
+    ownerName: options.ownerName ?? "",
   });
 
   let closed = false;

@@ -1,7 +1,7 @@
 /** Every design token, checked by the theme test against both schemes. */
 export const TOKEN_NAMES = [
   "--hatter", "--lap", "--racs", "--szoveg", "--halvany",
-  "--jel", "--jel-halk", "--vaz", "--riado",
+  "--jel", "--jel-halk", "--vaz", "--riado", "--cimszin",
 ] as const;
 
 /**
@@ -24,6 +24,13 @@ export const STYLE = `
   --szoveg: #DCE3EE; --halvany: #6C7891;
   --jel: #FFA23C; --jel-halk: rgba(255,162,60,.18);
   --vaz: #4B7A8C; --riado: #FF3D7F;
+  /*
+   * Heading colour, h2 only — see the rule below for the contrast numbers
+   * this value was picked from. Neither --vaz (chrome) nor --halvany
+   * (faint/absent) alone clears WCAG AA on both schemes at h2's size, so
+   * this is its own token rather than a reuse of either.
+   */
+  --cimszin: #4F8093;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --text: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -33,6 +40,7 @@ export const STYLE = `
     --szoveg: #0E131C; --halvany: #626D80;
     --jel: #A85400; --jel-halk: rgba(168,84,0,.14);
     --vaz: #2C5766; --riado: #C1004E;
+    --cimszin: #2C5766;
   }
 }
 * { box-sizing: border-box; }
@@ -84,8 +92,16 @@ nav.fomenu a.menu.jelzo.el::after { background: var(--jel); }
 /* ---- próza ---- */
 section { margin-bottom: 2.75rem; }
 section > :first-child { margin-top: 0; }
+/*
+ * --cimszin, not --halvany: --halvany reads as 4.49:1 on dark and 4.41:1 on
+ * light (against --hatter) — the dark figure just clears WCAG AA at 4.5:1
+ * for this size, the light one does not. --cimszin (#4F8093 dark, --vaz's
+ * own #2C5766 on light) reads 4.59:1 dark and 6.66:1 light — both
+ * comfortably above 4.5:1. See test/delivery/view-theme.test.ts for the
+ * numbers pinned as a test.
+ */
 h2 { font: 600 .72rem/1.8 var(--mono); letter-spacing: .2em; text-transform: uppercase;
-  color: var(--halvany); margin: 0 0 .9rem; }
+  color: var(--cimszin); margin: 0 0 .9rem; }
 h3 { font: 600 .7rem/1.8 var(--mono); letter-spacing: .16em; text-transform: uppercase;
   color: var(--szoveg); margin: 2.2rem 0 .6rem; padding-top: 1rem;
   border-top: 1px solid var(--racs); }

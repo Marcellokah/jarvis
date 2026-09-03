@@ -41,6 +41,8 @@ export interface ServerDeps {
   runner: RunnerDeps;
   clock: Clock;
   logger: Logger;
+  /** The owner's name for the Ma page's greeting — see `PageDeps.ownerName`. */
+  ownerName: string;
 }
 
 /**
@@ -199,6 +201,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     workouts: deps.workouts, meals: deps.meals, subscriptions: deps.subscriptions,
     metrics: deps.metrics, clock: deps.clock, logger: deps.logger,
     actions: deps.actions, proposals: deps.proposals, modules: deps.modules,
+    ownerName: deps.ownerName,
   };
   registerPageRoutes(app, pageDeps);
   registerAreaRoutes(app, pageDeps);

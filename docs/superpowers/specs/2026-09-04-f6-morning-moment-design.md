@@ -46,9 +46,14 @@ ez a projekt egyik alapszabálya.
 
 A Ma oldal legelső eleme, az állapotsáv fölött.
 
-- **Napszak szerint**: hajnal (04–07), reggel (07–10), délelőtt (10–12),
-  délután (12–18), este (18–22), éjszaka (22–04). A határok a `Clock`-ból
-  jövő időből, Europe/Budapest szerint.
+- **Napszak szerint, négy sávban**: reggel (04–10, „Jó reggelt"), nap
+  (10–18, „Jó napot"), este (18–22, „Jó estét"), éjszaka (22–04, „Szia"). A
+  határok a `Clock`-ból jövő időből, Europe/Budapest szerint.
+- **Az éjszakai sáv „Szia", nem köszönés-forma.** A magyarban nincs
+  éjszakai KÖSZÖNÉS — „Jó éjszakát"/„Jó éjt" azt mondja a beszélő, aki
+  ELMEGY, nem aki érkezik. Mivel az oldal megnyitása mindig érkezés, a
+  semleges „Szia" tölti ki ezt a rést, minden más óránál a rendes forma
+  marad.
 - **Néven szólít**, ha van név: „Jó reggelt, Marcell." Ha nincs, ugyanaz név
   nélkül: „Jó reggelt." A név a `config/config.ts`-ben él, mert az a
   kapcsolótábla — és **üres alapértékkel**, hogy a repó ne hordozzon személyes
@@ -137,9 +142,9 @@ név mindig megvan.
 
 ## Ellenőrzés
 
-- a hat napszak-határ mindegyike a helyes köszönést adja, és a határokon
-  (04:00, 07:00, 10:00, 12:00, 18:00, 22:00) is — a teszt mind a hat átmenetet
-  a percére állítja;
+- a négy napszak-határ mindegyike a helyes köszönést adja, és a határokon
+  (04:00, 10:00, 18:00, 22:00) is — a teszt mind a négy átmenetet a percére
+  állítja;
 - név nélkül a köszönés vessző és név nélkül áll, nem „Jó reggelt, ."-tal;
 - a név escape-elve jelenik meg (konfigból jön, de akkor is);
 - **a három kiemelés-szabály mindegyike a saját feltételére szólal meg**, és a
@@ -173,3 +178,14 @@ név mindig megvan.
    lapon egy ismételt üdvözlés zajjá válna.
 6. **A `h2` kontrasztja nő.** A cím szerkezet, nem adat — a „ami nincs mérve,
    annak nincs színe" szabály rá nem vonatkozik.
+7. **A napszak eredetileg hat sávban élt, kettő közülük búcsúval — ez
+   javítva lett, négy sávra.** A „Szép napot" (10–12) és a „Jó éjt" (22–04)
+   magyarul azt mondja, aki ELMEGY, nem aki köszön: „legyen szép napod
+   [még hátralévő része]", illetve „aludj jól". Mivel a köszönés pontosan
+   azon a pillanaton szólal meg, amikor a tulajdonos MEGNYITJA az oldalt,
+   mindkettő búcsúként olvasható az érkezés első sorában — pont az
+   ellenkezője annak, amit egy „dopamin bomba" nyitósor akar. A javítás
+   négy sávra vonta össze a hatot (04–10 „Jó reggelt", 10–18 „Jó napot",
+   18–22 „Jó estét", 22–04 „Szia"), és az éjszakai sávnak szándékosan nem
+   ad valódi köszönés-formát: a magyarban nincs egy, mert az egyetlen
+   kandidát („Jó éjszakát") is búcsú — a semleges „Szia" tölti ki a rést.

@@ -14,8 +14,7 @@ import { sparkline } from "../view/chart/sparkline.ts";
 import { plot } from "../view/chart/plot.ts";
 import { detailBody, parseRange } from "../view/chart/detail.ts";
 import { dayWords, render, shellInputs, type PageDeps } from "./page-shell.ts";
-import type { HighlightInput } from "../view/greeting.ts";
-import { config } from "../../../../config/config.ts";
+import { greetingBand, type HighlightInput } from "../view/greeting.ts";
 
 /**
  * The day plus the clock time, worded the way the rest of the page speaks.
@@ -104,16 +103,23 @@ export function registerPageRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "today page rendered without its highlight");
     }
 
-    return reply.type("text/html; charset=utf-8").send(render("ma", inputs, todayBody({
-      greeting: { hour: Number(isoTime(now, TZ).slice(0, 2)), name: config.owner.name },
+    // Built here, not inside `todayBody`, so it can go to `render()` as its
+    // own `lead` — above the status strip — rather than as `todayBody`'s
+    // first element, which the shell would render below the strip along
+    // with everything else (see `layout()` in `view/shell.ts`).
+    const lead = greetingBand(
+      { hour: Number(isoTime(now, TZ).slice(0, 2)), name: deps.ownerName },
       highlight,
+    );
+
+    return reply.type("text/html; charset=utf-8").send(render("ma", inputs, todayBody({
       briefMarkdown: inputs.briefMarkdown,
       readings: inputs.readings,
       lastSeen: inputs.lastSeen,
       writtenAge: inputs.writtenAge,
       hibaKod: request.query.hiba,
       actions: { napok, undoable },
-    })));
+    }), undefined, lead));
   });
 
   app.get("/szamok", async (_request, reply) => {

@@ -43,6 +43,16 @@ export interface PageDeps {
   metrics: () => Metrics;
   clock: Clock;
   logger: Logger;
+  /**
+   * The owner's name for the Ma page's greeting, or "" when none is
+   * configured (`config.owner.name`'s own default — see its doc comment).
+   *
+   * Threaded through here rather than read from `config` inside the route,
+   * the way every other page input arrives: a route reading a module-level
+   * singleton directly is invisible to a test that only controls `PageDeps`,
+   * so mutating the read away would leave the whole suite green.
+   */
+  ownerName: string;
 }
 
 /** "2 órája" — a brief kora emberi szavakkal, vagy null, ha nem olvasható. */
@@ -189,8 +199,15 @@ export async function shellInputs(deps: PageDeps, now: Date): Promise<ShellInput
  * `path` is optional and only the six area routes currently pass it — see
  * `ShellData.path` for why it exists: without it, every area page would mark
  * the hub link as current rather than its own submenu link.
+ *
+ * `lead` is optional and only the Ma route currently passes it — see
+ * `ShellData.lead` for why: it renders above the status strip, instead of
+ * being folded into `body` where it would render below the strip along with
+ * everything else.
  */
-export function render(section: Section, inputs: ShellInputs, body: string, path?: string): string {
+export function render(
+  section: Section, inputs: ShellInputs, body: string, path?: string, lead?: string,
+): string {
   return layout({
     section,
     dateLabel: inputs.dateLabel,
@@ -199,5 +216,6 @@ export function render(section: Section, inputs: ShellInputs, body: string, path
     nav: inputs.nav,
     path,
     body,
+    lead,
   });
 }

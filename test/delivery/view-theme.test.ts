@@ -134,6 +134,37 @@ describe("téma", () => {
     expect(hits, `puszta nav szelektor(ok): ${JSON.stringify(hits)}`).toEqual([]);
   });
 
+  it("a h2 a --cimszin tokent használja, és az WCAG AA fölött van mindkét sémában", () => {
+    // M9: a h2 korábban `--vaz`-t, majd (F6 alatt) `--halvany`-t használt.
+    // `--halvany` 4.49:1-re javította a sötét sémát, de 4.41:1-re rontotta a
+    // világosat (6.66:1-ről) — WCAG AA ehhez a betűmérethez 4.5:1-et kíván,
+    // tehát egyik séma sem felelt meg utána. A visszaállítás `--vaz`-ra zöld
+    // maradt volna a teszttel, mert semmi nem pinnelte le sem a tényleges
+    // színt, sem a kontrasztot — ez a teszt mindkettőt teszi.
+    expect(/h2\s*\{[^}]*color:\s*var\(--cimszin\)/.test(STYLE)).toBe(true);
+
+    const root = /:root\s*\{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
+    const light = /prefers-color-scheme:\s*light\s*\)\s*\{\s*:root\s*\{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
+
+    const hex = (css: string, token: string): string => {
+      const m = new RegExp(`${token}:\\s*(#[0-9A-Fa-f]{6})`).exec(css);
+      if (m === null) throw new Error(`token not found: ${token}`);
+      return m[1]!;
+    };
+    const luminance = (h: string): number => {
+      const lin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      const r = parseInt(h.slice(1, 3), 16), g = parseInt(h.slice(3, 5), 16), b = parseInt(h.slice(5, 7), 16);
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    };
+    const contrast = (a: string, b: string): number => {
+      const pair = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+      return (pair[0] + 0.05) / (pair[1] + 0.05);
+    };
+
+    expect(contrast(hex(root, "--cimszin"), hex(root, "--hatter"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hex(light, "--cimszin"), hex(light, "--hatter"))).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("a .tartomanyok és a .lapozo navnak van saját szabálya", () => {
     // A mérésrészlet oldal tartomány-választója soha nem kapott saját
     // stílust — a böngésző alapértelmezett kék, aláhúzott linkjeivel jelent
