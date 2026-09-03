@@ -79,4 +79,114 @@ describe("Táplálkozás oldal", () => {
     expect(html).not.toContain("<img src=x>");
     expect(html).toContain("&lt;img");
   });
+
+  it("az étkezések fejlécét mutatja az étrendtáblában", () => {
+    const html = nutritionBody({
+      ...empty,
+      plan: [m(1, "reggeli", "Kenyér", { kcal: 100, proteinG: 5 })],
+    });
+    expect(html).toContain("Reggeli");
+    expect(html).toContain("Ebéd");
+    expect(html).toContain("Vacsora");
+  });
+
+  it("a hét különböző napjait helyes napneven mutatja", () => {
+    // Teszteljük, hogy a hétfő (weekday=1) az "hétfő" sor alatt jelenik meg,
+    // és a vasárnap (weekday=0) a "vasárnap" sor alatt.
+    const html = nutritionBody({
+      ...empty,
+      plan: [
+        m(1, "reggeli", "Hétfői reggeli", { kcal: 100, proteinG: 5 }),
+        m(0, "reggeli", "Vasárnapi reggeli", { kcal: 100, proteinG: 5 }),
+      ],
+    });
+    // Kell a "Hétfői reggeli" az "hétfő" napon belül
+    const hétfőiIndex = html.indexOf("hétfő");
+    const hétfőiReggelijeIndex = html.indexOf("Hétfői reggeli");
+    expect(hétfőiIndex).toBeGreaterThan(-1);
+    expect(hétfőiReggelijeIndex).toBeGreaterThan(-1);
+    expect(hétfőiReggelijeIndex).toBeGreaterThan(hétfőiIndex);
+
+    // Kell a "Vasárnapi reggeli" a "vasárnap" napon belül
+    const vasárnapi = html.indexOf("vasárnap");
+    const vasarnapiReggelijeIndex = html.indexOf("Vasárnapi reggeli");
+    expect(vasárnapi).toBeGreaterThan(-1);
+    expect(vasarnapiReggelijeIndex).toBeGreaterThan(-1);
+    // A vasárnap utolsó héten van (utolsó sor), úgyhogy a vasárnapi reggeli után az index
+    expect(vasarnapiReggelijeIndex).toBeGreaterThan(vasárnapi);
+  });
+
+  it("a terv és valóság sávban mutatja a tervezett napi kalóriát", () => {
+    const html = nutritionBody({
+      ...empty,
+      plan: [m(1, "reggeli", "Zabkása", { kcal: 550, proteinG: 25 })],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain("Tervezett napi kalória");
+    expect(comparison).toContain("550 kcal");
+    expect(comparison).toContain("a heti étrend 1 teljes napjából");
+  });
+
+  it("a terv és valóság sávban mutatja a mért napi kalóriát és fehérjét", () => {
+    const html = nutritionBody({
+      ...empty,
+      measuredDays: 10,
+      actual: { kcal: 2000, proteinG: 75 },
+      plan: [],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain("Mért napi kalória");
+    expect(comparison).toContain("2 000 kcal");
+    expect(comparison).toContain("Mért napi fehérje");
+    expect(comparison).toContain("75 g");
+    expect(comparison).toContain("10 mért nap átlaga");
+  });
+
+  it("mért érték nélkül halott sornak jelöli a mért kalóriát", () => {
+    const html = nutritionBody({
+      ...empty,
+      measuredDays: 0,
+      actual: { kcal: null, proteinG: null },
+      plan: [],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain('class="dead"');
+    expect(comparison).toContain("Mért napi kalória");
+  });
+
+  it("mért érték nélkül nincs adatot mutat", () => {
+    const html = nutritionBody({
+      ...empty,
+      measuredDays: 0,
+      actual: { kcal: null, proteinG: null },
+      plan: [],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain("nincs adat");
+  });
+
+  it("hiányos terv esetén nincs teljes tervet mutat", () => {
+    // Egy teljes nap és egy részleges nap — csak az egyik számít
+    const html = nutritionBody({
+      ...empty,
+      plan: [
+        m(1, "reggeli", "Zabkása", { kcal: 550, proteinG: 25 }),
+        m(2, "reggeli", "Kávé", { kcal: null, proteinG: null }),
+        m(2, "ebed", "Rizs", { kcal: 600, proteinG: 12 }),
+      ],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain("a heti étrend 1 teljes napjából");
+    expect(comparison).not.toContain("a heti étrend 2");
+  });
+
+  it("üres terv esetén nincs teljes tervet mutat", () => {
+    const html = nutritionBody({
+      ...empty,
+      plan: [],
+      actual: { kcal: null, proteinG: null },
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    expect(comparison).toContain("nincs teljes terv");
+  });
 });

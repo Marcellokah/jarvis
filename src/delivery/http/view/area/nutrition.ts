@@ -46,6 +46,7 @@ function planTable(plan: readonly PlannedMeal[]): string {
   // Weekdays in the order a week is lived, Monday first — the column holds
   // 0..6 with 0 as Sunday, which is the storage order, not the reading order.
   const order = [1, 2, 3, 4, 5, 6, 0];
+  const header = `<tr><td></td>${ETKEZESEK.map(({ label }) => `<td>${label}</td>`).join("")}<td class="ev">Nap</td></tr>`;
   const rows = order.map((weekday, i) => {
     const items = plan.filter((p) => p.weekday === weekday);
     if (items.length === 0) return "";
@@ -65,7 +66,7 @@ function planTable(plan: readonly PlannedMeal[]): string {
     return `<tr class="live" style="--i:${i}"><td>${escapeHtml(NAPOK[weekday]!)}</td>`
       + `${cells}<td class="ev">${total}</td></tr>`;
   }).join("");
-  return `<section><h2>Heti étrend</h2><table>${rows}</table></section>`;
+  return `<section><h2>Heti étrend</h2><table>${header}${rows}</table></section>`;
 }
 
 /**
@@ -74,15 +75,29 @@ function planTable(plan: readonly PlannedMeal[]): string {
  * Reading the comparison is S8's job, once a nutrition analysis exists. This
  * band only puts the planned daily mean next to the measured one and says how
  * many days the measured side rests on.
+ *
+ * The planned row must disclose its sample size too: a mean over a subset
+ * presented under a "weekly plan" label reads as the whole plan's average,
+ * which confidently states the wrong number — the class of missing data this
+ * page has always refused.
  */
 function comparison(d: NutritionData): string {
-  const planned = d.plan.length === 0 ? null : (() => {
+  let plannedValue: number | null = null;
+  let plannedDays = 0;
+  if (d.plan.length > 0) {
     const order = [0, 1, 2, 3, 4, 5, 6];
     const totals = order
       .map((w) => planTotal(d.plan.filter((p) => p.weekday === w), "kcal"))
       .filter((v): v is number => v !== null);
-    return totals.length === 0 ? null : totals.reduce((a, b) => a + b, 0) / totals.length;
-  })();
+    plannedDays = totals.length;
+    if (totals.length > 0) {
+      plannedValue = totals.reduce((a, b) => a + b, 0) / totals.length;
+    }
+  }
+
+  const plannedNote = plannedDays === 0
+    ? "nincs teljes terv"
+    : `a heti étrend ${hu(plannedDays)} teljes napjából`;
 
   const cell = (v: number | null, unit: string) =>
     v === null ? `<span class="halk">nincs adat</span>` : `${hu(v)}${unit}`;
@@ -90,8 +105,8 @@ function comparison(d: NutritionData): string {
   return [
     `<section><h2>Terv és valóság</h2><table>`,
     `<tr class="live" style="--i:0"><td>Tervezett napi kalória</td>`,
-    `<td class="value">${cell(planned, " kcal")}</td>`,
-    `<td class="ev"><span class="note">a heti étrendből</span></td></tr>`,
+    `<td class="value">${cell(plannedValue, " kcal")}</td>`,
+    `<td class="ev"><span class="note">${plannedNote}</span></td></tr>`,
     `<tr class="${d.actual.kcal === null ? "dead" : "live"}" style="--i:1"><td>Mért napi kalória</td>`,
     `<td class="value">${cell(d.actual.kcal, " kcal")}</td>`,
     `<td class="ev"><span class="note">${hu(d.measuredDays)} mért nap átlaga</span></td></tr>`,
