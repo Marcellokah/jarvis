@@ -21,6 +21,7 @@ import { registerActionRoutes } from "./routes/actions.ts";
 import { registerStatusRoutes } from "./routes/status.ts";
 import { registerPageRoutes } from "./routes/page.ts";
 import { registerAreaRoutes } from "./routes/areas.ts";
+import { registerWriteRoutes } from "./routes/writes.ts";
 
 export interface ServerDeps {
   token: string;
@@ -66,6 +67,22 @@ function decodedPath(url: string): string | null {
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+
+  /**
+   * Form bodies, without a dependency.
+   *
+   * Fastify parses JSON and nothing else out of the box: an
+   * `application/x-www-form-urlencoded` POST answers 415 even with an empty
+   * body, which is exactly what a browser sends for a button-only form. This
+   * is `@fastify/formbody`'s whole job, in four lines of built-in
+   * `URLSearchParams` — and this project takes no new runtime dependency.
+   */
+  app.addContentTypeParser(
+    "application/x-www-form-urlencoded", { parseAs: "string" },
+    (_request, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body as string)));
+    },
+  );
 
   // The tailnet is the perimeter, but a Shortcut stuck in a retry loop would
   // still rebuild the brief on every request.
@@ -171,6 +188,9 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     health: deps.health, briefs: deps.briefs, clock: deps.clock, logger: deps.logger,
   });
   registerActionRoutes(app, { proposals: deps.proposals, clock: deps.clock });
+  registerWriteRoutes(app, {
+    proposals: deps.proposals, clock: deps.clock, logger: deps.logger,
+  });
   const pageDeps = {
     briefs: deps.briefs, chat: deps.chat, analyses: deps.analyses,
     conversations: deps.conversations, health: deps.health,

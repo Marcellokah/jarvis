@@ -66,7 +66,7 @@ import { createBriefService, type BriefService } from "../src/core/brief-service
 import { templateSynthesizer } from "../src/core/synthesis/template.ts";
 import type { Synthesizer } from "../src/core/synthesis/synthesizer.ts";
 import type { RunnerDeps } from "../src/core/runner.ts";
-import { createActionRepo } from "../src/infra/db/repositories/actions.ts";
+import { createActionRepo, type ActionRepo } from "../src/infra/db/repositories/actions.ts";
 import { createCalendarWriteRepo } from "../src/infra/db/repositories/calendar-writes.ts";
 import { createProposalService, type ProposalService } from "../src/core/proposals.ts";
 import { createBriefRepo } from "../src/infra/db/repositories/briefs.ts";
@@ -94,6 +94,7 @@ export interface TestApp {
   workouts: WorkoutRepo;
   meals: MealRepo;
   subscriptions: SubscriptionRepo;
+  actions: ActionRepo;
   server: FastifyInstance;
   runner: RunnerDeps;
   modules: readonly JarvisModule[];
@@ -182,7 +183,7 @@ export async function buildTestApp(options: {
   let closed = false;
   return {
     db, briefs, proposals, chat, health, analyses, conversations,
-    workouts, meals, subscriptions, server, runner,
+    workouts, meals, subscriptions, actions, server, runner,
     modules: options.modules,
     setNow: (iso) => { current = new Date(iso); },
     // Idempotent: tests close explicitly and afterEach closes again.
