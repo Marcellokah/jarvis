@@ -376,16 +376,32 @@ describe("elemzés-előzmény az oldalakon", () => {
     expect(sav).toContain("RÉGI-ÖSSZEFOGLALÓ");
   });
 
-  it("nem szivárog át másik terület előzménye", async () => {
-    // Két domain, hogy a keresztbe-szivárgás kiderüljön.
+  it("egyik terület sem látja a másik terület előzményét", async () => {
+    // Harom domain egyszerre, mindegyik oda-vissza ellenőrizve: ez az egyetlen
+    // teszt, ami a physical/recovery/finance route-ok mindegyikén elkapja, ha
+    // az earlierFor hívás egy másik (vagy fixen beégetett) domain-t olvasna.
     const a = await boot();
     a.analyses.save(ANALIZIS("physical", "10", "FIZIKAI-RÉGI"));
     a.analyses.save(ANALIZIS("physical", "20", "FIZIKAI-ÚJ"));
-    a.analyses.save(ANALIZIS("finance", "11", "PÉNZ-RÉGI"));
-    a.analyses.save(ANALIZIS("finance", "21", "PÉNZ-ÚJ"));
+    a.analyses.save(ANALIZIS("recovery", "11", "REGENERACIO-RÉGI"));
+    a.analyses.save(ANALIZIS("recovery", "21", "REGENERACIO-ÚJ"));
+    a.analyses.save(ANALIZIS("finance", "12", "PENZUGY-RÉGI"));
+    a.analyses.save(ANALIZIS("finance", "22", "PENZUGY-ÚJ"));
+
     const terheles = elemzesSav((await get(a, "/terulet/terheles")).body);
     expect(terheles).toContain("FIZIKAI-RÉGI");
-    expect(terheles).not.toContain("PÉNZ-RÉGI");
+    expect(terheles).not.toContain("REGENERACIO-RÉGI");
+    expect(terheles).not.toContain("PENZUGY-RÉGI");
+
+    const regeneracio = elemzesSav((await get(a, "/terulet/regeneracio")).body);
+    expect(regeneracio).toContain("REGENERACIO-RÉGI");
+    expect(regeneracio).not.toContain("FIZIKAI-RÉGI");
+    expect(regeneracio).not.toContain("PENZUGY-RÉGI");
+
+    const penzugy = elemzesSav((await get(a, "/terulet/penzugy")).body);
+    expect(penzugy).toContain("PENZUGY-RÉGI");
+    expect(penzugy).not.toContain("FIZIKAI-RÉGI");
+    expect(penzugy).not.toContain("REGENERACIO-RÉGI");
   });
 
   it("egyetlen elemzésnél nincs előzmény-doboz", async () => {
@@ -405,7 +421,12 @@ describe("elemzés-előzmény az oldalakon", () => {
   });
 
   it("a hibázó elemzés-lekérdezés nem viszi el a lapot", async () => {
+    // Elemzés nélkül earlierFor rögtön [] -t ad vissza (latest === undefined),
+    // és a recent() stub soha nem fut le — a teszt akkor is zöld maradna, ha a
+    // try/catch el lenne távolítva. Kell egy mentett elemzés, hogy earlierFor
+    // ténylegesen eljusson a dobó recent() hívásig.
     const a = await boot();
+    a.analyses.save(ANALIZIS("physical", "20", "FIZIKAI-EGYETLEN"));
     (a.analyses as unknown as { recent: () => never }).recent = () => {
       throw new Error("szándékos hiba");
     };
