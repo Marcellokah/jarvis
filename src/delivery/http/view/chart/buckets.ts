@@ -15,14 +15,15 @@ export interface Bucket {
 }
 
 /**
- * Which column a day falls into — the one placement rule, exported.
+ * Which column a day falls into — the one placement rule.
  *
- * `plot.ts` has to know where a gap's far end lands so it can start a fresh
- * subpath there; if it recomputed that with its own arithmetic the two could
- * drift by a column and the line would rejoin one pixel inside the band it
- * was supposed to break for.
+ * It stays private on purpose. `plot.ts` used to import it to decide where a
+ * gap's far end lands and break the line there, and that was the bug: a
+ * column index and a drawn band are two different roundings of the same gap,
+ * and they disagree. The line is now tested against the band's own geometry,
+ * so nothing outside this file has any business placing a day in a column.
  */
-export function columnOf(series: Series, day: number, columns: number): number {
+function columnOf(series: Series, day: number, columns: number): number {
   const span = series.toDay - series.fromDay;
   const t = span === 0 ? 0 : (day - series.fromDay) / span;
   return Math.min(columns - 1, Math.max(0, Math.floor(t * columns)));

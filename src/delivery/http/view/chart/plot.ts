@@ -1,5 +1,5 @@
 import { escapeHtml } from "../../markdown.ts";
-import { bucketise, columnOf, type Bucket } from "./buckets.ts";
+import { bucketise, type Bucket } from "./buckets.ts";
 import { chartSummary } from "./summary.ts";
 import { dayNumber, type Series, type Point } from "./series.ts";
 import type { SeriesSpec } from "./registry.ts";
@@ -93,14 +93,20 @@ export function plot(series: Series, spec: SeriesSpec): string {
   const yOfVal = (v: number) => flat ? T + IH / 2 : T + IH - ((v - lo) / (hi - lo)) * IH;
 
   // Gap bands first: they are the ground the rest is drawn on.
-  const gaps = series.gaps.map((g) => {
+  //
+  // The band's own geometry — not the gap's dates — is what the line is later
+  // tested against, so it is computed once, here, and reused. At least one
+  // pixel wide: a hole the axis cannot resolve is still a hole, and a
+  // zero-width band would hide exactly the gaps a long window packs most
+  // tightly.
+  const bands = series.gaps.map((g) => {
     const x1 = xOfDay(dayNumber(g.fromDate));
     const x2 = xOfDay(dayNumber(g.toDate));
-    // At least one pixel wide: a hole the axis cannot resolve is still a hole,
-    // and a zero-width band would hide exactly the gaps a long window packs
-    // most tightly.
-    return `<rect class="hezag" x="${n(x1)}" y="${T}" width="${n(Math.max(1, x2 - x1))}" height="${IH}"/>`;
-  }).join("");
+    return { x1, x2: x1 + Math.max(1, x2 - x1) };
+  });
+  const gaps = bands.map((b) =>
+    `<rect class="hezag" x="${n(b.x1)}" y="${T}" width="${n(b.x2 - b.x1)}" height="${IH}"/>`
+  ).join("");
 
   // A flat series gets one grid line carrying its one value. Three lines with
   // three identical labels would look like an axis and say nothing.
@@ -148,12 +154,19 @@ export function plot(series: Series, spec: SeriesSpec): string {
   let data: string;
   if (dense) {
     const buckets = bucketise(series, columns);
-    // The column each unusual hole lands its far end in. The line has to start
-    // a fresh subpath there: an even-every-other-day series packs its holes
-    // into a single column, so "the next column is empty" — the only break the
-    // dense branch used to know — never fires, and the median line bridges the
-    // very band drawn to say nothing was measured.
-    const breakAt = new Set(series.gaps.map((g) => columnOf(series, dayNumber(g.toDate), columns)));
+    // Whether the link about to be drawn would run across a gap band.
+    //
+    // The test is between the two things actually on the page: the segment's
+    // own x span and the band's own x span. Deriving a "break column" from the
+    // gap's end date instead rounds a second time, and the two roundings do
+    // not agree — the band is anchored at its START date, inside the earlier
+    // column, and floored to one unit wide, so it sits on the link LEAVING
+    // that column while the derived break lands a column or two further on.
+    // On the owner's own history that severed the wrong link and left the
+    // crossing one intact. A segment that merely touches a band edge does not
+    // cross it, hence the strict comparisons.
+    const crossesBand = (xa: number, xb: number) =>
+      bands.some((b) => xa < b.x2 && xb > b.x1);
     const band: string[] = [];
     const runs: { x: number; y: number }[][] = [];
     for (const [i, b] of buckets.entries()) {
@@ -161,8 +174,8 @@ export function plot(series: Series, spec: SeriesSpec): string {
       const x = L + (i / columns) * IW;
       band.push(`<rect class="sav" x="${n(x)}" y="${n(yOfVal(b.max))}" width="1.2" `
         + `height="${n(Math.max(0.6, yOfVal(b.min) - yOfVal(b.max)))}"/>`);
-      const previous = i > 0 && buckets[i - 1] !== null;
-      if (!previous || breakAt.has(i) || runs.length === 0) runs.push([]);
+      const previous = i > 0 && buckets[i - 1] !== null ? runs.at(-1)?.at(-1) : undefined;
+      if (!previous || crossesBand(previous.x, x)) runs.push([]);
       runs.at(-1)!.push({ x, y: yOfVal(b.median) });
     }
     // A run of one column is a point, not a line: an "M"-only path is legal

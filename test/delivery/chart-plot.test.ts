@@ -12,6 +12,49 @@ const days = (first: string, ...vals: (number | null)[]) =>
 
 const hrv = SOROZATOK.get("hrv")!;
 
+/**
+ * Azok a hézagsávok, amelyeken átfut egy kirajzolt vonalszakasz.
+ *
+ * A kirajzolt SVG-ből olvas — a sávok saját `x`/`width` értékéből és a
+ * `vonal` útvonalak saját pontjaiból —, nem a plot belső változóiból: a hiba
+ * pontosan a kettő eltérésében élt.
+ */
+const bandsCrossedBy = (html: string): string[] => {
+  const bands = [...html.matchAll(/<rect class="hezag" x="([\d.]+)"[^>]*width="([\d.]+)"/g)]
+    .map((m) => ({ x1: Number(m[1]), x2: Number(m[1]) + Number(m[2]) }));
+  const links: { xa: number; xb: number }[] = [];
+  for (const m of html.matchAll(/<path class="vonal"[^>]*d="([^"]+)"/g)) {
+    const xs = [...m[1]!.matchAll(/[ML]([\d.]+) [\d.]+/g)].map((p) => Number(p[1]));
+    for (let i = 1; i < xs.length; i++) links.push({ xa: xs[i - 1]!, xb: xs[i]! });
+  }
+  return bands
+    .filter((b) => links.some((l) => l.xa < b.x2 && l.xb > b.x1))
+    .map((b) => `${b.x1}–${b.x2}`);
+};
+
+/**
+ * Azok a szakadások, amelyek alatt nincs hézagsáv.
+ *
+ * A `bandsCrossedBy` párja, és ugyanannyira szükséges: az első javítás egy
+ * oszloppal odébb tette a törést, tehát EGYSZERRE hagyott átvágott sávot és
+ * vágott el folytonos szakaszt. Csak a kettő együtt mondja meg, hogy a törés
+ * ott van-e, ahol a lyuk.
+ */
+const unjustifiedBreaks = (html: string): string[] => {
+  const bands = [...html.matchAll(/<rect class="hezag" x="([\d.]+)"[^>]*width="([\d.]+)"/g)]
+    .map((m) => ({ x1: Number(m[1]), x2: Number(m[1]) + Number(m[2]) }));
+  const ends = [...html.matchAll(/<path class="vonal"[^>]*d="([^"]+)"/g)].map((m) => {
+    const xs = [...m[1]!.matchAll(/[ML]([\d.]+) [\d.]+/g)].map((p) => Number(p[1]));
+    return { first: xs[0]!, last: xs.at(-1)! };
+  });
+  const out: string[] = [];
+  for (let i = 1; i < ends.length; i++) {
+    const xa = ends[i - 1]!.last, xb = ends[i]!.first;
+    if (!bands.some((b) => xa < b.x2 && xb > b.x1)) out.push(`${xa}→${xb}`);
+  }
+  return out;
+};
+
 describe("nagy diagram", () => {
   it("a szokatlan hézag helyén sávot rajzol", () => {
     // A megszakadt vonal csak azt mondja, volt lyuk; a sáv azt is, meddig tartott.
@@ -114,8 +157,55 @@ describe("nagy diagram", () => {
 
     const html = plot(s, hrv);
     expect(html).toContain('class="hezag"');
-    // Két szakasz, két útvonal: a hézag két oldala nincs összekötve.
-    expect((html.match(/class="vonal"/g) ?? [])).toHaveLength(2);
+    // NEM az útvonalak SZÁMÁT nézzük. Az első javítás megtörte a vonalat —
+    // két útvonal lett belőle —, csak épp egy oszloppal a sáv mellett: a
+    // darabszám nőtt, a mértan nem követte, és a sávot továbbra is átvágta
+    // egy szakasz. A számlálás ezt nem látja, a mértan igen.
+    expect(bandsCrossedBy(html)).toEqual([]);
+    // A szakadás valóban ott van, ahol a lyuk: a két oldal nincs összekötve.
+    expect((html.match(/class="vonal"/g) ?? []).length).toBeGreaterThan(1);
+  });
+
+  it("sűrűnél nem szakítja meg a vonalat ott, ahol nincs hézag", () => {
+    // A törés másik iránya, ugyanabból a hibából: az oszlopindexből
+    // visszaszámolt töréspont egy folytonos szakaszt vágott el — egy
+    // oszloppal a sáv előtt —, miközben a metszőt meghagyta.
+    // A 316. és 317. nap hiányzik: 2000 nap 660 oszlopon 3,03 nap
+    // oszloponként, és ez a lyuk mindkét végével UGYANABBA az oszlopba esik.
+    // Az oszlopindexből számolt törés ilyenkor a lyuk ELÉ került.
+    const vals: (number | null)[] = Array.from({ length: 2000 }, (_, i) => 40 + (i % 5));
+    vals[316] = null;
+    vals[317] = null;
+    const rows = days("2020-01-01", ...vals);
+    const s = buildSeries("hrv", rows[0]!.date, rows.at(-1)!.date, rows);
+    expect(s.points.length).toBeGreaterThan(660);
+    expect(s.gaps).toHaveLength(1);
+    const html = plot(s, hrv);
+    expect(unjustifiedBreaks(html)).toEqual([]);
+    expect(bandsCrossedBy(html)).toEqual([]);
+
+    // Hézag nélkül pedig egyáltalán nincs mit megtörni.
+    const nincs = days("2020-01-01", ...Array.from({ length: 1500 }, (_, i) => 40 + (i % 5)));
+    const s2 = buildSeries("hrv", nincs[0]!.date, nincs.at(-1)!.date, nincs);
+    expect(s2.gaps).toHaveLength(0);
+    expect((plot(s2, hrv).match(/class="vonal"/g) ?? [])).toHaveLength(1);
+  });
+
+  it("sok, eltérő szélességű hézagnál is minden sávot kikerül a vonal", () => {
+    // A tulajdonos valódi HRV-előzményének alakja: sok rövid lyuk, néhány
+    // hosszú. 37 sávból 34-et vágott át a vonal a javítás után is.
+    const vals: (number | null)[] = Array.from({ length: 2400 }, (_, i) => 40 + (i % 9));
+    for (const [start, len] of [[120, 2], [400, 3], [401 + 60, 9], [900, 2], [1300, 40], [1700, 2], [2000, 5]]) {
+      for (let i = 0; i < len!; i++) vals[start! + i] = null;
+    }
+    const rows = days("2019-01-01", ...vals);
+    const s = buildSeries("hrv", rows[0]!.date, rows.at(-1)!.date, rows);
+    expect(s.points.length).toBeGreaterThan(660);
+    expect(s.gaps.length).toBeGreaterThan(3);
+    const html = plot(s, hrv);
+    expect((html.match(/class="hezag"/g) ?? []).length).toBe(s.gaps.length);
+    expect(bandsCrossedBy(html)).toEqual([]);
+    expect(unjustifiedBreaks(html)).toEqual([]);
   });
 
   it("sűrűnél a magában álló oszlopot pontnak rajzolja, nem semmit", () => {
