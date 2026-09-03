@@ -9,9 +9,9 @@ export interface HubCard {
   /**
    * One sentence about the area.
    *
-   * Normally the domain analysis's own `summary`. Nutrition has no analysis
-   * domain (S8 will add one), so its card carries a measured line of its own
-   * instead — a card with something true to say is not a missing-data state.
+   * The domain analysis's own `summary` when one exists; otherwise a plain
+   * measured line of the card's own — a card with something true to say is
+   * not a missing-data state.
    */
   note: string;
   /** The ISO date the note's source carries, or null when it has none. */

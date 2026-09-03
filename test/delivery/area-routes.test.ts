@@ -381,9 +381,10 @@ describe("elemzés-előzmény az oldalakon", () => {
   });
 
   it("egyik terület sem látja a másik terület előzményét", async () => {
-    // Harom domain egyszerre, mindegyik oda-vissza ellenőrizve: ez az egyetlen
-    // teszt, ami a physical/recovery/finance route-ok mindegyikén elkapja, ha
-    // az earlierFor hívás egy másik (vagy fixen beégetett) domain-t olvasna.
+    // Négy domain egyszerre, mindegyik oda-vissza ellenőrizve: ez az egyetlen
+    // teszt, ami a physical/recovery/finance/nutrition route-ok mindegyikén
+    // elkapja, ha az earlierFor hívás egy másik (vagy fixen beégetett)
+    // domain-t olvasna.
     const a = await boot();
     a.analyses.save(ANALIZIS("physical", "10", "FIZIKAI-RÉGI"));
     a.analyses.save(ANALIZIS("physical", "20", "FIZIKAI-ÚJ"));
@@ -391,21 +392,32 @@ describe("elemzés-előzmény az oldalakon", () => {
     a.analyses.save(ANALIZIS("recovery", "21", "REGENERACIO-ÚJ"));
     a.analyses.save(ANALIZIS("finance", "12", "PENZUGY-RÉGI"));
     a.analyses.save(ANALIZIS("finance", "22", "PENZUGY-ÚJ"));
+    a.analyses.save(ANALIZIS("nutrition", "13", "TAPLALKOZAS-RÉGI"));
+    a.analyses.save(ANALIZIS("nutrition", "23", "TAPLALKOZAS-ÚJ"));
 
     const terheles = elemzesSav((await get(a, "/terulet/terheles")).body);
     expect(terheles).toContain("FIZIKAI-RÉGI");
     expect(terheles).not.toContain("REGENERACIO-RÉGI");
     expect(terheles).not.toContain("PENZUGY-RÉGI");
+    expect(terheles).not.toContain("TAPLALKOZAS-RÉGI");
 
     const regeneracio = elemzesSav((await get(a, "/terulet/regeneracio")).body);
     expect(regeneracio).toContain("REGENERACIO-RÉGI");
     expect(regeneracio).not.toContain("FIZIKAI-RÉGI");
     expect(regeneracio).not.toContain("PENZUGY-RÉGI");
+    expect(regeneracio).not.toContain("TAPLALKOZAS-RÉGI");
 
     const penzugy = elemzesSav((await get(a, "/terulet/penzugy")).body);
     expect(penzugy).toContain("PENZUGY-RÉGI");
     expect(penzugy).not.toContain("FIZIKAI-RÉGI");
     expect(penzugy).not.toContain("REGENERACIO-RÉGI");
+    expect(penzugy).not.toContain("TAPLALKOZAS-RÉGI");
+
+    const taplalkozas = elemzesSav((await get(a, "/terulet/taplalkozas")).body);
+    expect(taplalkozas).toContain("TAPLALKOZAS-RÉGI");
+    expect(taplalkozas).not.toContain("FIZIKAI-RÉGI");
+    expect(taplalkozas).not.toContain("REGENERACIO-RÉGI");
+    expect(taplalkozas).not.toContain("PENZUGY-RÉGI");
   });
 
   it("egyetlen elemzésnél nincs előzmény-doboz", async () => {
@@ -453,5 +465,25 @@ describe("elemzés-előzmény az oldalakon", () => {
     const sav = elemzesSav((await get(a, "/terulet/terheles")).body);
     expect(sav).toContain("5 korábbi elemzés");
     expect(sav).toContain("FIZIKAI-10");
+  });
+
+  it("a táplálkozás elemzése a saját oldalára kerül", async () => {
+    const a = await boot();
+    a.analyses.save({
+      createdAt: "2026-09-04T07:00:00.000Z", domain: "nutrition",
+      markdown: "TAPLALKOZAS-JELOLO", summary: "s", metrics: "{}",
+    });
+    const res = await get(a, "/terulet/taplalkozas");
+    expect(res.body).toContain("TAPLALKOZAS-JELOLO");
+  });
+
+  it("a hub Táplálkozás-kártyája a nutrition összefoglalóját viszi", async () => {
+    const a = await boot();
+    a.analyses.save({
+      createdAt: "2026-09-04T07:00:00.000Z", domain: "nutrition",
+      markdown: "x", summary: "KARTYA-OSSZEFOGLALO", metrics: "{}",
+    });
+    const res = await get(a, "/terulet");
+    expect(res.body).toContain("KARTYA-OSSZEFOGLALO");
   });
 });

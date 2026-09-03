@@ -5,6 +5,7 @@ const empty = {
   measuredDays: 0, measuredProteinDays: 0, lastDate: null,
   actual: { kcal: null, proteinG: null },
   plan: [], tiles: [],
+  analysis: undefined, earlier: [],
 };
 
 const m = (weekday: number, meal: "reggeli" | "ebed" | "vacsora", item: string,
@@ -27,12 +28,25 @@ describe("Táplálkozás oldal", () => {
     expect(html).toContain("nincs mérés");
   });
 
-  it("nincs elemzés-sávja, és nincs hamarosan felirata sem", () => {
-    // Nincs nutrition domain. A sáv nem üresen áll ott — nincs ott.
-    const html = nutritionBody({ ...empty, measuredDays: 74 });
-    expect(html).not.toContain("Elemzés");
+  it("elemzés-sávot kap, mert az S8 óta van nutrition domain", () => {
+    // Az F3 ezt a sávot szándékosan hagyta el — akkor nem volt mögötte
+    // domain, és egy üres sáv vagy egy „hamarosan" felirat hiányzó adat lett
+    // volna, ami nem látszik hiányzónak. Az S8 megcsinálta a domaint.
+    const html = nutritionBody({
+      ...empty, measuredDays: 74,
+      analysis: { markdown: "**Fontos**", createdAt: "2026-09-04T07:00:00.000Z" },
+      earlier: [],
+    });
+    expect(html).toContain("Elemzés");
+    expect(html).toContain("<strong>Fontos</strong>");
+    expect(html).toContain("2026-09-04");
+  });
+
+  it("elemzés nélkül megmondja, hogyan lehet elindítani — nem hamarosant ír", () => {
+    const html = nutritionBody({ ...empty, analysis: undefined, earlier: [] });
+    expect(html).toContain("Még nem futott");
+    expect(html).toContain("npm run analyze");
     expect(html).not.toContain("hamarosan");
-    expect(html).not.toContain("npm run analyze");
   });
 
   it("a heti étrendet naponta összegzi", () => {

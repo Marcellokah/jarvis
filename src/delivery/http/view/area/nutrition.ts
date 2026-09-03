@@ -1,6 +1,6 @@
 import { escapeHtml } from "../../markdown.ts";
 import { hu } from "../format.ts";
-import { leadBand, seriesBand, type SeriesTile } from "./frame.ts";
+import { analysisBand, leadBand, seriesBand, type AreaAnalysis, type EarlierAnalysis, type SeriesTile } from "./frame.ts";
 import type { PlannedMeal } from "../../../../infra/db/repositories/meals.ts";
 
 export interface NutritionData {
@@ -23,6 +23,10 @@ export interface NutritionData {
   actual: { kcal: number | null; proteinG: number | null };
   plan: readonly PlannedMeal[];
   tiles: readonly SeriesTile[];
+  /** This area's own analysis, or undefined when none has run yet. */
+  analysis: AreaAnalysis | undefined;
+  /** Earlier `nutrition` analyses, newest first, the current one excluded. */
+  earlier: readonly EarlierAnalysis[];
 }
 
 const NAPOK = ["vasárnap", "hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat"];
@@ -129,12 +133,12 @@ function comparison(d: NutritionData): string {
 }
 
 /**
- * The nutrition area — the one page with no analysis band.
+ * The nutrition area — the same four bands as the other three areas.
  *
- * There is no `nutrition` analysis domain yet (S8 will add one), so the
- * fourth band is absent rather than empty. An empty band, or a "coming soon"
- * note in its place, would be missing data that does not look missing — the
- * thing this shell has refused since F1.
+ * F3 deliberately shipped this page without an analysis band: no `nutrition`
+ * domain existed yet, and an empty band or a "coming soon" note in its place
+ * would have been missing data that does not look missing. S8 built that
+ * domain, so the requirement F3 deferred is now met, not dropped.
  */
 export function nutritionBody(d: NutritionData): string {
   const lead = leadBand({
@@ -151,5 +155,6 @@ export function nutritionBody(d: NutritionData): string {
     seriesBand("Bevitel", d.tiles),
     comparison(d),
     planTable(d.plan),
+    analysisBand(d.analysis, d.earlier),
   ].join("");
 }

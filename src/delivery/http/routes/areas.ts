@@ -117,6 +117,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     const physical = summaryOf("physical");
     const recovery = summaryOf("recovery");
     const finance = summaryOf("finance");
+    const nutrition = summaryOf("nutrition");
     const latestMonth = m?.finance.months.at(-1);
 
     const cards: HubCard[] = [
@@ -133,11 +134,15 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
         note: recovery.note, noteDate: recovery.date,
       },
       {
-        // No `nutrition` analysis domain exists yet (S8 will add one), so this
-        // card carries a measured line of its own rather than an empty slot.
+        // The figure stays the area's own measured fact (days logged) even
+        // once a `nutrition` analysis exists — that count is not the
+        // analysis's job to supply. The note switches to the analysis
+        // summary when one exists, falling back to today's plain line
+        // otherwise, exactly like the other three cards.
         href: "/terulet/taplalkozas", title: "Táplálkozás",
         figure: measuredDays === 0 ? null : `${hu(measuredDays)} nap`,
-        note: "Rögzített bevitel.", noteDate: null,
+        note: nutrition.date === null ? "Rögzített bevitel." : nutrition.note,
+        noteDate: nutrition.date,
       },
       {
         href: "/terulet/penzugy", title: "Pénzügy",
@@ -299,9 +304,18 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       deps.logger.warn({ err: String(err) }, "nutrition page rendered without its plan");
     }
 
+    let earlier: EarlierAnalysis[] = [];
+    try {
+      earlier = earlierFor(deps, inputs.analyses, "nutrition");
+    } catch (err) {
+      deps.logger.warn({ err: String(err) }, "nutrition page rendered without its analysis history");
+    }
+
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, nutritionBody({
       measuredDays, measuredProteinDays, lastDate, actual: { kcal, proteinG }, plan,
       tiles: tilesFor(["diet_kcal", "diet_protein_g"], now),
+      analysis: analysisFor(inputs.analyses, "nutrition"),
+      earlier,
     }), "/terulet/taplalkozas"));
   });
 
