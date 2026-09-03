@@ -791,4 +791,74 @@ describe("Ma oldal — teendők", () => {
     expect(sav).toContain("KIPIPÁLANDÓ");
     await a.close();
   });
+
+  it("a napok a nyitott teendők közt is csökkenő dátumsorrendben jelennek meg", async () => {
+    // A `listAllOpen()` már date DESC-ben rendez, és a page.ts-beli `Map`
+    // csoportosítás csak azt tartja meg, hogy melyik nap melyik beszúrás
+    // sorrendjében kerül be — a sorrend maga a route saját felelőssége.
+    // Egyetlen korábbi teszt sem lát két különböző napot egyszerre, tehát a
+    // route saját csoportosító hurokja megfordíthatná a napokat anélkül,
+    // hogy bármelyik teszt észrevenné.
+    const a = await boot();
+    a.actions.replaceForDate("2026-08-30", [{
+      module: "Teszt",
+      action: { id: "d1", kind: "checkbox", text: "REGI-NAP" },
+    }], new Date("2026-08-30T08:00:00.000Z"));
+    a.actions.replaceForDate("2026-09-04", [{
+      module: "Teszt",
+      action: { id: "d2", kind: "checkbox", text: "UJ-NAP" },
+    }], new Date("2026-09-04T08:00:00.000Z"));
+
+    const sav = teendokSav((await get(a, "/")).body);
+    const ujIdx = sav.indexOf("UJ-NAP");
+    const regiIdx = sav.indexOf("REGI-NAP");
+    expect(ujIdx).toBeGreaterThanOrEqual(0);
+    expect(regiIdx).toBeGreaterThanOrEqual(0);
+    expect(ujIdx).toBeLessThan(regiIdx);
+    await a.close();
+  });
+
+  it("a javaslat részleteinél a hely és a megjegyzés is megjelenik, ha megvan", async () => {
+    const a = await boot();
+    a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: {
+        id: "pd1", kind: "proposal", text: "Túra",
+        proposal: {
+          title: "Túra", start: "2026-09-05T09:00:00+02:00", end: "2026-09-05T12:00:00+02:00",
+          location: "Normafa", notes: "Vigyél vizet",
+        },
+      },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+
+    const sav = teendokSav((await get(a, "/")).body);
+    expect(sav).toContain("2026-09-05T09:00:00+02:00");
+    expect(sav).toContain("Normafa");
+    expect(sav).toContain("Vigyél vizet");
+    await a.close();
+  });
+
+  it("a javaslat részleteinél nincs \"undefined\", ha nincs hely vagy megjegyzés", async () => {
+    // A hiányzó `location`/`notes` mezőt feltétel nélkül a tömbbe tenni
+    // `undefined`-et injektálna, amit az `escapeHtml` `.replace`-e el is
+    // dobhatna hibával — ez a lap 500-át adná vissza, nem csak csúnyán
+    // renderelne.
+    const a = await boot();
+    a.actions.replaceForDate("2026-09-03", [{
+      module: "Teszt",
+      action: {
+        id: "pd2", kind: "proposal", text: "Túra2",
+        proposal: {
+          title: "Túra2", start: "2026-09-06T09:00:00+02:00", end: "2026-09-06T12:00:00+02:00",
+        },
+      },
+    }], new Date("2026-09-03T08:00:00.000Z"));
+
+    const res = await get(a, "/");
+    expect(res.statusCode).toBe(200);
+    const sav = teendokSav(res.body);
+    expect(sav).toContain("2026-09-06T09:00:00+02:00");
+    expect(sav).not.toContain("undefined");
+    await a.close();
+  });
 });
