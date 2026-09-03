@@ -77,6 +77,17 @@ describe("oldalkeret", () => {
     expect(SCRUB_SCRIPT).toContain("u.pathname + u.search + u.hash");
   });
 
+  it("a nav a site-menü saját osztályát viseli, nem puszta elem", () => {
+    // theme.ts a navigációs szabályokat `nav.fomenu`-re szűkíti, mert más
+    // <nav> is él az oldalon (pl. .tartomanyok, .lapozo egy-egy területi
+    // oldalon), aminek NEM kell a site-menü fix bal sávja. Ha ez a class
+    // lemarad a markupból, a szűkített CSS egyszerűen nem érné el a
+    // site-menüt sem.
+    const html = layout(base);
+    const navHtml = /<nav[\s\S]*?<\/nav>/.exec(html)![0];
+    expect(navHtml.startsWith('<nav class="fomenu">')).toBe(true);
+  });
+
   it("escape-eli a beleadott szöveget", () => {
     const html = layout({ ...base, dateLabel: "<script>x()</script>" });
     expect(html).not.toContain("<script>x()</script>");

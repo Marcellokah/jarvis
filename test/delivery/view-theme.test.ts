@@ -30,6 +30,46 @@ function firstReducedMotionBlock(css: string): string {
   return css.slice(open + 1, i);
 }
 
+/**
+ * Every selector token that refers to the bare `nav` element, unscoped by a
+ * class — e.g. `nav {` or `nav a.menu` — as opposed to `nav.fomenu` or
+ * `.tartomanyok`.
+ *
+ * F3 shipped two `<nav>`s that are not the site menu (`.tartomanyok` on the
+ * measurement detail page, `.lapozo` on the workout log) into a stylesheet
+ * whose navigation rules were written element-first: `nav { position: fixed;
+ * … }` and friends. Both inherited the site menu's fixed 8.5rem left column
+ * with no rule of their own to override it — one now with browser-default
+ * blue links, since `.tartomanyok` had never been styled at all. Scoping the
+ * existing rules to `nav.fomenu` (theme.ts) fixes today's two victims, but
+ * only a scan that rejects ANY bare `nav` selector stops the next `<nav>`
+ * from falling into the same trap — a hand-picked list of today's classes
+ * would not.
+ *
+ * Comments are stripped first so Hungarian prose like "navigáció" or the
+ * `@view-transition { navigation: auto; }` declaration cannot be mistaken
+ * for a selector. `\bnav\b` alone would also match the "nav" inside
+ * `nav.fomenu` (a dot is a non-word character, so the boundary still fires),
+ * so a match is only a violation when the character right after "nav" is
+ * NOT "." (i.e. not immediately scoped by a class) — and a match preceded by
+ * "." is skipped too, so a future `.nav`-named class is not mistaken for the
+ * bare element.
+ */
+function bareNavSelectors(css: string): string[] {
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const hits: string[] = [];
+  const re = /\bnav\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(stripped)) !== null) {
+    const before = stripped[m.index - 1];
+    const after = stripped[m.index + 3];
+    if (before === ".") continue; // a class like `.nav`, not the element
+    if (after === ".") continue; // scoped, e.g. `nav.fomenu`
+    hits.push(stripped.slice(Math.max(0, m.index - 15), m.index + 25));
+  }
+  return hits;
+}
+
 describe("téma", () => {
   it("mindkét séma minden tokent megad", () => {
     const root = /:root\s*\{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
@@ -83,5 +123,31 @@ describe("téma", () => {
     expect(STYLE).toContain("@view-transition");
     const reduced = firstReducedMotionBlock(STYLE);
     expect(reduced).toContain("view-transition");
+  });
+
+  it("egyetlen navigációs szabály sem szól a puszta `nav` elemről", () => {
+    // A site-menü fix, 8.5rem széles bal sávja csak a .fomenu-t illeti — más
+    // <nav> (pl. .tartomanyok, .lapozo) a saját elrendezését akarja, nem ezt.
+    // Ez egy szkennelés, nem egy fix lista: BÁRMELY jövőbeli `nav { … }` vagy
+    // `nav …` szabály itt bukik, nem csak a mai kettő.
+    const hits = bareNavSelectors(STYLE);
+    expect(hits, `puszta nav szelektor(ok): ${JSON.stringify(hits)}`).toEqual([]);
+  });
+
+  it("a .tartomanyok és a .lapozo navnak van saját szabálya", () => {
+    // A mérésrészlet oldal tartomány-választója soha nem kapott saját
+    // stílust — a böngésző alapértelmezett kék, aláhúzott linkjeivel jelent
+    // meg, miközben a site-menü fix sávjában lebegett. Ez a teszt azt zárja
+    // ki, hogy ez a hiány visszatérjen.
+    //
+    // Comments are stripped first, and the selector-to-`{` gap is capped at
+    // 40 chars: an earlier version of this test read `[^{]*` with no cap and
+    // no comment stripping, so it was satisfied by the class name merely
+    // being MENTIONED in a comment much earlier in the file, with the `{` of
+    // some unrelated, later rule closing the match — it stayed green even
+    // after the actual `.tartomanyok` rule block was deleted entirely.
+    const stripped = STYLE.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(/\.tartomanyok[.\s\w-]{0,40}\{[^}]+\}/.test(stripped)).toBe(true);
+    expect(/\.lapozo[.\s\w-]{0,40}\{[^}]+\}/.test(stripped)).toBe(true);
   });
 });

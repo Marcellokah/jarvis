@@ -117,7 +117,7 @@ function nav(data: ShellData): string {
       + `${escapeHtml(t.label)}</a>`).join("");
     return `${link}<span class="almenu">${sub}</span>`;
   }).join("");
-  return `<nav>${items}</nav>`;
+  return `<nav class="fomenu">${items}</nav>`;
 }
 
 function statusStrip(data: ShellData): string {

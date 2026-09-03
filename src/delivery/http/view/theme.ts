@@ -39,25 +39,28 @@ export const STYLE = `
 body { margin: 0; background: var(--hatter); color: var(--szoveg);
   font: 16px/1.65 var(--text); -webkit-font-smoothing: antialiased; }
 
-/* ---- navigáció: asztalon bal sáv, telefonon alsó sor ---- */
-nav { display: flex; gap: .25rem; position: fixed; inset: auto 0 0 0; z-index: 2;
+/* ---- navigáció: asztalon bal sáv, telefonon alsó sor ----
+   Kizárólag a .fomenu-re szűkítve — ez a site-menü, amit a shell ad ki
+   (shell.ts). Más nav elem is él az oldalon (pl. .tartomanyok, .lapozo), és
+   azok a saját elrendezésüket akarják, nem a fix, 8.5rem széles oszlopét. */
+nav.fomenu { display: flex; gap: .25rem; position: fixed; inset: auto 0 0 0; z-index: 2;
   background: var(--lap); border-top: 1px solid var(--racs); padding: .4rem; }
-nav a.menu { flex: 1; text-align: center; padding: .6rem .4rem; border-radius: .25rem;
+nav.fomenu a.menu { flex: 1; text-align: center; padding: .6rem .4rem; border-radius: .25rem;
   color: var(--halvany); text-decoration: none;
   font: 600 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
-nav a.menu[aria-current="page"] { color: var(--vaz); background: var(--hatter); }
+nav.fomenu a.menu[aria-current="page"] { color: var(--vaz); background: var(--hatter); }
 /* A lámpa a menüpont alatt: ég, ha a szekciónak van most mit mutatnia. */
-nav a.menu.jelzo::after { content: ""; display: block; width: 4px; height: 4px;
+nav.fomenu a.menu.jelzo::after { content: ""; display: block; width: 4px; height: 4px;
   border-radius: 50%; margin: .35rem auto 0; background: var(--racs); }
-nav a.menu.jelzo.el::after { background: var(--jel); }
+nav.fomenu a.menu.jelzo.el::after { background: var(--jel); }
 /* Az almenü kizárólag az asztali sávban él: telefonon az alsó sor négy
    eleme a teljes hely, és a hub a belépő a területekre. */
 .almenu { display: none; }
 @media (min-width: 46rem) {
-  nav { inset: 0 auto 0 0; width: 8.5rem; flex-direction: column; justify-content: flex-start;
+  nav.fomenu { inset: 0 auto 0 0; width: 8.5rem; flex-direction: column; justify-content: flex-start;
     border-top: 0; border-right: 1px solid var(--racs); padding: 2rem .5rem; gap: .15rem; }
-  nav a.menu { flex: 0 0 auto; text-align: left; padding: .55rem .7rem; }
-  nav a.menu.jelzo::after { display: inline-block; margin: 0 0 .15rem .5rem; }
+  nav.fomenu a.menu { flex: 0 0 auto; text-align: left; padding: .55rem .7rem; }
+  nav.fomenu a.menu.jelzo::after { display: inline-block; margin: 0 0 .15rem .5rem; }
   .almenu { display: block; margin: .1rem 0 .4rem .7rem;
     border-left: 1px solid var(--racs); }
   .almenu a.alelem { display: block; padding: .3rem .7rem; color: var(--halvany);
@@ -223,6 +226,20 @@ form.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: -
   animation: vonal-be .7s cubic-bezier(.2,.8,.2,1) both; }
 .plot .sav { animation: settle .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: 200ms; }
 @media (prefers-reduced-motion: reduce) { .plot .vonal, .plot .sav { animation: none; } }
+
+/* ---- tartomány-választó (mérésrészlet oldal) ----
+   A nagy diagram fölötti sáv: 30 nap / 1 év / minden, plusz a sor saját
+   ablaka, ha az nem esik egyik névre sem (lásd chart/detail.ts). --jel a
+   mért adaté és csakis azé, ezért itt nem jelenik meg — az aktuális ablak
+   nem mérés, hanem az oldal állapota, tehát --vaz jelöli, ugyanúgy, mint a
+   fő nav aktív menüpontját. */
+.tartomanyok { display: flex; flex-wrap: wrap; gap: .35rem; padding: .5rem 0 1.2rem; }
+.tartomanyok a.tartomany { padding: .3rem .65rem; border: 1px solid var(--racs);
+  border-radius: .25rem; color: var(--vaz); text-decoration: none;
+  font: 600 .62rem/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.tartomanyok a.tartomany[aria-current="page"] { color: var(--szoveg);
+  background: var(--racs); border-color: var(--vaz); }
+.tartomanyok a.tartomany:focus-visible { outline: 2px solid var(--jel); outline-offset: 2px; }
 
 /* ---- teendők és írási műveletek ---- */
 .teendok { display: grid; gap: 1px; background: var(--racs);
