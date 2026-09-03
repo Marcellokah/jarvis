@@ -33,7 +33,7 @@ function kcalCell(t: WorkoutTypeTotal): string {
   if (t.kcal === null) return `<span class="halk">nincs mérés</span>`;
   const total = `${hu(t.kcal)} kcal`;
   if (t.kcalFrom === t.sessions) return total;
-  return `${total} <span class="halk">(${t.kcalFrom} alkalomból)</span>`;
+  return `${total} <span class="halk">(${hu(t.kcalFrom)} alkalomból)</span>`;
 }
 
 function typeTable(rows: readonly WorkoutTypeTotal[]): string {

@@ -121,6 +121,21 @@ describe("metricsRowsFrom", () => {
     expect(rows.find((r) => r.label === "HRV (7 nap)")!.series).toEqual({ column: "hrv", days: 7 });
   });
 
+  it("a terhelési arány formája és hiányzó szövege igazodik a Terhelés oldaléhoz", () => {
+    // F3: /szamok és a Terhelés terület-oldal (view/area/load.ts) korábban
+    // más alakban ("1,41" vs "1,41×") és más hiányszöveggel ("nincs alap" vs
+    // "nincs elég előzmény") mutatta ugyanazt a számot — mintha két külön
+    // mérés lenne, nem egy.
+    const withRatio = metricsFixture();
+    withRatio.physical.loadRatio = 1.41;
+    const withRatioRow = metricsRowsFrom(withRatio).find((r) => r.label === "Terhelési arány")!;
+    expect(withRatioRow.value).toBe("1,41×");
+
+    const withoutRatio = metricsFixture();
+    const withoutRatioRow = metricsRowsFrom(withoutRatio).find((r) => r.label === "Terhelési arány")!;
+    expect(withoutRatioRow.value).toBe("nincs elég előzmény");
+  });
+
   it("egy olvashatatlan ablakcímke csak a saját sorát veszíti el, nem az összeset", () => {
     // A `days` NaN volt minden nem `Nd` alakú címkére, és nem maradt a saját
     // sorában: a /szamok útvonal `Math.max`-szal veszi a leghosszabb ablakot

@@ -97,7 +97,7 @@ function row(label: string, m: Metric, digits = 0, unit = "", column?: string): 
   return {
     label,
     value: m.value === null ? "nincs mérés" : `${hu(m.value, digits)}${unit}`,
-    detail: `${m.n} nap · ${pct}% lefedettség (${m.window})`,
+    detail: `${hu(m.n)} nap · ${pct}% lefedettség (${m.window})`,
     coverage: m.coverage,
     series: column === undefined || !chartable ? null : { column, days },
   };
@@ -107,8 +107,11 @@ export function metricsRowsFrom(m: Metrics): MetricRow[] {
   const rows: MetricRow[] = [
     {
       label: "Terhelési arány",
-      value: m.physical.loadRatio === null ? "nincs alap" : hu(m.physical.loadRatio, 2),
-      detail: "28 napos napi átlag a 365 naposhoz mérve",
+      // Same value shape and missing-state wording as the Terhelés area page
+      // (`view/area/load.ts`'s lead figure) — one figure should not read
+      // differently depending on which page it is met on.
+      value: m.physical.loadRatio === null ? "nincs elég előzmény" : `${hu(m.physical.loadRatio, 2)}×`,
+      detail: "28 napos napi átlag edzésperc a 365 naposhoz mérve",
       // Two windows compared, so there is no single one to be complete over —
       // and no single column either, so this row never gets a chart.
       coverage: null,

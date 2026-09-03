@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { nutritionBody } from "../../src/delivery/http/view/area/nutrition.ts";
 
 const empty = {
-  measuredDays: 0, lastDate: null,
+  measuredDays: 0, measuredProteinDays: 0, lastDate: null,
   actual: { kcal: null, proteinG: null },
   plan: [], tiles: [],
 };
@@ -90,7 +90,7 @@ describe("Táplálkozás oldal", () => {
     expect(html).toContain("Vacsora");
   });
 
-  it("a hét különböző napjait helyes napneven mutatja", () => {
+  it("a hét különböző napjait helyes napnéven mutatja", () => {
     // Teszteljük, hogy a hétfő (weekday=1) az "hétfő" sor alatt jelenik meg,
     // és a vasárnap (weekday=0) a "vasárnap" sor alatt.
     const html = nutritionBody({
@@ -116,6 +116,20 @@ describe("Táplálkozás oldal", () => {
     expect(vasarnapiReggelijeIndex).toBeGreaterThan(vasárnapi);
   });
 
+  it("a heti étrend táblája hétfővel kezdődik, nem a tárolási sorrenddel", () => {
+    // D3: az előző teszt csak a címke↔hétköznap PÁROSÍTÁST őrzi (indexOf-
+    // pozíciókkal), a SOROK SORRENDJÉT nem — az `order` tömb tárolási
+    // sorrendre ([0..6], vasárnap elöl) cserélése minden névcímkét helyesen
+    // hagyna, csak a táblát vasárnappal indítaná. Ez a teszt a ténylegesen
+    // renderelt sorsorrendet nézi, nem a szöveg pozícióját.
+    const plan = [0, 1, 2, 3, 4, 5, 6].map((w) =>
+      m(w, "reggeli", `Nap-${w}`, { kcal: 100, proteinG: 5 }));
+    const html = nutritionBody({ ...empty, plan });
+    const table = html.substring(html.indexOf("Heti étrend"));
+    const days = [...table.matchAll(/<tr class="live"[^>]*><td>([^<]+)<\/td>/g)].map((mm) => mm[1]);
+    expect(days).toEqual(["hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap"]);
+  });
+
   it("a terv és valóság sávban mutatja a tervezett napi kalóriát", () => {
     const html = nutritionBody({
       ...empty,
@@ -131,6 +145,7 @@ describe("Táplálkozás oldal", () => {
     const html = nutritionBody({
       ...empty,
       measuredDays: 10,
+      measuredProteinDays: 10,
       actual: { kcal: 2000, proteinG: 75 },
       plan: [],
     });
@@ -140,6 +155,27 @@ describe("Táplálkozás oldal", () => {
     expect(comparison).toContain("Mért napi fehérje");
     expect(comparison).toContain("75 g");
     expect(comparison).toContain("10 mért nap átlaga");
+  });
+
+  it("a fehérje sora a saját napszámát mutatja, nem a kalóriáét", () => {
+    // B1: a fehérje átlagát `withProtein.length` napon számoljuk, ami
+    // kevesebb lehet, mint a kalóriát hordozó napok száma — egy nap
+    // rögzíthet kalóriát fehérje nélkül. A két szám itt szándékosan eltér,
+    // hogy egy olyan hiba is bukjon, ahol a fehérje sor a kalória
+    // napszámát írná ki.
+    const html = nutritionBody({
+      ...empty,
+      measuredDays: 3,
+      measuredProteinDays: 2,
+      actual: { kcal: 2100, proteinG: 100 },
+      plan: [],
+    });
+    const comparison = html.substring(html.indexOf("Terv és valóság"));
+    const kcalRow = /<tr[^>]*><td>Mért napi kalória<\/td>[\s\S]*?<\/tr>/.exec(comparison)?.[0] ?? "";
+    const proteinRow = /<tr[^>]*><td>Mért napi fehérje<\/td>[\s\S]*?<\/tr>/.exec(comparison)?.[0] ?? "";
+    expect(kcalRow).toContain("3 mért nap átlaga");
+    expect(proteinRow).toContain("2 mért nap átlaga");
+    expect(proteinRow).not.toContain("3 mért nap átlaga");
   });
 
   it("mért érték nélkül halott sornak jelöli a mért kalóriát", () => {

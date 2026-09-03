@@ -4,8 +4,19 @@ import { leadBand, seriesBand, type SeriesTile } from "./frame.ts";
 import type { PlannedMeal } from "../../../../infra/db/repositories/meals.ts";
 
 export interface NutritionData {
-  /** How many days carry an intake figure at all. */
+  /** How many days carry a kcal figure — what `actual.kcal`'s mean rests on. */
   measuredDays: number;
+  /**
+   * How many days carry a protein figure — what `actual.proteinG`'s mean
+   * rests on.
+   *
+   * Kept apart from `measuredDays`: a day can log calories without protein,
+   * so the two counts differ, and labelling the protein row with the kcal
+   * count would state a sample size the protein mean does not actually rest
+   * on — the same failure this page's own `planTotal` comment forbids for
+   * the planned row.
+   */
+  measuredProteinDays: number;
   /** The day the most recent intake was recorded on, or null. */
   lastDate: string | null;
   /** Mean measured intake per day — null where nothing was measured. */
@@ -46,7 +57,7 @@ function planTable(plan: readonly PlannedMeal[]): string {
   // Weekdays in the order a week is lived, Monday first — the column holds
   // 0..6 with 0 as Sunday, which is the storage order, not the reading order.
   const order = [1, 2, 3, 4, 5, 6, 0];
-  const header = `<tr><td></td>${ETKEZESEK.map(({ label }) => `<td>${label}</td>`).join("")}<td class="ev">Nap</td></tr>`;
+  const header = `<tr><td></td>${ETKEZESEK.map(({ label }) => `<td>${label}</td>`).join("")}<td class="ev">Összesen</td></tr>`;
   const rows = order.map((weekday, i) => {
     const items = plan.filter((p) => p.weekday === weekday);
     if (items.length === 0) return "";
@@ -112,7 +123,7 @@ function comparison(d: NutritionData): string {
     `<td class="ev"><span class="note">${hu(d.measuredDays)} mért nap átlaga</span></td></tr>`,
     `<tr class="${d.actual.proteinG === null ? "dead" : "live"}" style="--i:2"><td>Mért napi fehérje</td>`,
     `<td class="value">${cell(d.actual.proteinG, " g")}</td>`,
-    `<td class="ev"><span class="note">${hu(d.measuredDays)} mért nap átlaga</span></td></tr>`,
+    `<td class="ev"><span class="note">${hu(d.measuredProteinDays)} mért nap átlaga</span></td></tr>`,
     `</table></section>`,
   ].join("");
 }

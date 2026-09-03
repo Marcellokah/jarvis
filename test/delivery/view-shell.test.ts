@@ -135,6 +135,31 @@ describe("navigáció a területekkel", () => {
     expect(outside).not.toContain('href="/terulet/terheles"');
   });
 
+  it("path megadásával az aktuális almenü elem kapja az aria-current-et, nem a hub", () => {
+    // F4: mind a hat területi útvonal section: "terulet"-tel renderel, ezért
+    // `path` nélkül az aria-current mindig a hub linkjén landolt volna, öt
+    // oldalon tévesen.
+    const html = layout({
+      ...base, section: "terulet",
+      nav: { ma: false, terulet: true, kerdes: false },
+      path: "/terulet/penzugy",
+    });
+    const current = [...html.matchAll(/href="([^"]+)"[^>]*aria-current="page"/g)].map((m) => m[1]);
+    expect(current).toEqual(["/terulet/penzugy"]);
+  });
+
+  it("egy almenü alá tartozó, de nem pontosan egyező path is a saját területét jelöli", () => {
+    // A napló ("/terulet/terheles/naplo") a Terhelés terület alá tartozik,
+    // nem önálló almenüpont — a saját területe akkor is jelölve legyen.
+    const html = layout({
+      ...base, section: "terulet",
+      nav: { ma: false, terulet: true, kerdes: false },
+      path: "/terulet/terheles/naplo",
+    });
+    const current = [...html.matchAll(/href="([^"]+)"[^>]*aria-current="page"/g)].map((m) => m[1]);
+    expect(current).toEqual(["/terulet/terheles"]);
+  });
+
   it("az almenü telefonon nem látszik", () => {
     // Az alsó sor négy eleme marad; az almenü kizárólag az asztali sávban él.
     expect(/\.almenu \{[^}]*display:\s*none/.test(STYLE)).toBe(true);

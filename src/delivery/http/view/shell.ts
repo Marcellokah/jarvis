@@ -41,6 +41,18 @@ export interface ShellData {
   briefAge: string | null;
   channels: ChannelSummary;
   nav: NavState;
+  /**
+   * The request's own path, e.g. "/terulet/penzugy" — optional because only
+   * the six area routes currently have a submenu to disambiguate.
+   *
+   * All six pass `section: "terulet"`, so without this, `aria-current="page"`
+   * always lands on the "Terület" hub link — even on the five pages that are
+   * not the hub. When `path` matches one of the four area submenu links (or
+   * a page nested under one, like the workout log under "Terhelés"), that
+   * link carries `aria-current` instead of the top-level one, so a screen
+   * reader is told the true current page rather than always the hub.
+   */
+  path?: string;
   body: string;
 }
 
@@ -78,17 +90,31 @@ const TERULETEK: { href: string; label: string }[] = [
 ];
 
 function nav(data: ShellData): string {
+  // The one submenu link (if any) whose own page the reader is actually on —
+  // a nested page like the workout log matches its area by prefix, not just
+  // by exact href.
+  const path = data.path;
+  const activeSub = path === undefined
+    ? undefined
+    : TERULETEK.find((t) => path === t.href || path.startsWith(`${t.href}/`));
+
   const items = ITEMS.map((item) => {
-    const active = item.section === data.section;
+    const sectionActive = item.section === data.section;
+    // Once a submenu link matches, IT is the reader's true location — the
+    // top-level "Terület" link must not also claim to be current, or two
+    // elements on the page would both say "you are here".
+    const suppressTop = item.section === "terulet" && activeSub !== undefined;
+    const current = sectionActive && !suppressTop;
     const lamp = item.lamp === null ? "" : (data.nav[item.lamp] ? " jelzo el" : " jelzo holt");
-    const link = `<a href="${item.href}" class="menu${lamp}"${active ? ' aria-current="page"' : ""}>`
+    const link = `<a href="${item.href}" class="menu${lamp}"${current ? ' aria-current="page"' : ""}>`
       + `${escapeHtml(item.label)}</a>`;
     // The sub-list is rendered only while the reader is inside the section:
     // on every other page it would be four links to somewhere they did not
     // ask about, in a rail that has held four items since F1.
-    if (item.section !== "terulet" || !active) return link;
+    if (item.section !== "terulet" || !sectionActive) return link;
     const sub = TERULETEK.map((t) =>
-      `<a href="${t.href}" class="alelem">${escapeHtml(t.label)}</a>`).join("");
+      `<a href="${t.href}" class="alelem"${t === activeSub ? ' aria-current="page"' : ""}>`
+      + `${escapeHtml(t.label)}</a>`).join("");
     return `${link}<span class="almenu">${sub}</span>`;
   }).join("");
   return `<nav>${items}</nav>`;

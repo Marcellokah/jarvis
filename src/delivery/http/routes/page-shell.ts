@@ -168,14 +168,21 @@ export async function shellInputs(deps: PageDeps, now: Date): Promise<ShellInput
   };
 }
 
-/** The shell around one page's body, from inputs every page computes alike. */
-export function render(section: Section, inputs: ShellInputs, body: string): string {
+/**
+ * The shell around one page's body, from inputs every page computes alike.
+ *
+ * `path` is optional and only the six area routes currently pass it — see
+ * `ShellData.path` for why it exists: without it, every area page would mark
+ * the hub link as current rather than its own submenu link.
+ */
+export function render(section: Section, inputs: ShellInputs, body: string, path?: string): string {
   return layout({
     section,
     dateLabel: inputs.dateLabel,
     briefAge: inputs.briefAge,
     channels: inputs.channels,
     nav: inputs.nav,
+    path,
     body,
   });
 }

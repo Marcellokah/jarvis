@@ -1,6 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { STYLE, TOKEN_NAMES } from "../../src/delivery/http/view/theme.ts";
 
+/**
+ * The FIRST `@media (prefers-reduced-motion: reduce) { … }` block's own
+ * body, brace-balanced — not regex-greedy to the stylesheet's last `}`.
+ *
+ * D4: `/prefers-reduced-motion[^{]*\{([\s\S]*)\}\s*\`?\s*$/` captured from
+ * the first block's `{` to the LAST `}` in the whole stylesheet, so it kept
+ * passing even once a second (and now third, fourth) reduced-motion block
+ * was appended further down — anything between the first block and the end
+ * of the file counted as "inside" it. Counting braces instead stops at the
+ * first block's own matching `}`, so a rule that moved OUT of that block
+ * (into an unconditional one later in the file) is no longer seen as still
+ * inside it.
+ */
+function firstReducedMotionBlock(css: string): string {
+  const start = css.indexOf("prefers-reduced-motion");
+  if (start === -1) return "";
+  const open = css.indexOf("{", start);
+  let depth = 0;
+  let i = open;
+  for (; i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}") {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  return css.slice(open + 1, i);
+}
+
 describe("téma", () => {
   it("mindkét séma minden tokent megad", () => {
     const root = /:root\s*\{([^}]*)\}/.exec(STYLE)?.[1] ?? "";
@@ -52,7 +81,7 @@ describe("téma", () => {
     // ::view-transition-* pszeudóelemeket is le kell állítania, különben az
     // egyetlen mozgás marad, amit a beállítás nem tud kikapcsolni.
     expect(STYLE).toContain("@view-transition");
-    const reduced = /prefers-reduced-motion[^{]*\{([\s\S]*)\}\s*`?\s*$/.exec(STYLE)?.[1] ?? "";
+    const reduced = firstReducedMotionBlock(STYLE);
     expect(reduced).toContain("view-transition");
   });
 });

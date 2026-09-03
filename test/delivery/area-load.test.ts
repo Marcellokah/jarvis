@@ -66,6 +66,11 @@ describe("Terhelés oldal", () => {
     });
     expect(html).toContain("8 400 kcal");
     expect(html).toContain("4 alkalomból");
+    // G1: 3760 perc órává alakítva 62,7 óra — nem 3 760,0 óra. Ez a sor
+    // szándékosan nem kerek percösszeget hordoz, hogy az órává osztás
+    // (`minutes / 60`) elmaradása bukjon, ne csak a formázás.
+    expect(html).toContain("62,7 óra");
+    expect(html).not.toContain("3 760,0 óra");
   });
 
   it("az utolsó edzések listája alatt link visz a teljes naplóra", () => {
@@ -114,7 +119,7 @@ describe("Terhelés oldal", () => {
     expect(html).not.toContain("Erősítés");
   });
 
-  it("elemzésöt mutatja, ha van", () => {
+  it("elemzést mutatja, ha van", () => {
     // Az analysisBand(d.analysis) vezérlést tesztelni kell, hogy tényleg
     // továbbítva van az adat, nem csak hardcoded undefined.
     const html = loadBody({

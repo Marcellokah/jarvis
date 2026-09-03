@@ -51,7 +51,10 @@ function sleepBlock(rows: readonly { year: string; days: number; withSleep: numb
       + `<p class="halk">Nincs alvás-előzmény.</p></section>`;
   }
   const body = rows.map((r, i) => {
-    const pct = r.days === 0 ? 0 : (r.withSleep / r.days) * 100;
+    const raw = r.days === 0 ? 0 : (r.withSleep / r.days) * 100;
+    // Currently unreachable — withSleep never exceeds days — but clamped for
+    // symmetry with metricRow's own rail, which guards the same shape.
+    const pct = Math.min(100, Math.max(0, raw));
     const measured = r.withSleep > 0;
     return [
       `<tr class="${measured ? "live" : "dead"}" style="--i:${i}">`,

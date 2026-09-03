@@ -18,14 +18,25 @@ const empty = {
 const alvasSav = (html: string): string =>
   /Alvás lefedettsége<\/h2>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
 
+/** Csak a vezető sáv — a bare "6"/"84" szám máshol is előfordulhat az
+ *  oldalon, és egy szűretlen `toContain` akkor is zöld maradna, ha az n7/n90
+ *  fel lenne cserélve valahol a sávon KÍVÜL. */
+const vezetoSav = (html: string): string =>
+  /<section class="vezeto[^"]*">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+
 describe("Regeneráció oldal", () => {
   it("a HRV-eltérést mutatja vezető számként, a mintaszámokkal", () => {
     // Egy nyers ms-érték semmihez nem viszonyítható. A szórás annyit ér,
     // amennyi mérésből számoltuk — ezért van ott az n7 és az n90.
+    //
+    // D1: a bare "6" és "84" bárhol egyeznének az oldalon (pl. egy másik sáv
+    // számjegyeiben is), így az n7/n90 felcserélése a `recoveryBody`-ban
+    // zölden futott volna át. A sávra szűkített, teljes mondat pontosan
+    // rögzíti, melyik szám melyik ablaké.
     const html = recoveryBody({ ...empty, deviation: { sigma: 1.42, n7: 6, n90: 84 } });
-    expect(html).toContain("1,42");
-    expect(html).toContain("6");
-    expect(html).toContain("84");
+    const sav = vezetoSav(html);
+    expect(sav).toContain("1,42");
+    expect(sav).toContain("7 nap 6 mérése a 90 nap 84 méréséhez mérve");
   });
 
   it("eltérés nélkül nem nullát mutat", () => {
@@ -79,6 +90,29 @@ describe("Regeneráció oldal", () => {
     });
     expect(html).toContain("215 perc");
     expect(html).toContain("300 nap");
+  });
+
+  it("a Mély alvás és az Alap alvás sora a saját fázisát hordozza, nem a másikét", () => {
+    // G2: egy deep↔core csere a metricRow hívások adatoldalán (a "Mély
+    // alvás" / "Alap alvás" feliratok megtartása mellett) minden korábbi
+    // tesztet zölden hagyna, mert azok csak az egyik oldalt állítják be
+    // egyszerre. Itt mindkét fázis saját, megkülönböztethető értéket kap, és
+    // mindkét irányban ellenőrizzük — a saját sorára szűkítve —, hogy a
+    // helyes érték landol benne.
+    const html = recoveryBody({
+      ...empty,
+      stages: {
+        deep: { value: 71, n: 40, coverage: .4, window: "90d" },
+        core: { value: 215, n: 300, coverage: .3, window: "365d" },
+        rem: NINCS,
+      },
+    });
+    const deepRow = /<tr[^>]*><td>Mély alvás<\/td>[\s\S]*?<\/tr>/.exec(html)?.[0] ?? "";
+    const coreRow = /<tr[^>]*><td>Alap alvás<\/td>[\s\S]*?<\/tr>/.exec(html)?.[0] ?? "";
+    expect(deepRow).toContain("71 perc");
+    expect(deepRow).not.toContain("215 perc");
+    expect(coreRow).toContain("215 perc");
+    expect(coreRow).not.toContain("71 perc");
   });
 
   it("alvás-előzmény nélkül kimondja a hiányt", () => {

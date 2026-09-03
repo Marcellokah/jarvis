@@ -1,5 +1,9 @@
 /**
- * Hungarian number formatting, in one place.
+ * Hungarian number formatting, in one place — for the view layer.
+ *
+ * `src/modules/finance-subs/index.ts` still carries its own private `hu-HU`
+ * copy: that module feeds brief markdown, not HTML pages, and is out of this
+ * file's scope, so it was left alone rather than folded in here.
  *
  * Three copies of this had grown across the view layer, and they had drifted
  * in two ways: (a) two folded the grouping separator to a plain space, but one

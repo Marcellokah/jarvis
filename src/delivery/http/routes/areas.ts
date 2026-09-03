@@ -127,7 +127,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, hubBody({
       synthesis: analysisFor(inputs.analyses, "synthesis"),
       cards,
-    })));
+    }), "/terulet"));
   });
 
   app.get("/terulet/terheles", async (_request, reply) => {
@@ -157,7 +157,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       recent,
       tiles: tilesFor(["steps", "distance_km", "move_kcal", "exercise_min"], now),
       analysis: analysisFor(inputs.analyses, "physical"),
-    })));
+    }), "/terulet/terheles"));
   });
 
   app.get<{ Querystring: { oldal?: string } }>(
@@ -165,19 +165,34 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       const now = deps.clock.now();
       const inputs = await shellInputs(deps, now);
 
-      let rows: ReturnType<typeof deps.workouts.page>["rows"] = [];
+      // Two independent reads, each with its own try/catch: `total` backs the
+      // pager's "1 / 3 · 120 edzés" claim, and `rows` backs the table under
+      // it. Sharing one try/catch let a throwing row read leave `total` at
+      // its real count while `rows` stayed `[]` — an empty table under a
+      // pager still confidently claiming 120 workouts, exactly the missing
+      // data that does not look missing this page's empty-state branch
+      // exists to avoid. A failed row read also resets `total` to 0, so
+      // `worklogBody` takes its own empty-state branch instead of pairing an
+      // empty table with a count it cannot back.
       let total = 0;
-      let oldal = 1;
       try {
         total = deps.workouts.page(0, 1).total;
+      } catch (err) {
+        deps.logger.warn({ err: String(err) }, "worklog rendered without its count");
+      }
+
+      let rows: ReturnType<typeof deps.workouts.page>["rows"] = [];
+      let oldal = 1;
+      try {
         oldal = parseOldal(request.query.oldal, total);
         rows = deps.workouts.page((oldal - 1) * OLDAL_MERET, OLDAL_MERET).rows;
       } catch (err) {
         deps.logger.warn({ err: String(err) }, "worklog rendered without its rows");
+        total = 0;
       }
 
       return reply.type("text/html; charset=utf-8")
-        .send(render("terulet", inputs, worklogBody(rows, oldal, total)));
+        .send(render("terulet", inputs, worklogBody(rows, oldal, total), "/terulet/terheles/naplo"));
     },
   );
 
@@ -194,7 +209,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       awakenings: m?.recovery.awakenings ?? EMPTY,
       tiles: tilesFor(["hrv", "rhr", "hr_recovery", "sleep_h"], now),
       analysis: analysisFor(inputs.analyses, "recovery"),
-    })));
+    }), "/terulet/regeneracio"));
   });
 
   app.get("/terulet/taplalkozas", async (_request, reply) => {
@@ -205,6 +220,7 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     // `Metrics` has no nutrition branch yet, so the days are counted from the
     // same snapshot read main.ts performs for the aggregate anyway.
     let measuredDays = 0;
+    let measuredProteinDays = 0;
     let lastDate: string | null = null;
     let kcal: number | null = null;
     let proteinG: number | null = null;
@@ -213,12 +229,13 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       const rows = deps.health.between("1970-01-01", today)
         .filter((s) => typeof s.dietKcal === "number");
       measuredDays = rows.length;
-      // `between` dátum szerint növekvő sorrendben ad vissza (ellenőrizve a
-      // repository-ban), tehát az utolsó elem a legutóbbi mért nap.
+      // `between` returns rows in ascending date order (verified in the
+      // repository), so the last element is the most recently measured day.
       lastDate = rows.at(-1)?.date ?? null;
       if (rows.length > 0) {
         kcal = Math.round(rows.reduce((a, s) => a + (s.dietKcal ?? 0), 0) / rows.length);
         const withProtein = rows.filter((s) => typeof s.dietProteinG === "number");
+        measuredProteinDays = withProtein.length;
         proteinG = withProtein.length === 0
           ? null
           : Math.round(withProtein.reduce((a, s) => a + (s.dietProteinG ?? 0), 0) / withProtein.length);
@@ -237,9 +254,9 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
     }
 
     return reply.type("text/html; charset=utf-8").send(render("terulet", inputs, nutritionBody({
-      measuredDays, lastDate, actual: { kcal, proteinG }, plan,
+      measuredDays, measuredProteinDays, lastDate, actual: { kcal, proteinG }, plan,
       tiles: tilesFor(["diet_kcal", "diet_protein_g"], now),
-    })));
+    }), "/terulet/taplalkozas"));
   });
 
   app.get("/terulet/penzugy", async (_request, reply) => {
@@ -262,6 +279,6 @@ export function registerAreaRoutes(app: FastifyInstance, deps: PageDeps): void {
       subscriptions,
       today: isoDate(now, TZ),
       analysis: analysisFor(inputs.analyses, "finance"),
-    })));
+    }), "/terulet/penzugy"));
   });
 }
