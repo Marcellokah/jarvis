@@ -75,12 +75,6 @@ export const config = {
      * makes every other entry optional rather than load-bearing.
      */
     chain: ["groq", "template"] as const,
-    /** 'sonnet' | 'opus' | 'haiku', or a full model id. */
-    model: "sonnet",
-    /** Phase 3: let the CLI use its own WebSearch to fill gaps in feed data. */
-    webGapFill: false,
-    /** Hard ceiling; a wedged CLI is killed rather than holding the brief open. */
-    timeoutMs: 90_000,
   },
 
   groq: {

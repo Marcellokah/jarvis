@@ -1,6 +1,0 @@
-#!/bin/sh
-if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
-cat > /dev/null
-# Exit 0 with is_error: true — the exact shape the real CLI returns on failure.
-printf '{"is_error":true,"subtype":"success","result":"Credit balance is too low"}'
-exit 0

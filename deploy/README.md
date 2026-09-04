@@ -7,7 +7,6 @@ Minden lépés ingyenes. Nincs VPS, nincs domain, nincs metered API.
 ```bash
 ./scripts/set-secret.sh JARVIS_TOKEN            # openssl rand -hex 32
 ./scripts/set-secret.sh GROQ_API_KEY            # console.groq.com → API Keys
-./scripts/set-secret.sh CLAUDE_CODE_OAUTH_TOKEN # claude setup-token eredménye
 ./scripts/set-secret.sh TELEGRAM_BOT_TOKEN      # @BotFather → /newbot
 ./scripts/set-secret.sh ICLOUD_USERNAME         # az Apple ID email címed
 ./scripts/set-secret.sh ICLOUD_APP_PASSWORD     # appleid.apple.com → app-specific
@@ -38,33 +37,12 @@ A `security add-generic-password` **sikeres esetben semmit nem ír ki**, és ür
 vagy félremásolt értékre is `exit 0`-t ad — a hiba csak később, 401-ként derülne
 ki. A `set-secret.sh` visszaolvassa és összeveti, amit írt.
 
-## 2. Claude Code szintézis (opcionális, alapból kikapcsolva)
-
-Az alapértelmezett lánc `groq → template` — ehhez a lépéshez nincs szükség.
-A `claude-code` szintetizáló kódja megmaradt, és env-változóval bárhonnan
-visszakapcsolható a láncba (pl. `SYNTHESIS_CHAIN=claude-code,groq,template`),
-ha egyszer megint hozzáférsz Claude Code előfizetéshez:
-
-```bash
-claude setup-token                                  # kiír egy sk-ant-oat01-… tokent
-./scripts/set-secret.sh CLAUDE_CODE_OAUTH_TOKEN     # ezt tedd el
-```
-
-A `setup-token` **nem menti el magától** a tokent — csak kiírja. A Jarvis a
-Kulcskarikából olvassa, és `CLAUDE_CODE_OAUTH_TOKEN` néven adja át a
-gyerekfolyamatnak; így a launchd alól induló szerver is be tud jelentkezni,
-pedig sem shell profilt, sem lemezre írt CLI-loginat nem örököl.
-
-> A `claude auth status` bármilyen nem-üres tokenre `loggedIn: true`-t mond, a
-> lejártra is. Egy visszavont token tehát átmegy az ellenőrzésen és csak a
-> szintézisnél bukik el — ott viszont a fallback lánc elkapja.
-
-## 3. Naptár
+## 2. Naptár
 
 Hozz létre a Naptár appban egy **`Jarvis`** nevű naptárat. A rendszer kizárólag
 ide ír, és ha nincs meg, inkább hibát jelez, mint hogy a valódi naptáradba írjon.
 
-## 4. Indítás launchd alatt
+## 3. Indítás launchd alatt
 
 ```bash
 cp deploy/local.jarvis.agent.plist ~/Library/LaunchAgents/
@@ -117,7 +95,7 @@ npm run import-health -- ~/Downloads/export.zip
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.jarvis.agent.plist
 ```
 
-## 5. Elérés a telefonról — Tailscale
+## 4. Elérés a telefonról — Tailscale
 
 ```bash
 brew install --cask tailscale-app     # a cask neve `tailscale-app`, nem `tailscale`
@@ -165,7 +143,7 @@ nem kell újra a token, és nem is marad benne a címsorban.
 Az iPhone-on legyen fent a Tailscale app, **ugyanazzal a fiókkal** belépve
 (különben nem látja a gépet), always-on VPN profillal.
 
-## 6. Ellenőrzés
+## 5. Ellenőrzés
 
 ```bash
 npm run smoke

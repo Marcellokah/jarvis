@@ -4,7 +4,6 @@ import { ALL_MODULES } from "./modules/index.ts";
 import { assertUniqueNames } from "./core/registry.ts";
 import { createBriefService, type BriefService } from "./core/brief-service.ts";
 import { templateSynthesizer } from "./core/synthesis/template.ts";
-import { claudeCodeSynthesizer } from "./core/synthesis/claude-code.ts";
 import { apiSynthesizer } from "./core/synthesis/api.ts";
 import { groqSynthesizer } from "./core/synthesis/groq.ts";
 import type { Synthesizer } from "./core/synthesis/synthesizer.ts";
@@ -15,7 +14,6 @@ import { createActionRepo } from "./infra/db/repositories/actions.ts";
 import { createCalendarWriteRepo } from "./infra/db/repositories/calendar-writes.ts";
 import { createProposalService, type ProposalService } from "./core/proposals.ts";
 import { groqChat, type ChatService } from "./core/chat.ts";
-import { OAUTH_TOKEN_VAR } from "./core/synthesis/claude-cli.ts";
 import { GROQ_KEY_VAR } from "./infra/groq.ts";
 import { createSubscriptionRepo, type SubscriptionRepo } from "./infra/db/repositories/subscriptions.ts";
 import { createSubscriptionMonthRepo, type SubscriptionMonthRepo } from "./infra/db/repositories/subscription-months.ts";
@@ -195,17 +193,6 @@ export function buildSynthesisChain(
   const chain: Synthesizer[] = [];
   for (const name of requested) {
     switch (name) {
-      case "claude-code":
-        chain.push(claudeCodeSynthesizer({
-          bin: env.CLAUDE_BIN,
-          model: config.synthesis.model,
-          systemPromptFile: fromRoot("jarvis.md"),
-          webGapFill: config.synthesis.webGapFill,
-          timeoutMs: config.synthesis.timeoutMs,
-          logger,
-          ...(secrets ? { token: () => secrets.get(OAUTH_TOKEN_VAR) } : {}),
-        }));
-        break;
       case "groq":
         chain.push(groqSynthesizer({
           fetcher: createFetcher({ logger }),

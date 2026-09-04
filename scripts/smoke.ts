@@ -71,15 +71,13 @@ try {
   add("db: meal_plan seeded", meals > 0, meals > 0 ? `${meals} meals` : "empty — run: npm run seed");
 
   // --- Synthesis ------------------------------------------------------------
-  // Never fatal: `template` always works, so a logged-out CLI degrades the
-  // prose rather than the delivery. Reported so the degradation is visible
-  // instead of mysterious.
+  // Never fatal: `template` always works, so an unavailable provider degrades
+  // the prose rather than the delivery. Reported so the degradation is
+  // visible instead of mysterious.
   // The app's own chain, not a rebuilt one: rebuilding it here without the
-  // secret resolver is exactly what made a stored token look absent.
-  // Remediation is provider-specific — `claude setup-token` only helps the
-  // claude-code path, and telling a Groq user to run it just wastes their time.
+  // secret resolver is exactly what made a stored key look absent.
+  // Remediation is provider-specific: a Groq key is not fixed the same way.
   const remedy: Record<string, string> = {
-    "claude-code": "run `claude setup-token`",
     groq: `store the key: ./scripts/set-secret.sh ${GROQ_KEY_VAR}`,
     api: "set ANTHROPIC_API_KEY (deliberately, this path costs money)",
   };

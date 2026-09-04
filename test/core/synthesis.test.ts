@@ -27,18 +27,18 @@ const signal = new AbortController().signal;
 describe("synthesis fallback chain", () => {
   it("falls through to the template when the preferred synthesizer fails", async () => {
     const out = await synthesizeWithFallback(
-      [failing("claude-code", "ENOENT: claude not found"), templateSynthesizer()],
+      [failing("groq", "HTTP 503 from Groq"), templateSynthesizer()],
       ctx, silentLogger(), signal,
     );
 
     expect(out.synthesizer).toBe("template");
-    expect(out.demoted).toEqual([{ name: "claude-code", reason: "ENOENT: claude not found" }]);
+    expect(out.demoted).toEqual([{ name: "groq", reason: "HTTP 503 from Groq" }]);
     expect(out.markdown).toContain("🥦 Demó");
   });
 
   it("skips a synthesizer that reports itself unavailable", async () => {
     const unavailable: Synthesizer = {
-      name: "claude-code", available: async () => false,
+      name: "groq", available: async () => false,
       synthesize: async () => "never reached",
     };
     const out = await synthesizeWithFallback([unavailable, templateSynthesizer()], ctx, silentLogger(), signal);

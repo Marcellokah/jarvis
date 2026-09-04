@@ -23,17 +23,24 @@ describe("cost guards", () => {
     expect(chain.map((s) => s.name)).not.toContain("api");
   });
 
-  it("keeps claude-code selectable for comparison", () => {
+  /**
+   * claude-code was removed deliberately, not by accident: the only Claude Code
+   * subscription reachable from this machine is not a personal one, and this
+   * project must not spend someone else's quota. Naming it in SYNTHESIS_CHAIN
+   * has to be inert, not merely undocumented — an env var is the one place a
+   * removed provider could come back without a code change.
+   */
+  it("no longer builds claude-code, even when the chain names it", () => {
     const chain = buildSynthesisChain(
       loadEnv({ ...base, SYNTHESIS_CHAIN: "claude-code,template" }), silentLogger(),
     );
-    expect(chain.map((s) => s.name)).toEqual(["claude-code", "template"]);
+    expect(chain.map((s) => s.name)).toEqual(["template"]);
   });
 
-  // Dropping the free fallback would make the brief conditional on a
-  // subprocess and a network — checked against two different single-entry
-  // chains so neither the default provider nor the comparison one can skip it.
-  it.each(["groq", "claude-code"])(
+  // Dropping the free fallback would make the brief conditional on a network —
+  // checked against both remaining providers so neither the default one nor
+  // the paid one can skip it.
+  it.each(["groq", "api"])(
     "always appends the template, even when the chain is just \"%s\"",
     (name) => {
       const chain = buildSynthesisChain(loadEnv({ ...base, SYNTHESIS_CHAIN: name }), silentLogger());

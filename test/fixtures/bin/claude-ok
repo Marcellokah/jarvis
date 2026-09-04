@@ -1,5 +1,0 @@
-#!/bin/sh
-if [ "$1" = "auth" ]; then echo '{"loggedIn":true,"authMethod":"oauth"}'; exit 0; fi
-cat > /dev/null
-printf '{"is_error":false,"subtype":"success","num_turns":1,"total_cost_usd":0,"duration_ms":900,'
-printf '"result":"# 2026. augusztus 31., hétfő\\n\\n## 🥦 Egészség & Meal Prep\\n\\nSzintetizált szöveg.\\n\\n- [ ] Csinálj valamit\\n"}'

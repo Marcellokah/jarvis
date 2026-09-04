@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { homedir } from "node:os";
 import type { SecretResolver } from "./infra/secrets.ts";
 
 const schema = z.object({
@@ -15,17 +14,8 @@ const schema = z.object({
     .optional()
     .transform((v) => v === undefined ? undefined : v !== "false"),
 
-  /** Overrides config.synthesis.chain. Comma-separated, e.g. "claude-code,template". */
+  /** Overrides config.synthesis.chain. Comma-separated, e.g. "groq,template". */
   SYNTHESIS_CHAIN: z.string().optional(),
-  /**
-   * Where `claude setup-token` installs the CLI. Derived from the running
-   * user's home rather than hardcoded: a literal path bakes one developer's
-   * username into the repository and breaks every other machine.
-   */
-  CLAUDE_BIN: z.string().default(`${homedir()}/.local/bin/claude`),
-  /** From `claude setup-token`. Env or Keychain; needed for headless runs. */
-  CLAUDE_CODE_OAUTH_TOKEN: z.string().optional(),
-
   /** iCloud CalDAV. An app-specific password from appleid.apple.com — never your Apple ID password. */
   ICLOUD_USERNAME: z.string().optional(),
   ICLOUD_APP_PASSWORD: z.string().optional(),

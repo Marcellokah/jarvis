@@ -2,7 +2,6 @@
 # Store a Jarvis secret in the macOS login Keychain, then read it back and
 # verify it landed.
 #
-#   ./scripts/set-secret.sh CLAUDE_CODE_OAUTH_TOKEN
 #   ./scripts/set-secret.sh ICLOUD_APP_PASSWORD
 #   ./scripts/set-secret.sh TELEGRAM_BOT_TOKEN --clipboard
 #
@@ -65,19 +64,6 @@ case "$KEY" in
       echo >&2
       echo "  Generate one at appleid.apple.com → Sign-In and Security →" >&2
       echo "  App-Specific Passwords → '+'. Copy it exactly, hyphens included." >&2
-      exit 1
-    fi ;;
-  CLAUDE_CODE_OAUTH_TOKEN)
-    if [[ ! "$VALUE" =~ ^sk-ant-oat[0-9]{2}- ]]; then
-      echo "✗ Doesn't look like a 'claude setup-token' result (expected sk-ant-oat01-…)." >&2
-      exit 1
-    fi
-    # A truncated paste keeps the right prefix and fails only later, as a 401
-    # that looks like a revoked token rather than a copy-paste mistake.
-    if (( ${#VALUE} < 80 )); then
-      echo "✗ Token is only ${#VALUE} characters — a full one is 100+." >&2
-      echo "  The paste was truncated. Re-run 'claude setup-token', copy the whole" >&2
-      echo "  value, then: $0 $KEY --clipboard" >&2
       exit 1
     fi ;;
   TELEGRAM_BOT_TOKEN)
