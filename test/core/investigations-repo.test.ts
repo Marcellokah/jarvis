@@ -1,0 +1,48 @@
+import { describe, it, expect } from "vitest";
+import { memoryDb } from "../helpers.ts";
+import { createInvestigationRepo } from "../../src/infra/db/repositories/investigations.ts";
+
+describe("investigations repo", () => {
+  it("stores a finished investigation and reads it back whole", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    repo.record({
+      startedAt: new Date("2026-09-04T05:00:00.000Z"),
+      goal: "Miért alacsonyabb ma a regeneráció?",
+      outcome: "kesz",
+      finding: "Két rossz éjszaka után vagy.",
+      transcript: [{ step: { name: "nap", args: { datum: "2026-09-04" }, why: "a mai nap" }, observation: "alvas=6.6" }],
+      usd: 0.21,
+    });
+
+    const [row] = repo.recent(10);
+    expect(row!.goal).toBe("Miért alacsonyabb ma a regeneráció?");
+    expect(row!.outcome).toBe("kesz");
+    expect(row!.finding).toBe("Két rossz éjszaka után vagy.");
+    expect(row!.transcript).toHaveLength(1);
+    expect(row!.transcript[0]!.step.name).toBe("nap");
+    expect(row!.usd).toBeCloseTo(0.21, 4);
+  });
+
+  it("keeps a run that ran out of steps, with no finding", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    repo.record({
+      startedAt: new Date("2026-09-04T05:00:00.000Z"),
+      goal: "cél", outcome: "kifutott", finding: null, transcript: [], usd: 0.05,
+    });
+    const [row] = repo.recent(10);
+    expect(row!.outcome).toBe("kifutott");
+    expect(row!.finding).toBeNull();
+  });
+
+  it("returns newest first, and null when nothing was ever run", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    expect(repo.lastAt()).toBeNull();
+    for (const iso of ["2026-09-01T05:00:00.000Z", "2026-09-03T05:00:00.000Z", "2026-09-02T05:00:00.000Z"]) {
+      repo.record({ startedAt: new Date(iso), goal: iso, outcome: "kifutott", finding: null, transcript: [], usd: 0 });
+    }
+    expect(repo.recent(3).map((r) => r.goal)).toEqual([
+      "2026-09-03T05:00:00.000Z", "2026-09-02T05:00:00.000Z", "2026-09-01T05:00:00.000Z",
+    ]);
+    expect(repo.lastAt()).toBe("2026-09-03T05:00:00.000Z");
+  });
+});
