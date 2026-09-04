@@ -149,6 +149,69 @@ describe("the evidence flag", () => {
 });
 
 /**
+ * `metricOf` used `raw in METRICS`, and `METRICS` is a plain object literal:
+ * `"constructor" in METRICS` is `true`, same hole `runQuestion` already
+ * closed for `QUESTIONS` with `Object.hasOwn`. Unlike the `QUESTIONS` hole,
+ * this one does not just produce an error observation -- `METRICS.constructor`
+ * resolves to `Object`'s own constructor function, `seriesOf` reads
+ * `snapshot[Object]` on every row (always `undefined`, which survives the
+ * `!== null` filter), and the arithmetic downstream mints an observation that
+ * *looks like* a measurement: "constructor: átlag NaN, szórás NaN, n=40",
+ * returned as evidence.
+ */
+describe("metricOf: inherited names are not metrics", () => {
+  it.each(["elteresek", "lefedettseg", "ritmus"] as const)(
+    "%s refuses a mutató that only exists on the prototype chain, instead of minting evidence",
+    async (name) => {
+      const args = name === "ritmus"
+        ? { mutato: "constructor", bontas: "hetnap" }
+        : { mutato: "constructor" };
+      const result = await runQuestion(name, args, ctx());
+      expect(result.evidence).toBe(false);
+      expect(result.observation).toContain("ismeretlen mutató");
+      expect(result.observation).not.toContain("NaN");
+    },
+  );
+});
+
+/**
+ * `napok` used to be unconditionally evidence, even when every row in the
+ * range rendered "üres edzés=0" -- a range that constrained nothing about
+ * the world, same as the single-day case `nap` already refuses. Mirrors the
+ * `measured === null && workouts.length === 0` rule in `nap`, aggregated
+ * over the whole range: evidence only when at least one row carries at
+ * least one measurement.
+ */
+describe("napok: an all-empty range is not evidence", () => {
+  function emptyCtx(): QuestionContext {
+    const db = memoryDb();
+    const health = createHealthRepo(db);
+    const now = new Date("2026-09-04T05:00:00.000Z");
+    for (let i = 1; i <= 3; i++) {
+      health.upsert(snapshot({ date: `2026-09-0${i}` }), {}, now);
+    }
+    return {
+      health, workouts: createWorkoutRepo(db),
+      calendar: unavailableCalendar("test"), today: "2026-09-04",
+    };
+  }
+
+  it("classifies a range whose every row measured nothing as non-evidence, like nap does", async () => {
+    const result = await runQuestion("napok", { tol: "2026-09-01", ig: "2026-09-03" }, emptyCtx());
+    expect(result.evidence).toBe(false);
+    expect(result.observation).toContain("üres");
+  });
+
+  it("still returns evidence when at least one row in the range measured something", async () => {
+    const c = emptyCtx();
+    c.health.upsert(
+      snapshot({ date: "2026-09-02", hrv: 55 }), {}, new Date("2026-09-04T05:00:00.000Z"));
+    const result = await runQuestion("napok", { tol: "2026-09-01", ig: "2026-09-03" }, c);
+    expect(result.evidence).toBe(true);
+  });
+});
+
+/**
  * Defence 2 was optional, and the prompt claimed otherwise.
  *
  * `napok` is the question the ten-step budget nudges the model towards, and

@@ -120,7 +120,16 @@ function localDateToUTC(dateStr: string, tz: string = TZ): Date {
 
 export function metricOf(args: Record<string, unknown>): MetricName | null {
   const raw = String(args.mutato ?? "");
-  return raw in METRICS ? raw as MetricName : null;
+  // `Object.hasOwn`, not `in`. `METRICS` is a plain object literal, so
+  // `"constructor" in METRICS` is true, and so are "toString", "valueOf" and
+  // "__proto__". Under `in` a metric named `constructor` resolved to
+  // `Object`'s own constructor function; every snapshot read `s[Object]`,
+  // always `undefined`, which survives the `!== null` filter in `seriesOf`
+  // and flows into `mean`/`stdDev` -- minting an observation that reads
+  // exactly like a measurement ("constructor: átlag NaN, szórás NaN, n=40")
+  // and is marked evidence: true. The identical hole `runQuestion` already
+  // closed for `QUESTIONS`, one function over.
+  return Object.hasOwn(METRICS, raw) ? raw as MetricName : null;
 }
 
 export function seriesOf(ctx: QuestionContext, metric: MetricName, from: string, to: string): Point[] {
@@ -199,10 +208,21 @@ export const QUESTIONS: Record<QuestionName, Question> = {
       // stop -- the measured one, where a 9B model read that number and wrote
       // "HRV normális".
       const bases = baselines(ctx);
-      return evidence(rows.map((s) => {
+      // Same rule as `nap`, aggregated over the range: a row with every field
+      // empty and no workout is the absence of a measurement, not a
+      // measurement of absence. A range where EVERY row is like that
+      // constrained nothing about the world, even though rows existed --
+      // treating it as evidence disagreed with `nap`'s handling of the
+      // identical single day, and reopened the gate to a step that
+      // constrained nothing.
+      let measuredAny = false;
+      const text = rows.map((s) => {
         const workouts = ctx.workouts.forDate(s.date);
-        return `  ${s.date}  ${describeDay(s, bases) ?? "üres"}  edzés=${workouts.length}`;
-      }).join("\n"));
+        const described = describeDay(s, bases);
+        if (described !== null || workouts.length > 0) measuredAny = true;
+        return `  ${s.date}  ${described ?? "üres"}  edzés=${workouts.length}`;
+      }).join("\n");
+      return measuredAny ? evidence(text) : nothing(text);
     },
   },
 

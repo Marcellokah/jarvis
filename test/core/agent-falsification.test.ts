@@ -287,3 +287,29 @@ describe("T3 regression: the fabrication, with a hypothesis on the record", () =
     expect(result.outcome).toMatchObject({ kind: "kesz", finding: FABRICATION });
   });
 });
+
+/**
+ * The gate reads a step's evidence flag off `runQuestion`, which in turn
+ * trusts `metricOf`. `metricOf` used `raw in METRICS`, and `METRICS` is a
+ * plain object literal, so `"constructor" in METRICS` was `true` -- the
+ * identical hole `runQuestion` already closed for `QUESTIONS` with
+ * `Object.hasOwn`, one function over. Unlike that hole, this one does not
+ * fail loudly: `elteresek({mutato: "constructor"})` returns
+ * `evidence: true` with an observation that reads exactly like a
+ * measurement ("constructor: átlag NaN, szórás NaN, n=40"), so the gate
+ * accepted it as a real falsification step. Three steps, no other bypass
+ * needed: hipotezis → elteresek({mutato: "constructor"}) → kesz{cafolat: 2}.
+ */
+describe("the falsification gate: metricOf inherited names cannot mint evidence", () => {
+  it("refuses a finding whose falsification step names a fabricated \"constructor\" metric", async () => {
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "Az edzés utáni regeneráció okozta." }, why: "" },
+      { name: "elteresek", args: { mutato: "constructor" }, why: "prototípus-lánc" },
+      { name: "kesz", args: { megallapitas: "Az edzés okozta.", tamaszkodik: [1], cafolat: 2 }, why: "" },
+      { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+    ]);
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+    expect(result.transcript[1]!.observation).not.toContain("NaN");
+    expect(result.transcript.at(-1)!.observation).toMatch(/nem hozott adatot/);
+  });
+});
