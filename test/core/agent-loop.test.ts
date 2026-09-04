@@ -84,11 +84,27 @@ describe("investigate", () => {
     expect(result.outcome).toEqual({ kind: "hiba", reason: "HTTP 529 overloaded" });
   });
 
-  // The two NaN-coercion unit tests that used to live here (a bare "kesz"
-  // with a non-numeric cafolat/citation) no longer reach terminalOutcome at
-  // all: the falsification gate added in agent-falsification.test.ts now
-  // rejects any "kesz" with no preceding "hipotezis" step before cafolat is
-  // ever inspected, and a "kesz" that does have one still needs an in-range
-  // integer cafolat to get past the gate. The coercion behavior they
-  // exercised is superseded, not lost -- see gateFinding in loop.ts.
+  // The bare "coerces a non-numeric cafolat to 0" unit test that used to
+  // live here is gone for good: a "kesz" with no preceding "hipotezis" is
+  // now rejected before cafolat is ever inspected, so terminalOutcome's
+  // coercion of an invalid cafolat can no longer be reached with a `kesz`
+  // that lacks a hypothesis. But the citation-dropping test below is NOT
+  // redundant with the gate -- gateFinding never looks at `tamaszkodik`, so
+  // a `kesz` that clears the gate can still carry a non-numeric citation,
+  // and this is the only test that exercises that filter.
+  it("drops a non-numeric citation instead of carrying a NaN", async () => {
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "teszt hipotézis" }, why: "" },
+      { name: "nap", args: { datum: "2026-09-04" }, why: "" },
+      {
+        name: "kesz",
+        args: { megallapitas: "teszt megállapítás", tamaszkodik: [1, "kettő", 3], cafolat: 2 },
+        why: "",
+      },
+    ]);
+    expect(result.outcome.kind).toBe("kesz");
+    const cites = (result.outcome as { cites: number[] }).cites;
+    expect(cites).toEqual([1, 3]);
+    expect(cites.some((n) => Number.isNaN(n))).toBe(false);
+  });
 });

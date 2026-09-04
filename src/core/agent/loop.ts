@@ -1,6 +1,6 @@
 import type { Logger } from "../../infra/logger.ts";
 import type { TranscriptEntry } from "../../infra/db/repositories/investigations.ts";
-import { runQuestion, type QuestionContext } from "./questions.ts";
+import { runQuestion, QUESTIONS, type QuestionContext } from "./questions.ts";
 
 export interface Step {
   name: string;
@@ -134,7 +134,11 @@ function terminalOutcome(step: Step): Outcome {
  * in its own transcript.
  */
 function gateFinding(step: Step, transcript: readonly TranscriptEntry[]): string | null {
-  const hypothesisAt = transcript.findIndex((e) => e.step.name === HYPOTHESIS_STEP);
+  // The LAST hipotezis, not the first: a model that abandons hypothesis A for
+  // hypothesis B after a rejection must be checked against B. Pinning to the
+  // first hypothesis would let evidence gathered for an abandoned claim keep
+  // unlocking the gate for every claim made afterward.
+  const hypothesisAt = transcript.findLastIndex((e) => e.step.name === HYPOTHESIS_STEP);
   if (hypothesisAt === -1) {
     return "a megállapítás elutasítva: előbb rögzítsd a hipotézisedet a "
       + "\"hipotezis\" lépéssel, majd futtass egy lépést, ami megdöntené.";
@@ -150,6 +154,23 @@ function gateFinding(step: Step, transcript: readonly TranscriptEntry[]): string
   if (falsifiedBy - 1 <= hypothesisAt) {
     return "a megállapítás elutasítva: a cáfolatnak a hipotézis UTÁN futtatott "
       + `lépésnek kell lennie (a hipotézis a ${hypothesisAt + 1}. lépés volt).`;
+  }
+
+  // An in-range index is not enough: every rejected step (a "kesz" that
+  // failed this gate, a "hipotezis", an unknown/mistyped name) is ALSO
+  // pushed onto the transcript with its own observation, which makes it a
+  // nameable index. Without this check the gate is beatable in two turns --
+  // state a hypothesis, submit a bare "kesz" that gets rejected as
+  // out-of-range, then resubmit citing that very rejection as the
+  // falsification step, since by then it IS in range and it DID come after
+  // the hypothesis. The refusal text even tells the model to "name a step
+  // number", so this is a path the gate would otherwise signpost. A citation
+  // only counts if it names a real question step -- one that actually ran
+  // data through the closed menu -- never a control step or a bounce-back.
+  const cited = transcript[falsifiedBy - 1]!;
+  if (!(cited.step.name in QUESTIONS)) {
+    return `a megállapítás elutasítva: a "cafolat" egy valódi adatlekérdező lépésre `
+      + `mutasson (a ${falsifiedBy}. lépés "${cited.step.name}" volt, ami nem az).`;
   }
 
   return null;

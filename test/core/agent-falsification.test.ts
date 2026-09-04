@@ -72,6 +72,41 @@ describe("the falsification gate", () => {
     expect(result.transcript[0]!.step.name).toBe("hipotezis");
     expect(result.transcript[0]!.observation).toContain("A mérési mód változott.");
   });
+
+  it("rejects a cafolat that is in range but invalid, even with a hypothesis on record", async () => {
+    // Distinguishes the gate's middle branch (bad cafolat value) from its
+    // first branch (no hipotezis at all) and its third branch (cafolat
+    // points at-or-before the hypothesis) -- none of the other cases here
+    // exercise a hypothesis that IS present with a cafolat that is simply
+    // malformed.
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "A mérési mód változott." }, why: "" },
+      { name: "nap", args: { datum: "2026-09-04" }, why: "" },
+      { name: "kesz", args: { megallapitas: "Teszt.", tamaszkodik: [1], cafolat: "kettő" }, why: "" },
+      { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+    ]);
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+    expect(result.transcript.at(-1)!.observation).toMatch(/a "cafolat" mezőben nevezd meg/);
+  });
+
+  it("rejects a cafolat that names a rejected kesz, not a real question step -- the two-turn bypass", async () => {
+    // The bug this closes: a rejected "kesz" is pushed onto the transcript
+    // like any other step, which makes IT a nameable index. Without a check
+    // on what the cited entry actually is, a model could state a
+    // hypothesis, get a "kesz" rejected as out-of-range (which pushes that
+    // rejection onto the transcript and grows it by one), then resubmit
+    // citing that very rejection -- now in range, now after the hypothesis,
+    // and accepted on zero real evidence. The rejection text even tells the
+    // model to "name a step number", so this path is actively signposted.
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "gyanús cáfolat-újrahasznosítás" }, why: "" },
+      { name: "kesz", args: { megallapitas: "próbálkozás 1", tamaszkodik: [1], cafolat: 2 }, why: "" },
+      { name: "kesz", args: { megallapitas: "próbálkozás 2", tamaszkodik: [1], cafolat: 2 }, why: "" },
+      { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+    ]);
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+    expect(result.transcript.at(-1)!.observation).toMatch(/valódi adatlekérdező lépésre/);
+  });
 });
 
 /**
