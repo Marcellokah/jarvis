@@ -107,6 +107,27 @@ describe("the falsification gate", () => {
     expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
     expect(result.transcript.at(-1)!.observation).toMatch(/valódi adatlekérdező lépésre/);
   });
+
+  it("rejects a citation from before an abandoned hypothesis was replaced -- the stale-hypothesis pin", async () => {
+    // Guards findLastIndex over findIndex in gateFinding. A model states
+    // hypothesis A, gathers evidence for it, then abandons A for a
+    // different hypothesis B. A finding about B must be checked against B,
+    // not against the discarded A -- otherwise evidence gathered before the
+    // claim even existed could "falsify" it. Under findLastIndex the live
+    // hypothesis is B (index 2) and the cited step (index 1) precedes it, so
+    // this is rejected. Under the old findIndex the gate would still be
+    // bound to A (index 0), the same citation would land after A, and the
+    // fabricated finding would be accepted.
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "A: Az edzés okozta." }, why: "" },
+      { name: "nap", args: { datum: "2026-09-04" }, why: "" },
+      { name: "hipotezis", args: { allitas: "B: A mérési mód változott." }, why: "" },
+      { name: "kesz", args: { megallapitas: "B igaz.", tamaszkodik: [1, 2], cafolat: 2 }, why: "" },
+      { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+    ]);
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+    expect(result.transcript.at(-1)!.observation).toMatch(/a cáfolatnak a hipotézis UTÁN/);
+  });
 });
 
 /**
