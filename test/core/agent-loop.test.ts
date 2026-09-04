@@ -83,4 +83,23 @@ describe("investigate", () => {
     });
     expect(result.outcome).toEqual({ kind: "hiba", reason: "HTTP 529 overloaded" });
   });
+
+  it("coerces a non-numeric cafolat to 0 instead of NaN", async () => {
+    const result = await run([
+      { name: "kesz", args: { megallapitas: "teszt megállapítás", tamaszkodik: [1], cafolat: "kettő" }, why: "" },
+    ]);
+    expect(result.outcome.kind).toBe("kesz");
+    expect(result.outcome).toMatchObject({ falsifiedBy: 0 });
+    expect(Number.isNaN((result.outcome as { falsifiedBy: number }).falsifiedBy)).toBe(false);
+  });
+
+  it("drops a non-numeric citation instead of carrying a NaN", async () => {
+    const result = await run([
+      { name: "kesz", args: { megallapitas: "teszt megállapítás", tamaszkodik: [1, "kettő", 3], cafolat: 0 }, why: "" },
+    ]);
+    expect(result.outcome.kind).toBe("kesz");
+    const cites = (result.outcome as { cites: number[] }).cites;
+    expect(cites).toEqual([1, 3]);
+    expect(cites.some((n) => Number.isNaN(n))).toBe(false);
+  });
 });

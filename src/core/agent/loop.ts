@@ -77,10 +77,18 @@ function terminalOutcome(step: Step): Outcome {
   if (step.name === "kerdezz") {
     return { kind: "kerdezz", question: String(step.args.szoveg ?? "") };
   }
+  const falsifiedBy = Number(step.args.cafolat ?? 0);
   return {
     kind: "kesz",
     finding: String(step.args.megallapitas ?? ""),
-    cites: Array.isArray(step.args.tamaszkodik) ? step.args.tamaszkodik.map(Number) : [],
-    falsifiedBy: Number(step.args.cafolat ?? 0),
+    // A citation that didn't parse to a number is worse than a missing one --
+    // drop it rather than let a NaN ride into the stored transcript.
+    cites: Array.isArray(step.args.tamaszkodik)
+      ? step.args.tamaszkodik.map(Number).filter((n) => Number.isInteger(n))
+      : [],
+    // 0 is already outside the valid 1..n step range, so a malformed `cafolat`
+    // (e.g. "kettő") reads downstream exactly as "no falsification step was
+    // named" -- true, and it keeps the field a plain number, unlike NaN or null.
+    falsifiedBy: Number.isInteger(falsifiedBy) ? falsifiedBy : 0,
   };
 }
