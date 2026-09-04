@@ -1100,7 +1100,7 @@ git commit -m "feat: naptár és edzés kérdés — a bekötetlen naptár nem s
 ```typescript
 // test/core/agent-loop.test.ts
 import { describe, it, expect } from "vitest";
-import { memoryDb, silentCtx, snapshot } from "../helpers.ts";
+import { memoryDb, snapshot } from "../helpers.ts";
 import { investigate, MAX_STEPS, type InvestigatorModel, type Step } from "../../src/core/agent/loop.ts";
 import { createHealthRepo } from "../../src/infra/db/repositories/health.ts";
 import { createWorkoutRepo } from "../../src/infra/db/repositories/workouts.ts";
@@ -1284,22 +1284,12 @@ function terminalOutcome(step: Step): Outcome {
 }
 ```
 
-- [ ] **Step 4: Fix the deliberate bad import**
-
-`test/helpers.ts` has no `silentCtx` — the test above imports it on purpose,
-so the failure is met once, early, rather than in a later task. Drop just that
-name; `memoryDb` and `snapshot` are both real and both needed:
-
-```typescript
-import { memoryDb, snapshot } from "../helpers.ts";
-```
-
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run test/core/agent-loop.test.ts && npm run typecheck`
 Expected: PASS, 5 tests. Typecheck clean.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/core/agent/loop.ts test/core/agent-loop.test.ts
@@ -2193,11 +2183,7 @@ darabhoz tartozik.
 
 **Két dolog, amit a végrehajtónak tudnia kell:**
 
-1. **A Task 6 tesztje szándékosan hibás importot tartalmaz** (`silentCtx`), és a
-   Step 4 javítja. Ez nem elírás: a `test/helpers.ts`-ben nincs ilyen export, és
-   jobb, ha a végrehajtó a saját tesztjén tanulja meg, mint ha a hatodik
-   feladatnál derülne ki.
-2. **A Task 10 Step 7 az egyetlen pont, ahol pénz folyik el**, és az egyetlen,
+1. **A Task 10 Step 7 az egyetlen pont, ahol pénz folyik el**, és az egyetlen,
    ahol a terv megállhat. Ha az Opus 5 ugyanúgy kitalálja az edzés-magyarázatot,
    mint a `qwen3.5:9b`, az nem folytatandó implementációs hiba, hanem tervezési
    döntés, ami visszakerül a tulajdonoshoz.
