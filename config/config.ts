@@ -151,6 +151,25 @@ export const config = {
     minCorrelationN: 30,
   },
 
+  agent: {
+    /**
+     * The measured choice, and the one thing this project pays for.
+     *
+     * Three local models were evaluated on this Mac against three real
+     * investigations (`npm run eval-agent`). The loop's navigation was fine
+     * even at 8B — 32 steps, zero malformed replies — but the closing
+     * judgement was not: a 9B model concluded a 203.6 ms HRV reading showed
+     * "excellent recovery" after a workout three days earlier, citing five
+     * real steps. The reading was a change of measurement, not of body.
+     * This buys the judgement and nothing else.
+     */
+    model: "claude-opus-5",
+    /** Hard ceiling per investigation. A measured run is ~$0.23. */
+    maxUsdPerRun: 1.0,
+    /** Must equal MAX_STEPS in core/agent/loop.ts; the test pins them together. */
+    maxSteps: 10,
+  },
+
   calendar: {
     /**
      * Jarvis writes ONLY here. Create this calendar in the Naptár app first —

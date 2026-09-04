@@ -16,6 +16,7 @@
     "eval-models": "node --env-file-if-exists=.env scripts/eval-models.ts",
     "import-health": "node --env-file-if-exists=.env scripts/import-health.ts",
     "analyze": "node --env-file-if-exists=.env scripts/analyze.ts",
+    "investigate": "node --env-file-if-exists=.env scripts/investigate.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
