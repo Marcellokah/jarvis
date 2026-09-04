@@ -5,13 +5,22 @@ import { createWorkoutRepo } from "../../src/infra/db/repositories/workouts.ts";
 import { unavailableCalendar, type CalendarService } from "../../src/infra/calendar/service.ts";
 import { runQuestion, type QuestionContext } from "../../src/core/agent/questions.ts";
 
-const calendarWith = (titles: string[]): CalendarService => ({
+interface CalendarEvent {
+  uid: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  calendar: string;
+}
+
+const calendarWith = (events: CalendarEvent[]): CalendarService => ({
   ...unavailableCalendar("test"),
-  async listEvents() {
-    return titles.map((title, i) => ({
-      uid: `u${i}`, title, start: "2026-09-04T08:00:00.000Z", end: "2026-09-04T09:00:00.000Z",
-      allDay: false, calendar: "Naptár",
-    }));
+  async listEvents(from: Date, to: Date) {
+    return events.filter((e) => {
+      const start = new Date(e.start).getTime();
+      return start >= from.getTime() && start <= to.getTime();
+    });
   },
 });
 
@@ -62,7 +71,10 @@ describe("edzesek", () => {
 
 describe("naptar", () => {
   it("lists events when the calendar is configured", async () => {
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx(calendarWith(["Fogorvos"])));
+    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx(calendarWith([{
+      uid: "dentist", title: "Fogorvos", start: "2026-09-04T08:00:00.000Z", end: "2026-09-04T09:00:00.000Z",
+      allDay: false, calendar: "Naptár",
+    }])));
     expect(out).toContain("Fogorvos");
   });
 
@@ -77,34 +89,28 @@ describe("naptar", () => {
     // [2026-09-04T00:00Z, ...] and miss this event because it's before that.
     // The timezone-aware code should catch it because it queries
     // [2026-09-03T22:00Z, ...] (2026-09-04 00:00 local).
-    const calendar: CalendarService = {
-      ...unavailableCalendar("test"),
-      async listEvents(from, to) {
-        return [{
-          uid: "boundary", title: "Éjfél körüli", start: "2026-09-03T23:30:00.000Z", end: "2026-09-03T23:45:00.000Z",
-          allDay: false, calendar: "Naptár",
-        }];
-      },
-    };
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendar));
+    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendarWith([{
+      uid: "boundary", title: "Éjfél körüli", start: "2026-09-03T23:30:00.000Z", end: "2026-09-03T23:45:00.000Z",
+      allDay: false, calendar: "Naptár",
+    }])));
     expect(out).toContain("Éjfél körüli");
   });
 
   it("indicates truncation when more than 40 events are returned", async () => {
-    const calendar: CalendarService = {
-      ...unavailableCalendar("test"),
-      async listEvents() {
-        return Array.from({ length: 50 }, (_, i) => ({
-          uid: `e${i}`,
-          title: `Event ${i + 1}`,
-          start: `2026-09-04T${String(Math.floor(i / 2)).padStart(2, "0")}:${String((i % 2) * 30).padStart(2, "0")}:00.000Z`,
-          end: `2026-09-04T${String(Math.floor(i / 2)).padStart(2, "0")}:${String((i % 2) * 30 + 15).padStart(2, "0")}:00.000Z`,
-          allDay: false,
-          calendar: "Naptár",
-        }));
-      },
-    };
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendar));
+    // Create 50 events spread across September and October, all within a date range
+    const events = Array.from({ length: 50 }, (_, i) => {
+      const month = i < 31 ? "09" : "10";
+      const day = (i % 31) + 1;
+      return {
+        uid: `e${i}`,
+        title: `Event ${i + 1}`,
+        start: `2026-${month}-${String(day).padStart(2, "0")}T08:00:00.000Z`,
+        end: `2026-${month}-${String(day).padStart(2, "0")}T09:00:00.000Z`,
+        allDay: false,
+        calendar: "Naptár",
+      };
+    });
+    const out = await runQuestion("naptar", { tol: "2026-09-01", ig: "2026-10-31" }, ctx(calendarWith(events)));
     expect(out).toContain("… és még 10 esemény a tartományban");
   });
 });
