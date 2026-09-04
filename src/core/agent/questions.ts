@@ -260,17 +260,49 @@ export const QUESTIONS: Record<QuestionName, Question> = {
     },
   },
 
-  // Filled in by Task 5.
-  naptar: notYet("naptar"),
-  edzesek: notYet("edzesek"),
-};
+  edzesek: {
+    usage: "edzesek(tol, ig) — edzések egy tartományban: típus, hossz",
+    async run(args, ctx) {
+      const from = String(args.tol ?? "");
+      const to = String(args.ig ?? "");
+      const rows = ctx.workouts.between(from, to);
+      if (rows.length === 0) return `${from} → ${to}: nincs edzés`;
+      return rows.slice(0, 40)
+        .map((w) => `  ${w.date}  ${w.type}  ${Math.round(w.durationMin)} perc`)
+        .join("\n");
+    },
+  },
 
-function notYet(name: string): Question {
-  return {
-    usage: `${name} — még nincs implementálva`,
-    async run() { return `${name}: még nincs implementálva`; },
-  };
-}
+  naptar: {
+    usage: "naptar(tol, ig) — naptári események egy tartományban",
+    async run(args, ctx) {
+      const from = String(args.tol ?? "");
+      const to = String(args.ig ?? "");
+      // An unconfigured calendar reads as empty, and "no events" is a very
+      // different claim from "no calendar". Saying which one it is stops the
+      // model concluding the owner had a free day.
+      let events;
+      try {
+        events = await ctx.calendar.listEvents(new Date(`${from}T00:00:00Z`), new Date(`${to}T23:59:59Z`));
+      } catch (err) {
+        return `a naptár nincs bekötve: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      // healthCheck only on the empty result, not on every call: an
+      // unconfigured calendar returns [] without throwing, so emptiness is
+      // the only case that is ambiguous — and on a working CalDAV account
+      // this would otherwise be a second network round trip every step.
+      if (events.length === 0) {
+        const check = await ctx.calendar.healthCheck();
+        return check.ok
+          ? `${from} → ${to}: nincs esemény`
+          : `a naptár nincs bekötve: ${check.detail ?? "ismeretlen ok"}`;
+      }
+      return events.slice(0, 40)
+        .map((e) => `  ${e.start.slice(0, 16).replace("T", " ")}  ${e.title}`)
+        .join("\n");
+    },
+  },
+};
 
 function unknownMetric(args: Record<string, unknown>): string {
   return `ismeretlen mutató "${String(args.mutato)}" — válassz ezek közül: ${Object.keys(METRICS).join(", ")}`;
