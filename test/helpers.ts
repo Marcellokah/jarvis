@@ -8,6 +8,7 @@ import { createModuleCache } from "../src/infra/db/repositories/cache.ts";
 import type { ModuleContext } from "../src/core/module.ts";
 import { TZ } from "../src/shared/dates.ts";
 import { unavailableCalendar, type CalendarService } from "../src/infra/calendar/service.ts";
+import type { HealthSnapshot } from "../src/infra/db/repositories/health.ts";
 
 export function memoryDb(): Db {
   return openDb(":memory:", silentLogger());
@@ -51,6 +52,23 @@ export function ctxAt(
 export function meal(p: Partial<PlannedMeal> & Pick<PlannedMeal, "weekday" | "meal" | "item">): PlannedMeal {
   return {
     needsDefrost: false, defrostLeadH: 0, proteinG: null, kcal: null, ...p,
+  };
+}
+
+/** A snapshot with every field null but the ones the test cares about. */
+export function snapshot(
+  p: Partial<HealthSnapshot> & Pick<HealthSnapshot, "date">,
+): Omit<HealthSnapshot, "ingestedAt"> {
+  return {
+    sleepH: null, hrv: null, rhr: null, moveKcal: null, exerciseMin: null,
+    steps: null, asleepMin: null, inBedMin: null, coreMin: null, remMin: null,
+    deepMin: null, awakenings: null, vo2max: null, hrRecovery: null,
+    walkingHr: null, basalKcal: null, flights: null, dietKcal: null,
+    dietProteinG: null, dietCarbsG: null, dietFatG: null, distanceKm: null,
+    standMin: null, walkingSpeed: null, stepLengthCm: null,
+    doubleSupportPct: null, asymmetryPct: null, steadinessPct: null,
+    sixMinWalkM: null, stairUpMs: null, stairDownMs: null,
+    ...p,
   };
 }
 
