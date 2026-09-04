@@ -1,7 +1,7 @@
 import type { HealthRepo, HealthSnapshot } from "../../infra/db/repositories/health.ts";
 import type { WorkoutRepo } from "../../infra/db/repositories/workouts.ts";
 import type { CalendarService } from "../../infra/calendar/service.ts";
-import { shiftDay, dayGap, type Point } from "../analysis/stats.ts";
+import { mean, stdDev, shiftDay, dayGap, type Point } from "../analysis/stats.ts";
 import { annotate, baselineFor, hu } from "./annotate.ts";
 
 /**
@@ -41,6 +41,18 @@ export interface Question {
 
 /** A whole range in one step is capped: one observation must not fill the context. */
 export const MAX_RANGE_DAYS = 60;
+
+/**
+ * The floor under every bucketed average.
+ *
+ * During the measurement the weekday breakdown printed "szombat: 4.4 (n=2)"
+ * -- a mean of two nights, formatted exactly like a mean of thirty. The
+ * system already carries floors for this elsewhere (`MIN_N7`/`MIN_N90` in
+ * notify/candidates.ts, `config.analysis.minCorrelationN`); a question that
+ * feeds a model has no business being looser than a threshold that merely
+ * decides whether to send a push.
+ */
+export const MIN_BUCKET_N = 5;
 
 const HISTORY_START = "1970-01-01";
 
@@ -140,11 +152,112 @@ export const QUESTIONS: Record<QuestionName, Question> = {
     },
   },
 
-  // Filled in by Task 4.
-  elteresek: notYet("elteresek"),
-  hasonlo_napok: notYet("hasonlo_napok"),
-  mi_lett_utana: notYet("mi_lett_utana"),
-  ritmus: notYet("ritmus"),
+  elteresek: {
+    usage: "elteresek(mutato, ablak_nap) — mely napok lógnak ki az ablakban, szórásban kifejezve",
+    async run(args, ctx) {
+      const metric = metricOf(args);
+      if (metric === null) return unknownMetric(args);
+      const window = Number(args.ablak_nap ?? 90);
+      const points = seriesOf(ctx, metric, shiftDay(ctx.today, -(window - 1)), ctx.today);
+      if (points.length < MIN_BUCKET_N) {
+        return `${metric}: nincs elég mérés az ablakban (n=${points.length}, kell ${MIN_BUCKET_N})`;
+      }
+      const values = points.map((p) => p.value);
+      const m = mean(values)!;
+      const sd = stdDev(values);
+      if (sd === null || sd === 0) return `${metric}: minden érték azonos, nincs eltérés`;
+
+      const out = points
+        .map((p) => ({ ...p, z: (p.value - m) / sd }))
+        .filter((p) => Math.abs(p.z) >= 1.5)
+        .sort((a, b) => Math.abs(b.z) - Math.abs(a.z))
+        .slice(0, 12);
+
+      const head = `${metric}: átlag ${hu(m)}, szórás ${hu(sd)}, n=${points.length}`;
+      return out.length === 0
+        ? `${head}\n  nincs kiugró nap 1,5 szóráson túl`
+        : `${head}\n` + out.map((p) =>
+            `  ${p.date}  ${hu(p.value)}  ${p.z >= 0 ? "+" : "−"}${hu(Math.abs(p.z))}σ`).join("\n");
+    },
+  },
+
+  hasonlo_napok: {
+    usage: "hasonlo_napok(datum, mutato, k) — a k legközelebbi nap ugyanabban a mutatóban",
+    async run(args, ctx) {
+      const metric = metricOf(args);
+      if (metric === null) return unknownMetric(args);
+      const date = String(args.datum ?? "");
+      const k = Math.min(Math.max(Number(args.k ?? 5), 1), 20);
+
+      const anchor = ctx.health.forDate(date)?.[METRICS[metric]] as number | null | undefined;
+      if (anchor === null || anchor === undefined) {
+        return `${date}: nincs ${metric} érték, amihez hasonlítani lehetne`;
+      }
+      const others = seriesOf(ctx, metric, HISTORY_START, ctx.today).filter((p) => p.date !== date);
+      if (others.length === 0) return `nincs másik nap ${metric} méréssel`;
+
+      return others
+        .map((p) => ({ ...p, gap: Math.abs(p.value - anchor) }))
+        .sort((a, b) => a.gap - b.gap)
+        .slice(0, k)
+        .map((p) => `  ${p.date}  ${metric}=${hu(p.value)}`)
+        .join("\n");
+    },
+  },
+
+  mi_lett_utana: {
+    usage: "mi_lett_utana(datum, napok) — a rákövetkező napok kimenetei",
+    async run(args, ctx) {
+      const date = String(args.datum ?? "");
+      const days = Math.min(Math.max(Number(args.napok ?? 3), 1), 14);
+      const rows: string[] = [];
+      for (let i = 1; i <= days; i++) {
+        const day = shiftDay(date, i);
+        const snapshot = ctx.health.forDate(day);
+        if (!snapshot) { rows.push(`  ${day}  nincs adat`); continue; }
+        const workouts = ctx.workouts.forDate(day);
+        const bits = (Object.keys(METRICS) as MetricName[])
+          .map((n) => [n, snapshot[METRICS[n]] as number | null] as const)
+          .filter(([, v]) => v !== null)
+          .map(([n, v]) => `${n}=${hu(v!)}`);
+        rows.push(`  ${day}  ${bits.join(" ") || "üres"}  edzés=${workouts.length}`);
+      }
+      return rows.join("\n");
+    },
+  },
+
+  ritmus: {
+    usage: "ritmus(mutato, bontas) — átlag a hét napjai (\"hetnap\") vagy hónapok (\"honap\") szerint",
+    async run(args, ctx) {
+      const metric = metricOf(args);
+      if (metric === null) return unknownMetric(args);
+      const by = String(args.bontas ?? "hetnap");
+      if (by !== "hetnap" && by !== "honap") {
+        return `ismeretlen bontás "${by}" — hetnap vagy honap`;
+      }
+      const points = seriesOf(ctx, metric, shiftDay(ctx.today, -364), ctx.today);
+      if (points.length === 0) return `${metric}: nincs mérés az elmúlt évben`;
+
+      const names = ["vasárnap", "hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat"];
+      const buckets = new Map<string, number[]>();
+      for (const p of points) {
+        const key = by === "honap"
+          ? p.date.slice(0, 7)
+          : names[new Date(`${p.date}T12:00:00Z`).getUTCDay()]!;
+        const list = buckets.get(key) ?? [];
+        list.push(p.value);
+        buckets.set(key, list);
+      }
+
+      // A thin bucket is named, not averaged. A mean of two nights formatted
+      // like a mean of thirty is the most quietly misleading thing this
+      // question could produce.
+      return [...buckets].map(([key, values]) => values.length < MIN_BUCKET_N
+        ? `  ${key}: kevés mérés (n=${values.length}, kell ${MIN_BUCKET_N})`
+        : `  ${key}: ${hu(mean(values)!)} (n=${values.length})`).join("\n");
+    },
+  },
+
   // Filled in by Task 5.
   naptar: notYet("naptar"),
   edzesek: notYet("edzesek"),
