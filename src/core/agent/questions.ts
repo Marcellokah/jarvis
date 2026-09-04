@@ -2,7 +2,7 @@ import type { HealthRepo, HealthSnapshot } from "../../infra/db/repositories/hea
 import type { WorkoutRepo } from "../../infra/db/repositories/workouts.ts";
 import type { CalendarService } from "../../infra/calendar/service.ts";
 import { shiftDay, dayGap, type Point } from "../analysis/stats.ts";
-import { annotate, baselineFor } from "./annotate.ts";
+import { annotate, baselineFor, hu } from "./annotate.ts";
 
 /**
  * The closed menu.
@@ -97,7 +97,7 @@ export const QUESTIONS: Record<QuestionName, Question> = {
         const bits = (Object.keys(METRICS) as MetricName[])
           .map((n) => [n, s[METRICS[n]] as number | null] as const)
           .filter(([, v]) => v !== null)
-          .map(([n, v]) => `${n}=${v}`);
+          .map(([n, v]) => `${n}=${hu(v!)}`);
         return `  ${s.date}  ${bits.join(" ") || "üres"}  edzés=${workouts.length}`;
       }).join("\n");
     },

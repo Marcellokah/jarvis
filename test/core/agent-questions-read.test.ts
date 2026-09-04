@@ -3,7 +3,8 @@ import { memoryDb, snapshot } from "../helpers.ts";
 import { createHealthRepo } from "../../src/infra/db/repositories/health.ts";
 import { createWorkoutRepo } from "../../src/infra/db/repositories/workouts.ts";
 import { unavailableCalendar } from "../../src/infra/calendar/service.ts";
-import { runQuestion, type QuestionContext } from "../../src/core/agent/questions.ts";
+import { runQuestion, MAX_RANGE_DAYS, type QuestionContext } from "../../src/core/agent/questions.ts";
+import { shiftDay } from "../../src/core/analysis/stats.ts";
 
 function ctx(): QuestionContext {
   const db = memoryDb();
@@ -42,6 +43,26 @@ describe("napok", () => {
 
   it("caps the range so one step cannot flood the context", async () => {
     const out = await runQuestion("napok", { tol: "2019-01-01", ig: "2026-09-04" }, ctx());
+    expect(out).toContain("legfeljebb 60 nap");
+  });
+
+  it("formats decimal values with a Hungarian comma, not a period", async () => {
+    const out = await runQuestion("napok", { tol: "2026-09-01", ig: "2026-09-04" }, ctx());
+    expect(out).toContain("hrv=203,6");
+    expect(out).not.toContain("hrv=203.6");
+  });
+
+  it("allows a range of exactly MAX_RANGE_DAYS days", async () => {
+    const ig = "2026-09-04";
+    const tol = shiftDay(ig, -MAX_RANGE_DAYS);
+    const out = await runQuestion("napok", { tol, ig }, ctx());
+    expect(out).not.toContain("legfeljebb 60 nap");
+  });
+
+  it("rejects a range one day past MAX_RANGE_DAYS", async () => {
+    const ig = "2026-09-04";
+    const tol = shiftDay(ig, -(MAX_RANGE_DAYS + 1));
+    const out = await runQuestion("napok", { tol, ig }, ctx());
     expect(out).toContain("legfeljebb 60 nap");
   });
 });
