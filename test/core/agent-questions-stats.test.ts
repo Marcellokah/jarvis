@@ -65,6 +65,13 @@ describe("hasonlo_napok", () => {
     const out = await runQuestion("hasonlo_napok", { datum: "2026-08-20", mutato: "hrv", k: 3 }, ctx());
     expect(out).toContain("nincs");
   });
+
+  it("names a non-numeric k rather than returning an empty answer", async () => {
+    const out = await runQuestion("hasonlo_napok", { datum: "2026-08-20", mutato: "alvas", k: "sok" }, ctx());
+    expect(out).not.toBe("");
+    expect(out).toContain("k");
+    expect(out).toContain("sok");
+  });
 });
 
 describe("mi_lett_utana", () => {
@@ -72,5 +79,11 @@ describe("mi_lett_utana", () => {
     const out = await runQuestion("mi_lett_utana", { datum: "2026-09-02", napok: 4 }, ctx());
     expect(out).toContain("2026-09-03");
     expect(out).toContain("nincs adat");
+  });
+
+  it("names a non-numeric napok rather than returning an empty answer", async () => {
+    const out = await runQuestion("mi_lett_utana", { datum: "2026-09-02", napok: null }, ctx());
+    expect(out).not.toBe("");
+    expect(out).toContain("napok");
   });
 });

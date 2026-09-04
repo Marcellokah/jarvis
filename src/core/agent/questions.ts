@@ -187,7 +187,8 @@ export const QUESTIONS: Record<QuestionName, Question> = {
       const metric = metricOf(args);
       if (metric === null) return unknownMetric(args);
       const date = String(args.datum ?? "");
-      const k = Math.min(Math.max(Number(args.k ?? 5), 1), 20);
+      const k = boundedInt(args, "k", 5, 1, 20);
+      if (typeof k === "string") return k;
 
       const anchor = ctx.health.forDate(date)?.[METRICS[metric]] as number | null | undefined;
       if (anchor === null || anchor === undefined) {
@@ -209,7 +210,8 @@ export const QUESTIONS: Record<QuestionName, Question> = {
     usage: "mi_lett_utana(datum, napok) — a rákövetkező napok kimenetei",
     async run(args, ctx) {
       const date = String(args.datum ?? "");
-      const days = Math.min(Math.max(Number(args.napok ?? 3), 1), 14);
+      const days = boundedInt(args, "napok", 3, 1, 14);
+      if (typeof days === "string") return days;
       const rows: string[] = [];
       for (let i = 1; i <= days; i++) {
         const day = shiftDay(date, i);
@@ -272,6 +274,29 @@ function notYet(name: string): Question {
 
 function unknownMetric(args: Record<string, unknown>): string {
   return `ismeretlen mutató "${String(args.mutato)}" — válassz ezek közül: ${Object.keys(METRICS).join(", ")}`;
+}
+
+/**
+ * A bounded integer argument, or the text that says why it is not one.
+ *
+ * `Number("sok")` is NaN, and NaN silently survives every clamp — reaching
+ * `slice(0, NaN)` and `i <= NaN`, both of which yield nothing. An empty
+ * observation reads to the model as "no data" rather than "bad argument",
+ * which is the one thing every question here must never do.
+ */
+function boundedInt(
+  args: Record<string, unknown>, key: string, fallback: number, min: number, max: number,
+): number | string {
+  const raw = args[key];
+  if (raw === undefined) return fallback;
+  // `Number(null)` is 0 -- a silently "valid" number that hides a value the
+  // model plainly did not omit -- so null is refused explicitly rather than
+  // handed to Number() alongside every other missing-value case.
+  const n = raw === null ? NaN : Number(raw);
+  if (!Number.isFinite(n)) {
+    return `érvénytelen "${key}" argumentum: "${String(raw)}" — egész szám kell, ${min} és ${max} között`;
+  }
+  return Math.min(Math.max(Math.trunc(n), min), max);
 }
 
 /** The menu as the model reads it. Built from the questions themselves so the two cannot drift. */
