@@ -98,9 +98,9 @@ export async function investigate(opts: {
       continue;
     }
 
-    const observation = await runQuestion(step.name, step.args, opts.ctx);
-    transcript.push({ step, observation });
-    opts.logger.debug({ step: step.name, args: step.args }, "investigation step");
+    const { observation, evidence } = await runQuestion(step.name, step.args, opts.ctx);
+    transcript.push({ step, observation, evidence });
+    opts.logger.debug({ step: step.name, args: step.args, evidence }, "investigation step");
   }
 
   opts.logger.info({ steps: transcript.length }, "investigation ran out of steps");
@@ -168,9 +168,30 @@ function gateFinding(step: Step, transcript: readonly TranscriptEntry[]): string
   // only counts if it names a real question step -- one that actually ran
   // data through the closed menu -- never a control step or a bounce-back.
   const cited = transcript[falsifiedBy - 1]!;
-  if (!(cited.step.name in QUESTIONS)) {
+  // `Object.hasOwn`, not `in`. `QUESTIONS` is a plain object literal, so `in`
+  // answered true for "constructor", "toString", "valueOf" and "__proto__" --
+  // none of which is a question. `runQuestion` handed such a step back an
+  // error observation, the loop pushed it onto the transcript like any other
+  // step, and the gate then read its name off the prototype chain and let it
+  // through: hipotezis → constructor → kesz was a two-step bypass.
+  if (!Object.hasOwn(QUESTIONS, cited.step.name)) {
     return `a megállapítás elutasítva: a "cafolat" egy valódi adatlekérdező lépésre `
       + `mutasson (a ${falsifiedBy}. lépés "${cited.step.name}" volt, ami nem az).`;
+  }
+
+  // A name is not a result. `elteresek({mutato: "nincs_ilyen"})` and
+  // `nap({datum: "1999-01-01"})` are both real questions from the closed
+  // menu, and both come back having read nothing at all -- an unknown metric,
+  // a date with no row. A claim cannot be tested against an answer that never
+  // touched the data, so the cited step has to have produced some. The
+  // question itself decides: `runQuestion` returns that flag, and every
+  // absence-of-data, unusable-argument and missing-instrument path sets it
+  // false. A measured "nothing stood out over n=84 nights" is not one of
+  // those -- that one read the data and can kill a claim.
+  if (cited.evidence !== true) {
+    return `a megállapítás elutasítva: a ${falsifiedBy}. lépés ("${cited.step.name}") `
+      + "nem hozott adatot, ezért nem cáfolhat semmit — futtass egy lépést, "
+      + "ami tényleg mér valamit, és arra hivatkozz.";
   }
 
   return null;

@@ -14,8 +14,13 @@ afterEach(() => {
 });
 
 /**
- * The whole premise of this project is $0/month. These guards are what stop a
- * stray config edit turning the morning brief into a metered API call.
+ * The brief is free, and these guards are what stop a stray config edit
+ * turning it into a metered API call.
+ *
+ * Not "the whole premise of this project is $0/month" any more — that rule
+ * ended with the agent, and the block below pins what replaced it. What
+ * survives of it is exactly this: the daily brief, the path that runs
+ * unattended every morning, still costs nothing.
  */
 describe("cost guards", () => {
   it("uses groq before template by default, with no paid synthesizer", () => {

@@ -10,7 +10,12 @@ describe("investigations repo", () => {
       goal: "Miért alacsonyabb ma a regeneráció?",
       outcome: "kesz",
       finding: "Két rossz éjszaka után vagy.",
-      transcript: [{ step: { name: "nap", args: { datum: "2026-09-04" }, why: "a mai nap" }, observation: "alvas=6.6" }],
+      falsifiedBy: 2,
+      cites: [1, 2],
+      transcript: [
+        { step: { name: "nap", args: { datum: "2026-09-04" }, why: "a mai nap" }, observation: "alvas=6.6", evidence: true },
+        { step: { name: "hipotezis", args: { allitas: "X" }, why: "" }, observation: "rögzítve" },
+      ],
       usd: 0.21,
     });
 
@@ -18,9 +23,56 @@ describe("investigations repo", () => {
     expect(row!.goal).toBe("Miért alacsonyabb ma a regeneráció?");
     expect(row!.outcome).toBe("kesz");
     expect(row!.finding).toBe("Két rossz éjszaka után vagy.");
-    expect(row!.transcript).toHaveLength(1);
+    expect(row!.transcript).toHaveLength(2);
     expect(row!.transcript[0]!.step.name).toBe("nap");
     expect(row!.usd).toBeCloseTo(0.21, 4);
+  });
+
+  /**
+   * 009's comment promises the stored row can be audited: that a fluent wrong
+   * conclusion is caught by reading the steps behind it. Without these two
+   * columns it could not answer the first question of that audit — which step
+   * tested the claim — because the accepted "kesz" is the one step the loop
+   * never pushes onto the transcript.
+   */
+  it("keeps the falsification step and the citations next to the finding", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    repo.record({
+      startedAt: new Date("2026-09-04T05:00:00.000Z"),
+      goal: "Miért 203,6 a HRV?", outcome: "kesz",
+      finding: "A mérési mód változott.",
+      falsifiedBy: 3, cites: [1, 3],
+      transcript: [], usd: 0.23,
+    });
+    const [row] = repo.recent(10);
+    expect(row!.falsifiedBy).toBe(3);
+    expect(row!.cites).toEqual([1, 3]);
+  });
+
+  it("leaves them empty for an outcome that never produced a finding", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    repo.record({
+      startedAt: new Date("2026-09-04T05:00:00.000Z"),
+      goal: "cél", outcome: "kerdezz", finding: "Mi változott?", transcript: [], usd: 0.02,
+    });
+    const [row] = repo.recent(10);
+    expect(row!.falsifiedBy).toBeNull();
+    expect(row!.cites).toEqual([]);
+  });
+
+  it("keeps the evidence flag through a round trip, so the audit sees what refuted what", () => {
+    const repo = createInvestigationRepo(memoryDb());
+    repo.record({
+      startedAt: new Date("2026-09-04T05:00:00.000Z"),
+      goal: "cél", outcome: "kesz", finding: "x", falsifiedBy: 1, cites: [1],
+      transcript: [
+        { step: { name: "nap", args: {}, why: "" }, observation: "adat", evidence: true },
+        { step: { name: "nap", args: {}, why: "" }, observation: "nincs sor", evidence: false },
+      ],
+      usd: 0,
+    });
+    const [row] = repo.recent(10);
+    expect(row!.transcript.map((e) => e.evidence)).toEqual([true, false]);
   });
 
   it("keeps a run that ran out of steps, with no finding", () => {

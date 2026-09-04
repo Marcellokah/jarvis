@@ -88,6 +88,11 @@ createInvestigationRepo(app.db).record({
   startedAt, goal, outcome: result.outcome.kind,
   finding: result.outcome.kind === "kesz" ? result.outcome.finding
     : result.outcome.kind === "kerdezz" ? result.outcome.question : null,
+  // The gate's own output, stored next to the finding it let through: without
+  // these two the row cannot answer "which step falsified this?", which is
+  // the audit 009 was written to make possible.
+  falsifiedBy: result.outcome.kind === "kesz" ? result.outcome.falsifiedBy : null,
+  cites: result.outcome.kind === "kesz" ? result.outcome.cites : undefined,
   transcript: result.transcript,
   usd: model.spentUsd(),
 });

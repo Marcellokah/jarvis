@@ -5,6 +5,14 @@ import { createWorkoutRepo } from "../../src/infra/db/repositories/workouts.ts";
 import { unavailableCalendar, type CalendarService } from "../../src/infra/calendar/service.ts";
 import { runQuestion, type QuestionContext } from "../../src/core/agent/questions.ts";
 
+/**
+ * The observation text alone. `runQuestion` also reports whether the answer
+ * is evidence; that flag has its own tests in agent-questions-read.test.ts.
+ */
+const ask = (name: string, args: Record<string, unknown>, c: QuestionContext): Promise<string> =>
+  runQuestion(name, args, c).then((r) => r.observation);
+
+
 interface CalendarEvent {
   uid: string;
   title: string;
@@ -36,13 +44,13 @@ function ctx(calendar: CalendarService = unavailableCalendar("test")): QuestionC
 
 describe("edzesek", () => {
   it("lists workouts in the range with rounded durations", async () => {
-    const out = await runQuestion("edzesek", { tol: "2026-09-01", ig: "2026-09-04" }, ctx());
+    const out = await ask("edzesek", { tol: "2026-09-01", ig: "2026-09-04" }, ctx());
     expect(out).toContain("TraditionalStrengthTraining");
     expect(out).toContain("55 perc");
   });
 
   it("says so when the range is empty", async () => {
-    const out = await runQuestion("edzesek", { tol: "2026-01-01", ig: "2026-01-05" }, ctx());
+    const out = await ask("edzesek", { tol: "2026-01-01", ig: "2026-01-05" }, ctx());
     expect(out).toContain("nincs edzés");
   });
 
@@ -64,14 +72,14 @@ describe("edzesek", () => {
     });
     workouts.save(workoutList);
     const testCtx = { health: createHealthRepo(db), workouts, calendar: unavailableCalendar("test"), today: "2026-10-31" };
-    const out = await runQuestion("edzesek", { tol: "2026-09-01", ig: "2026-10-31" }, testCtx);
+    const out = await ask("edzesek", { tol: "2026-09-01", ig: "2026-10-31" }, testCtx);
     expect(out).toContain("… és még 10 edzés a tartományban");
   });
 });
 
 describe("naptar", () => {
   it("lists events when the calendar is configured", async () => {
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx(calendarWith([{
+    const out = await ask("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx(calendarWith([{
       uid: "dentist", title: "Fogorvos", start: "2026-09-04T08:00:00.000Z", end: "2026-09-04T09:00:00.000Z",
       allDay: false, calendar: "Naptár",
     }])));
@@ -79,7 +87,7 @@ describe("naptar", () => {
   });
 
   it("reports an unconfigured calendar as absent, not as an empty day", async () => {
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx());
+    const out = await ask("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx());
     expect(out).toContain("nincs bekötve");
   });
 
@@ -89,7 +97,7 @@ describe("naptar", () => {
     // [2026-09-04T00:00Z, ...] and miss this event because it's before that.
     // The timezone-aware code should catch it because it queries
     // [2026-09-03T22:00Z, ...] (2026-09-04 00:00 local).
-    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendarWith([{
+    const out = await ask("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendarWith([{
       uid: "boundary", title: "Éjfél körüli", start: "2026-09-03T23:30:00.000Z", end: "2026-09-03T23:45:00.000Z",
       allDay: false, calendar: "Naptár",
     }])));
@@ -110,7 +118,7 @@ describe("naptar", () => {
         calendar: "Naptár",
       };
     });
-    const out = await runQuestion("naptar", { tol: "2026-09-01", ig: "2026-10-31" }, ctx(calendarWith(events)));
+    const out = await ask("naptar", { tol: "2026-09-01", ig: "2026-10-31" }, ctx(calendarWith(events)));
     expect(out).toContain("… és még 10 esemény a tartományban");
   });
 });

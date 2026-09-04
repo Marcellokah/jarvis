@@ -26,9 +26,11 @@ Dates are YYYY-MM-DD. Today is ${today}.
 Rules:
 - Reply with ONE step as JSON: {"lepes": ..., "parameterek": {...}, "miert": "..."}
 - Look before you conclude. A finding that rests on no observation is worthless.
-- Values arrive labelled with their distance from this person's own baseline.
-  A value marked as many sigma from baseline is NOT ordinary — never describe
-  it as normal.
+- Every single-day measurement arrives labelled with its distance from this
+  person's own baseline, e.g. "hrv=203,6 (+9,7σ, minden idők maximuma)". The
+  averages from "ritmus" are the one exception: they are bucket means, not
+  single readings, so they carry a sample count instead. A value marked as
+  many sigma from baseline is NOT ordinary — never describe it as normal.
 - If a metric might simply not be measured, or might have started being
   measured differently, check "lefedettseg" before theorising. A change of
   instrument looks exactly like a change of body.

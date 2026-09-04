@@ -13,9 +13,12 @@ function ctx(): QuestionContext {
   const now = new Date("2026-09-04T05:00:00.000Z");
   for (let i = 0; i < 40; i++) {
     const d = new Date(Date.UTC(2026, 6, 26 + i)).toISOString().slice(0, 10);
-    health.upsert(snapshot({ date: d, hrv: 55 }), {}, now);
+    // Sleep cycles 6,8 / 7,0 / 7,2 so that no night reaches 1,5σ: it gives the
+    // gate a question that genuinely measured something and genuinely found
+    // nothing unusual -- the one "empty-looking" answer that IS evidence.
+    health.upsert(snapshot({ date: d, hrv: 55, sleepH: [6.8, 7, 7.2][i % 3] }), {}, now);
   }
-  health.upsert(snapshot({ date: "2026-09-04", hrv: 203.6 }), {}, now);
+  health.upsert(snapshot({ date: "2026-09-04", hrv: 203.6, sleepH: 7 }), {}, now);
   return {
     health, workouts: createWorkoutRepo(db),
     calendar: unavailableCalendar("test"), today: "2026-09-04",
@@ -164,5 +167,123 @@ describe("T3 regression: the fabricated workout explanation", () => {
     const result = await run(recorded);
     expect(result.outcome.kind).not.toBe("kesz");
     expect(result.outcome).toEqual({ kind: "kerdezz", question: "Változott valami a mérésben?" });
+  });
+});
+
+/**
+ * The gate reads a step's NAME. `QUESTIONS` is a plain object literal, so
+ * `"constructor" in QUESTIONS` is true, and so is `"toString"`, `"valueOf"`
+ * and `"__proto__"`. None of them is a question; every one of them produces
+ * an observation that lands on the transcript as a nameable index.
+ */
+describe("the falsification gate: inherited names are not questions", () => {
+  it.each(["constructor", "toString", "valueOf", "__proto__", "hasOwnProperty"])(
+    "rejects a cafolat naming the inherited property %s",
+    async (name) => {
+      const result = await run([
+        { name: "hipotezis", args: { allitas: "Az edzés okozta." }, why: "" },
+        { name, args: {}, why: "prototípus-lánc" },
+        { name: "kesz", args: { megallapitas: "Az edzés okozta.", tamaszkodik: [1], cafolat: 2 }, why: "" },
+        { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+      ]);
+      expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+      expect(result.transcript[1]!.observation).toContain("ismeretlen kérdés");
+    },
+  );
+});
+
+/**
+ * A name is not a result.
+ *
+ * Every case below names a real question from the closed menu, and every one
+ * of them comes back having measured nothing: an unknown metric, a date with
+ * no row, a range refused before it was read, an argument that never parsed.
+ * A claim cannot be tested against an answer that never touched the data.
+ */
+describe("the falsification gate: a cited step must have produced evidence", () => {
+  it.each([
+    ["elteresek", { mutato: "nincs_ilyen" }],
+    ["nap", { datum: "1999-01-01" }],
+    ["napok", { tol: "2019-01-01", ig: "2026-09-04" }],
+    ["napok", { tol: "1999-01-01", ig: "1999-02-01" }],
+    ["hasonlo_napok", { datum: "2026-09-04", mutato: "alvas", k: "sok" }],
+    ["lefedettseg", { mutato: "vo2max" }],
+    ["ritmus", { mutato: "hrv", bontas: "nincsilyen" }],
+    ["naptar", { tol: "2026-09-01", ig: "2026-09-04" }],
+  ])("rejects a cafolat naming %s, which returned no data", async (name, args) => {
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "Az edzés okozta." }, why: "" },
+      { name, args, why: "látszatlépés" },
+      { name: "kesz", args: { megallapitas: "Az edzés okozta.", tamaszkodik: [1], cafolat: 2 }, why: "" },
+      { name: "kerdezz", args: { szoveg: "?" }, why: "" },
+    ]);
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "?" });
+    expect(result.transcript.at(-1)!.observation).toMatch(/nem hozott adatot/);
+  });
+
+  it("accepts a genuine \"nothing stands out\" answer -- absence that was measured", async () => {
+    // The distinction this whole flag exists for. "nincs kiugró nap 1,5
+    // szóráson túl, n=41" looks as empty as "nincs sor az adatbázisban", but
+    // it is the opposite: 41 nights were read and every one of them was
+    // ordinary. That constrains the world, so it may falsify a claim.
+    const result = await run([
+      { name: "hipotezis", args: { allitas: "Az alvásom is kiugrott aznap." }, why: "" },
+      { name: "elteresek", args: { mutato: "alvas", ablak_nap: 90 }, why: "cáfolat" },
+      { name: "kesz", args: { megallapitas: "Az alvás nem kiugró.", tamaszkodik: [2], cafolat: 2 }, why: "" },
+    ]);
+    expect(result.transcript[1]!.observation).toContain("nincs kiugró nap");
+    expect(result.outcome).toMatchObject({ kind: "kesz", falsifiedBy: 2 });
+  });
+});
+
+/**
+ * T3, re-run with the hypothesis step the recorded transcript never had.
+ *
+ * The original replay above passes for a reason that is weaker than it
+ * looks: the 2026-09-04 transcript contains no `hipotezis`, so the gate
+ * refuses it at its very first branch and never reaches the interesting
+ * question. These two cases put a hypothesis on the record and then vary
+ * only ONE thing -- whether the step cited as the falsification actually
+ * measured anything.
+ */
+describe("T3 regression: the fabrication, with a hypothesis on the record", () => {
+  const FABRICATION = "A 2026-09-04-i HRV kiugróan magas, ami a 2026-09-01-i "
+    + "erősítő edzés utáni kiváló regenerációt jelzi.";
+
+  it("still refuses the fabrication when the cited step measured nothing", async () => {
+    const result = await run([
+      { name: "nap", args: { datum: "2026-09-04" }, why: "megerősítem az értéket" },
+      { name: "edzesek", args: { tol: "2026-08-31", ig: "2026-09-04" }, why: "volt-e edzés" },
+      { name: "hipotezis", args: { allitas: "Az edzés utáni regeneráció okozta." }, why: "" },
+      { name: "elteresek", args: { mutato: "regeneracio" }, why: "úgy teszek, mintha cáfolnék" },
+      { name: "kesz", args: { megallapitas: FABRICATION, tamaszkodik: [1, 2, 4], cafolat: 4 }, why: "" },
+      { name: "kerdezz", args: { szoveg: "Változott valami a mérésben?" }, why: "" },
+    ]);
+    expect(result.outcome.kind).not.toBe("kesz");
+    expect(result.outcome).toEqual({ kind: "kerdezz", question: "Változott valami a mérésben?" });
+    expect(result.transcript.at(-1)!.observation).toMatch(/nem hozott adatot/);
+  });
+
+  /**
+   * The boundary, stated rather than hidden.
+   *
+   * With a hypothesis on the record and a genuine, data-returning step run
+   * after it, the same fabricated sentence IS accepted. The gate is
+   * procedural: it can prove the model committed to a claim before looking,
+   * and that what it looked at was real data. It cannot prove the sentence
+   * follows from the data -- doing that would require exactly the inference
+   * whose unreliability is the reason this gate exists.
+   *
+   * This test is here so the limit is pinned and visible. If a later change
+   * makes this case refusable, this test failing is the announcement.
+   */
+  it("cannot refuse the fabrication once a real data step follows the hypothesis", async () => {
+    const result = await run([
+      { name: "nap", args: { datum: "2026-09-04" }, why: "megerősítem az értéket" },
+      { name: "hipotezis", args: { allitas: "Az edzés utáni regeneráció okozta." }, why: "" },
+      { name: "lefedettseg", args: { mutato: "hrv" }, why: "valódi lekérdezés" },
+      { name: "kesz", args: { megallapitas: FABRICATION, tamaszkodik: [1, 3], cafolat: 3 }, why: "" },
+    ]);
+    expect(result.outcome).toMatchObject({ kind: "kesz", finding: FABRICATION });
   });
 });
