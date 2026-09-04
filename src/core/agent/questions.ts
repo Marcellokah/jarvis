@@ -379,8 +379,12 @@ function boundedInt(
 }
 
 /** The menu as the model reads it. Built from the questions themselves so the two cannot drift. */
-export const MENU_TEXT: string =
-  (Object.keys(QUESTIONS) as QuestionName[]).map((n) => QUESTIONS[n].usage).join("\n");
+export const MENU_TEXT: string = [
+  ...(Object.keys(QUESTIONS) as QuestionName[]).map((n) => QUESTIONS[n].usage),
+  "hipotezis(allitas) — rögzíted, mit gondolsz az okról; kötelező a kesz előtt",
+  "kerdezz(szoveg) — visszakérdezel a tulajdonosnak; lezárja a nyomozást",
+  "kesz(megallapitas, tamaszkodik, cafolat) — kimondod a megállapítást; lezárja a nyomozást",
+].join("\n");
 
 /**
  * Runs one question. An unknown name or a bad argument returns text, never

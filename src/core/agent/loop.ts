@@ -35,8 +35,20 @@ export interface InvestigationResult {
  */
 export const MAX_STEPS = 10;
 
-/** Steps that end the investigation rather than producing an observation. */
-const TERMINAL = new Set(["kesz", "kerdezz"]);
+/**
+ * The step that makes falsification checkable.
+ *
+ * A gate that only asked "name a step you cite" is not a gate: the model that
+ * produced this plan's motivating failure cited five real steps and still
+ * invented the causal link. Citations prove lookup, not inference.
+ *
+ * So the claim has to be on the record BEFORE the evidence that tests it. The
+ * model states a hypothesis as its own step, and `kesz` is only accepted when
+ * it names a falsification step that ran after that hypothesis -- a step
+ * taken while the claim was already fixed, and therefore capable of killing
+ * it.
+ */
+export const HYPOTHESIS_STEP = "hipotezis";
 
 export async function investigate(opts: {
   goal: string;
@@ -60,8 +72,30 @@ export async function investigate(opts: {
       return { goal: opts.goal, transcript, outcome: { kind: "hiba", reason } };
     }
 
-    if (TERMINAL.has(step.name)) {
+    if (step.name === HYPOTHESIS_STEP) {
+      const claim = String(step.args.allitas ?? "");
+      transcript.push({
+        step,
+        observation: `rögzített hipotézis: ${claim}\n`
+          + "Most futtass egy lépést, ami ezt MEGDÖNTENÉ, ha hamis.",
+      });
+      continue;
+    }
+
+    if (step.name === "kerdezz") {
       return { goal: opts.goal, transcript, outcome: terminalOutcome(step) };
+    }
+
+    if (step.name === "kesz") {
+      const refusal = gateFinding(step, transcript);
+      if (refusal === null) {
+        return { goal: opts.goal, transcript, outcome: terminalOutcome(step) };
+      }
+      // Rejected, not fatal: the observation goes back and the model can
+      // do the work the gate is asking for.
+      transcript.push({ step, observation: refusal });
+      opts.logger.info({ refusal }, "finding rejected by the falsification gate");
+      continue;
     }
 
     const observation = await runQuestion(step.name, step.args, opts.ctx);
@@ -91,4 +125,32 @@ function terminalOutcome(step: Step): Outcome {
     // named" -- true, and it keeps the field a plain number, unlike NaN or null.
     falsifiedBy: Number.isInteger(falsifiedBy) ? falsifiedBy : 0,
   };
+}
+
+/**
+ * Returns null when the finding may stand, or the refusal text to feed back.
+ *
+ * Indices in `cafolat` are 1-based, matching the step numbers the model sees
+ * in its own transcript.
+ */
+function gateFinding(step: Step, transcript: readonly TranscriptEntry[]): string | null {
+  const hypothesisAt = transcript.findIndex((e) => e.step.name === HYPOTHESIS_STEP);
+  if (hypothesisAt === -1) {
+    return "a megállapítás elutasítva: előbb rögzítsd a hipotézisedet a "
+      + "\"hipotezis\" lépéssel, majd futtass egy lépést, ami megdöntené.";
+  }
+
+  const falsifiedBy = Number(step.args.cafolat ?? 0);
+  if (!Number.isInteger(falsifiedBy) || falsifiedBy < 1 || falsifiedBy > transcript.length) {
+    return `a megállapítás elutasítva: a "cafolat" mezőben nevezd meg a cáfolatra `
+      + `futtatott lépés sorszámát (1—${transcript.length}).`;
+  }
+
+  // 1-based in the model's view, 0-based here.
+  if (falsifiedBy - 1 <= hypothesisAt) {
+    return "a megállapítás elutasítva: a cáfolatnak a hipotézis UTÁN futtatott "
+      + `lépésnek kell lennie (a hipotézis a ${hypothesisAt + 1}. lépés volt).`;
+  }
+
+  return null;
 }
