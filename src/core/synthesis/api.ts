@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Synthesizer, BriefContext } from "./synthesizer.ts";
 import type { Logger } from "../../infra/logger.ts";
 import { buildPrompt, assertContract } from "./prompt.ts";
+import { estimateUsd } from "../../infra/anthropic.ts";
 
 export interface ApiSynthesizerOptions {
   /** Path to jarvis.md — the persona and the output contract. */
@@ -90,13 +91,4 @@ export function apiSynthesizer(opts: ApiSynthesizerOptions): Synthesizer {
       return assertContract(text);
     },
   };
-}
-
-/** Claude Opus 5 list pricing, for the log line only. */
-function estimateUsd(usage: Anthropic.Usage): number {
-  const input = (usage.input_tokens ?? 0) / 1e6 * 5;
-  const cacheWrite = (usage.cache_creation_input_tokens ?? 0) / 1e6 * 6.25;
-  const cacheRead = (usage.cache_read_input_tokens ?? 0) / 1e6 * 0.5;
-  const output = (usage.output_tokens ?? 0) / 1e6 * 25;
-  return Number((input + cacheWrite + cacheRead + output).toFixed(4));
 }
