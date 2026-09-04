@@ -9,6 +9,7 @@ import { config } from "../config/config.ts";
 import { createApp } from "../src/app.ts";
 import { requireApiToken, API_TOKEN_VAR } from "../src/env.ts";
 import { GROQ_KEY_VAR } from "../src/infra/groq.ts";
+import { ANTHROPIC_KEY_VAR } from "../src/infra/anthropic.ts";
 import { createMealRepo } from "../src/infra/db/repositories/meals.ts";
 import { buildModuleContext } from "../src/core/runner.ts";
 
@@ -35,10 +36,16 @@ try {
       ? `a lánc végig ingyenes: ${chain.join(" → ")}`
       : `FIZETŐS SZINTETIZÁLÓ A LÁNCBAN: ${paid.join(", ")}`,
   );
+  // No longer "must be unset": the agent is the one metered path, and it
+  // needs this key. What matters is that it is present deliberately and that
+  // the per-run ceiling is real.
+  const anthropicKey = await app.runner.secrets.get(ANTHROPIC_KEY_VAR);
   add(
-    "cost: ANTHROPIC_API_KEY unset",
-    !process.env.ANTHROPIC_API_KEY,
-    process.env.ANTHROPIC_API_KEY ? "beállítva — mért hívás lehetséges" : "unset",
+    "cost: az ügynök plafonja",
+    config.agent.maxUsdPerRun > 0,
+    anthropicKey
+      ? `${config.agent.model}, legfeljebb $${config.agent.maxUsdPerRun}/nyomozás`
+      : `nincs ${ANTHROPIC_KEY_VAR} — az ügynök nem fut, a brief igen`,
   );
 
   // --- Local prerequisites --------------------------------------------------

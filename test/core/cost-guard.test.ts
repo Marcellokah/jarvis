@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { buildSynthesisChain } from "../../src/app.ts";
 import { loadEnv } from "../../src/env.ts";
 import { silentLogger } from "../../src/infra/logger.ts";
+import { config } from "../../config/config.ts";
 
 const base = { NODE_ENV: "test" as const };
 
@@ -68,5 +69,27 @@ describe("cost guards", () => {
     );
     expect(await chain[0]!.available()).toBe(false);
     expect(await chain[1]!.available()).toBe(true);
+  });
+});
+
+/**
+ * The $0/month rule is gone, and that has to be stated rather than implied.
+ *
+ * It is replaced by two narrower rules, and both need to be pinned: the daily
+ * brief stays free, and the one metered path has a ceiling. The danger a
+ * dropped rule leaves behind is not the agent's cost — it is that a later
+ * edit quietly makes the brief metered too, under cover of "we pay for the
+ * API now anyway".
+ */
+describe("the metered path", () => {
+  it("keeps the brief free even though the agent is not", () => {
+    const chain = buildSynthesisChain(loadEnv(base), silentLogger());
+    expect(chain.map((s) => s.name)).toEqual(["groq", "template"]);
+    expect(chain.map((s) => s.name)).not.toContain("api");
+  });
+
+  it("caps what one investigation may spend", () => {
+    expect(config.agent.maxUsdPerRun).toBeGreaterThan(0);
+    expect(config.agent.maxUsdPerRun).toBeLessThanOrEqual(2);
   });
 });

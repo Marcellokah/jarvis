@@ -176,11 +176,16 @@ Minden lefutás elmentődik, és a következő elemzés területenként az utols
 - `?force` — figyelmen kívül hagyja a cache-t, mindig újragenerál.
 - Ha a Telegram bot is fut, ott a `/brief` ugyanezt adja, gombokkal.
 
-## Hogyan marad ingyenes
+## Mi ingyenes, és mi nem
 
-A szintézis és a chat a **Groq ingyenes tierjén** fut. A szolgáltatási szerződése
-tiltja, hogy a bemeneteden tanítson, hacsak kifejezetten nem engedélyezed — ezért
-esett rá a választás egy egészség- és pénzügyi adatokat hordozó rendszerben.
+A **brief és a chat** a Groq ingyenes tierjén fut, és ez nem változik — a
+`npm run smoke` ellenőrzi, hogy a lánc végig ingyenes marad.
+
+A **nyomozó ügynök** (`npm run investigate`) az egyetlen mért útvonal:
+`claude-opus-5` az Anthropic API-n, nyomozásonként ~$0,23, kemény plafonnal
+(`config.agent.maxUsdPerRun`). Azért ez, mert a lokális modellek mérése
+megmutatta, hogy a hurok navigációja már egy 8B-vel is megy, a záró ítélet
+viszont nem — és pontosan az hiányzott.
 
 Ha a Groq nem elérhető, rate limitel, vagy a szerződésen kívüli kimenetet ad, a
 **template** renderelő veszi át — teljes tartalommal, LLM nélkül.
