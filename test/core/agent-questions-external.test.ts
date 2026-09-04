@@ -36,6 +36,28 @@ describe("edzesek", () => {
     const out = await runQuestion("edzesek", { tol: "2026-01-01", ig: "2026-01-05" }, ctx());
     expect(out).toContain("nincs edzés");
   });
+
+  it("indicates truncation when more than 40 workouts are returned", async () => {
+    const db = memoryDb();
+    const workouts = createWorkoutRepo(db);
+    // Create 50 workouts across distinct days to ensure we have more than 40
+    const workoutList = Array.from({ length: 50 }, (_, i) => {
+      const month = i < 31 ? "09" : "10";
+      const day = (i % 31) + 1;
+      return {
+        date: `2026-${month}-${String(day).padStart(2, "0")}`,
+        type: "Run",
+        startedAt: `2026-${month}-${String(day).padStart(2, "0")}T${String(Math.floor(i / 31)).padStart(2, "0")}:00:00.000Z`,
+        durationMin: 30,
+        energyKcal: 300,
+        source: "Watch" as const,
+      };
+    });
+    workouts.save(workoutList);
+    const testCtx = { health: createHealthRepo(db), workouts, calendar: unavailableCalendar("test"), today: "2026-10-31" };
+    const out = await runQuestion("edzesek", { tol: "2026-09-01", ig: "2026-10-31" }, testCtx);
+    expect(out).toContain("… és még 10 edzés a tartományban");
+  });
 });
 
 describe("naptar", () => {
@@ -47,5 +69,42 @@ describe("naptar", () => {
   it("reports an unconfigured calendar as absent, not as an empty day", async () => {
     const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-05" }, ctx());
     expect(out).toContain("nincs bekötve");
+  });
+
+  it("catches events at local midnight boundary that UTC would drop", async () => {
+    // This event is at 2026-09-03T23:30:00Z, which in Budapest (UTC+2 in September)
+    // is 2026-09-04 01:30 local time. The UTC-based code would query
+    // [2026-09-04T00:00Z, ...] and miss this event because it's before that.
+    // The timezone-aware code should catch it because it queries
+    // [2026-09-03T22:00Z, ...] (2026-09-04 00:00 local).
+    const calendar: CalendarService = {
+      ...unavailableCalendar("test"),
+      async listEvents(from, to) {
+        return [{
+          uid: "boundary", title: "Éjfél körüli", start: "2026-09-03T23:30:00.000Z", end: "2026-09-03T23:45:00.000Z",
+          allDay: false, calendar: "Naptár",
+        }];
+      },
+    };
+    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendar));
+    expect(out).toContain("Éjfél körüli");
+  });
+
+  it("indicates truncation when more than 40 events are returned", async () => {
+    const calendar: CalendarService = {
+      ...unavailableCalendar("test"),
+      async listEvents() {
+        return Array.from({ length: 50 }, (_, i) => ({
+          uid: `e${i}`,
+          title: `Event ${i + 1}`,
+          start: `2026-09-04T${String(Math.floor(i / 2)).padStart(2, "0")}:${String((i % 2) * 30).padStart(2, "0")}:00.000Z`,
+          end: `2026-09-04T${String(Math.floor(i / 2)).padStart(2, "0")}:${String((i % 2) * 30 + 15).padStart(2, "0")}:00.000Z`,
+          allDay: false,
+          calendar: "Naptár",
+        }));
+      },
+    };
+    const out = await runQuestion("naptar", { tol: "2026-09-04", ig: "2026-09-04" }, ctx(calendar));
+    expect(out).toContain("… és még 10 esemény a tartományban");
   });
 });

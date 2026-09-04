@@ -3,6 +3,7 @@ import type { WorkoutRepo } from "../../infra/db/repositories/workouts.ts";
 import type { CalendarService } from "../../infra/calendar/service.ts";
 import { mean, stdDev, shiftDay, dayGap, type Point } from "../analysis/stats.ts";
 import { annotate, baselineFor, hu } from "./annotate.ts";
+import { isoTime, TZ } from "../../shared/dates.ts";
 
 /**
  * The closed menu.
@@ -55,6 +56,35 @@ export const MAX_RANGE_DAYS = 60;
 export const MIN_BUCKET_N = 5;
 
 const HISTORY_START = "1970-01-01";
+
+/**
+ * Convert a local date string to a UTC Date at local midnight.
+ *
+ * Without timezone correction, querying for "2026-09-04" uses UTC midnight,
+ * which in Budapest (UTC+2 in summer, UTC+1 in winter) is actually 02:00 or
+ * 01:00 local time. This silently drops events between local 00:00 and the
+ * UTC boundary, and pulls in events from the next day. The model then gets
+ * wrong answers about what was in the calendar.
+ */
+function localDateToUTC(dateStr: string, tz: string = TZ): Date {
+  // Start with UTC midnight of the date string.
+  let utcDate = new Date(`${dateStr}T00:00:00Z`);
+
+  // Check what local time this UTC instant represents in the target timezone.
+  const localTime = isoTime(utcDate, tz);
+
+  // If it's not 00:00 local, calculate the offset and adjust back to get
+  // the UTC instant that actually represents local midnight.
+  if (localTime !== "00:00") {
+    const parts = localTime.split(":");
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1]);
+    const offsetMs = (hours * 60 + minutes) * 60 * 1000;
+    utcDate = new Date(utcDate.getTime() - offsetMs);
+  }
+
+  return utcDate;
+}
 
 export function metricOf(args: Record<string, unknown>): MetricName | null {
   const raw = String(args.mutato ?? "");
@@ -267,9 +297,15 @@ export const QUESTIONS: Record<QuestionName, Question> = {
       const to = String(args.ig ?? "");
       const rows = ctx.workouts.between(from, to);
       if (rows.length === 0) return `${from} → ${to}: nincs edzés`;
-      return rows.slice(0, 40)
+      const displayed = rows.slice(0, 40);
+      const lines = displayed
         .map((w) => `  ${w.date}  ${w.type}  ${Math.round(w.durationMin)} perc`)
         .join("\n");
+      // Notify the model if the result was truncated so it can ask for a narrower range.
+      if (displayed.length < rows.length) {
+        return `${lines}\n… és még ${rows.length - displayed.length} edzés a tartományban`;
+      }
+      return lines;
     },
   },
 
@@ -283,7 +319,12 @@ export const QUESTIONS: Record<QuestionName, Question> = {
       // model concluding the owner had a free day.
       let events;
       try {
-        events = await ctx.calendar.listEvents(new Date(`${from}T00:00:00Z`), new Date(`${to}T23:59:59Z`));
+        // Convert local dates to UTC boundaries that respect the system timezone.
+        const fromUTC = localDateToUTC(from);
+        const toUTC = localDateToUTC(to);
+        // Shift toUTC to the end of the day (23:59:59 in the local timezone).
+        const endOfDay = new Date(toUTC.getTime() + 24 * 60 * 60 * 1000 - 1000);
+        events = await ctx.calendar.listEvents(fromUTC, endOfDay);
       } catch (err) {
         return `a naptár nincs bekötve: ${err instanceof Error ? err.message : String(err)}`;
       }
@@ -297,9 +338,15 @@ export const QUESTIONS: Record<QuestionName, Question> = {
           ? `${from} → ${to}: nincs esemény`
           : `a naptár nincs bekötve: ${check.detail ?? "ismeretlen ok"}`;
       }
-      return events.slice(0, 40)
+      const displayed = events.slice(0, 40);
+      const lines = displayed
         .map((e) => `  ${e.start.slice(0, 16).replace("T", " ")}  ${e.title}`)
         .join("\n");
+      // Notify the model if the result was truncated so it can ask for a narrower range.
+      if (displayed.length < events.length) {
+        return `${lines}\n… és még ${events.length - displayed.length} esemény a tartományban`;
+      }
+      return lines;
     },
   },
 };
