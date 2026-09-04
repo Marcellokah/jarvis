@@ -3,10 +3,18 @@ import { baselineFor, annotate } from "../../src/core/agent/annotate.ts";
 import type { Point } from "../../src/core/analysis/stats.ts";
 
 /** 90 days of HRV around 55, then the 203.6 that started all of this. */
-const points: Point[] = Array.from({ length: 90 }, (_, i) => ({
-  date: `2026-0${i < 31 ? "6" : i < 61 ? "7" : "8"}-${String((i % 30) + 1).padStart(2, "0")}`,
-  value: 55 + (i % 5) - 2,
-}));
+const points: Point[] = Array.from({ length: 90 }, (_, i) => {
+  // Generate consecutive dates: Jun 1 - Aug 29, 2026
+  const date = new Date(2026, 5, 1); // June 1, 2026
+  date.setDate(date.getDate() + i);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return {
+    date: `${yyyy}-${mm}-${dd}`,
+    value: 55 + (i % 5) - 2,
+  };
+});
 
 describe("baselineFor", () => {
   it("returns null below the sample floor rather than a confident number", () => {
