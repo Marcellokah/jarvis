@@ -1,9 +1,40 @@
 # Jarvis
 
+> ## ⚠️ Nyugdíjazva — 2026-09-04
+>
+> A projekt leállt. Az egészség-követés helyét a **Bevel** vette át.
+>
+> Minden automatizáció áll: a launchd agent kilépett és a plistje eltávolítva
+> a `~/Library/LaunchAgents/`-ből, a Tailscale eltávolítva, ütemezett ébresztés
+> nincs. A repó ettől még futtatható marad — a visszaállítás a
+> [`deploy/README.md`](deploy/README.md) szerint működik, a plist forrása
+> [`deploy/local.jarvis.agent.plist`](deploy/local.jarvis.agent.plist).
+>
+> **Ami a gépen maradhatott, és nem a repó dolga:** a Kulcskarika `jarvis`
+> bejegyzései (köztük egy iCloud app-specifikus jelszó, ami naptár-hozzáférést
+> ad), a Telegram bot a BotFathernél, és a `data/jarvis.db` — 2720 nap
+> egészség-történet, 2019-02-13-tól.
+>
+> **Miért állt le.** Nem technikai okból. A rendszer pontos volt és sosem
+> hazudott számot, de amit adott, az statisztika volt, nem asszisztencia —
+> „aranyos excel táblázat". Az utolsó nekifutás (`A1`, lásd lent) pont ezt
+> próbálta megfordítani; a kód elkészült és működik, de a döntés az lett, hogy
+> egy kész termék jobban szolgál, mint egy saját, félig megépített.
+>
+> **Amit érdemes megtartani belőle**, ha valaki visszatér ide: a
+> [`docs/superpowers/specs/2026-09-04-a1-egeszseg-ugynok-design.md`](docs/superpowers/specs/2026-09-04-a1-egeszseg-ugynok-design.md)
+> spec és a `scripts/eval-agent.ts` mérése. Az utóbbi három lokális modellt
+> futtatott végig három valódi feladaton, és a tanulság általánosabb a
+> projektnél: egy 8B modell **navigációja** már jó (32 lépés, 0 formátumhiba),
+> az **ítélete** nem — egy 9B modell egy ismert megfejtésű kérdésre öt valódi
+> lépésre hivatkozva adott kitalált oksági magyarázatot. A hivatkozás azt
+> bizonyítja, hogy megnézte, nem azt, hogy a következtetés belőle fakad.
+
 Személyi asszisztens. Brief kérésre — terminálból, Telegramból vagy a
 telefonról — és egy Telegram bot, amivel bármikor lehet beszélgetni róla.
 
-**Havi költség: $0.** Nincs VPS, nincs domain, nincs metered API.
+**Havi költség: $0** a brief oldalán; a nyomozó ügynök (`npm run investigate`)
+mért API-t használ, plafonnal. Nincs VPS, nincs domain.
 
 ## Mit tud
 
