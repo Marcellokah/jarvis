@@ -1,0 +1,40 @@
+# Előfizetések — PÉLDAADAT. A `seed` tölti be:  npm run seed
+#
+# next_renewal: bármelyik múltbeli megújulás dátuma is jó — a modul
+#               automatikusan előregörgeti a következő esedékesre.
+# last_used_at: mikor használtad utoljára. Telegramból is állítható: /used gym
+# cycle:        monthly | quarterly | annual
+
+- name: "Mobil + otthoni net"
+  amount_huf: 9990
+  cycle: monthly
+  next_renewal: "2026-01-05"
+  category: "telekom"
+
+- name: "Gym bérlet"
+  amount_huf: 15000
+  cycle: monthly
+  next_renewal: "2026-01-01"
+  category: "fitness"
+  last_used_at: "2026-01-02"
+
+- name: "Streaming szolgáltatás"
+  amount_huf: 3990
+  cycle: monthly
+  next_renewal: "2026-01-12"
+  category: "streaming"
+  cancel_url: "https://example.com/cancel"
+  last_used_at: "2025-11-20"
+
+- name: "Zene"
+  amount_huf: 2490
+  cycle: monthly
+  next_renewal: "2026-01-08"
+  category: "streaming"
+  last_used_at: "2026-01-03"
+
+- name: "Konzol online szolgáltatás"
+  amount_huf: 19990
+  cycle: annual
+  next_renewal: "2026-03-01"
+  category: "gaming"

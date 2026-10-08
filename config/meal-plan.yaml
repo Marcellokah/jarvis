@@ -1,0 +1,16 @@
+# Heti meal prep terv — PÉLDAADAT. A `seed` script tölti be a meal_plan táblába:
+#   npm run seed
+#
+# weekday: 0 = vasárnap … 6 = szombat
+# meal:    reggeli | ebed | vacsora
+# needs_defrost + defrost_lead_h: ebből számol a modul kiolvasztás-emlékeztetőt.
+
+- { weekday: 1, meal: reggeli, item: "Zabkása + gyümölcs", protein_g: 20, kcal: 450 }
+- { weekday: 1, meal: ebed,    item: "Csirke + rizs + zöldség", protein_g: 45, kcal: 650, needs_defrost: true, defrost_lead_h: 12 }
+- { weekday: 1, meal: vacsora, item: "Joghurt + müzli", protein_g: 20, kcal: 400 }
+
+- { weekday: 3, meal: reggeli, item: "Tojásos pirítós", protein_g: 25, kcal: 500 }
+- { weekday: 3, meal: ebed,    item: "Hal + burgonya + saláta", protein_g: 40, kcal: 600, needs_defrost: true, defrost_lead_h: 10 }
+- { weekday: 3, meal: vacsora, item: "Omlett + zöldség", protein_g: 30, kcal: 420 }
+
+- { weekday: 5, meal: ebed,    item: "Szabad választás", protein_g: 30, kcal: 800 }
